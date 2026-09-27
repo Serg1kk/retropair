@@ -7,13 +7,15 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import timedelta
+from unittest import mock
 
 import _util  # noqa: F401 — кладёт scripts/ в sys.path
 from _assess import payload
 from test_tracker import (FIX_ALEX, GROWN, KIM_RECS, LATER, LOGIN, NOW, OLD_RUN, RUN_P1, SHORT,
                           TrackerCase, _entry)
 
-from lib import tracker
+from lib import batches, inventory, marks, tracker
+from lib.lock import file_lock
 from lib.workspace import SrError
 
 RUN_P2 = "demo-team_alex_p2_20260917T120000Z"
@@ -435,6 +437,165 @@ class MarkLogsTest(OpsCase):
         self.append_p1()
         self.paths["logs_index"].unlink()
         self.raises(1, tracker.mark_logs, self.root, RUN_P1, force=True)
+
+
+KIM_SHORT = [f"c0ffee0{i}-1a2b-4c3d-8e4f-5a6b7c8d9e0{i}" for i in range(5)]
+
+
+class MarkLogsNoRunTest(OpsCase):
+    """B03: период, где все новые сессии человека короче `min_turns`, закрывается без прогона."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        index = self.index()
+        base = _entry(index, SHORT)
+        for i, sid in enumerate(KIM_SHORT):
+            key = f"2026-09-0{i + 1}_10-00-00Z-short-{i}"
+            entry = json.loads(json.dumps(base))
+            entry.update({"person_id": "kim", "session_id": sid, "key": key, "path": f"logs/kim/{key}.md",
+                          "source_path": f"/home/user/demo/.specstory/history/{key}.md",
+                          "user_turns": 1 + i % 3, "turns_total": 2 + 2 * (i % 3), "state": "new"})
+            index["logs"].append(entry)
+        self.paths["logs_index"].write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+
+    def kim_batches(self) -> dict:
+        return batches.for_person(self.root, "kim", measure="index", period_label="p1")
+
+    def no_run(self, *refs: str, person: str = "kim") -> tuple[int, str, str]:
+        return self.cli("mark-logs", "--no-run", "--person", person, "--excluded", *refs)
+
+    def review_file(self, run_id: str = RUN_P1) -> None:
+        path = self.paths["reviews"] / "alex" / f"{run_id}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("Текст ревью.\n", encoding="utf-8")
+
+    def test_b03_all_short_period_closed_without_run(self):
+        before = self.kim_batches()
+        self.assertEqual(before["batches"], [])
+        self.assertEqual(sorted(s["session_id"] for s in before["short"]), KIM_SHORT)
+        code, out, err = self.no_run(*(f"{sid}=transcript_too_short" for sid in KIM_SHORT))
+        self.assertEqual(code, 0, err)
+        result = json.loads(out)
+        self.assertEqual(result["person_id"], "kim")
+        self.assertEqual(result["missing"], [])
+        self.assertEqual(sorted(m["session_id"] for m in result["marked"]), KIM_SHORT)
+        index = self.index()
+        for sid in KIM_SHORT:
+            entry = _entry(index, sid)
+            self.assertTrue(entry["excluded"])
+            self.assertEqual(entry["excluded_reason"], "transcript_too_short")
+            self.assertIsNone(entry["excluded_in_run"])
+            self.assertRegex(entry["excluded_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+            self.assertEqual(entry["excluded_turns_total"], entry["turns_total"])
+            self.assertEqual(entry["state"], "excluded")
+            self.assertFalse(entry["reviewed"])
+        after = self.kim_batches()
+        self.assertEqual((after["batches"], after["short"], after["skipped"]), ([], [], []))
+        self.assertFalse(tracker.tracker_path(self.root).exists(), "прогон без оценки не пишется")
+        self.assertEqual(tracker.verify(self.root), [])
+        self.assertEqual(self.code("verify"), 0)
+        self.assertEqual(self.code("validate"), 0)
+
+    def test_default_reason_is_too_short_and_prefix_ref(self):
+        code, out, err = self.no_run(KIM_SHORT[0][:8], f"logs/kim/2026-09-02_10-00-00Z-short-1.md")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([m["reason"] for m in json.loads(out)["marked"]], ["transcript_too_short"] * 2)
+        self.assertEqual(_entry(self.index(), KIM_SHORT[1])["excluded_reason"], "transcript_too_short")
+
+    def test_other_short_reasons_allowed(self):
+        code, _, err = self.no_run(f"{KIM_SHORT[0]}=empty_transcript", f"{KIM_SHORT[1]}=unreadable_input")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(_entry(self.index(), KIM_SHORT[0])["excluded_reason"], "empty_transcript")
+
+    def test_reason_outside_no_run_set_is_2_and_nothing_written(self):
+        before = self.paths["logs_index"].read_bytes()
+        for reason in ("not_batched", "duplicate_export", "other_period", "bored"):
+            with self.subTest(reason=reason):
+                code, _, err = self.no_run(KIM_SHORT[0], f"{KIM_SHORT[1]}={reason}")
+                self.assertEqual(code, 2, err)
+                self.assertIn(reason, err)
+        self.assertEqual(self.paths["logs_index"].read_bytes(), before)
+
+    def test_other_persons_session_is_1_and_nothing_written(self):
+        before = self.paths["logs_index"].read_bytes()
+        code, out, err = self.no_run(KIM_SHORT[0], SHORT)
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out), {"person_id": "kim", "marked": [], "missing": [SHORT]})
+        self.assertIn(SHORT, err)
+        self.assertEqual(self.paths["logs_index"].read_bytes(), before)
+
+    def test_already_marked_is_1_and_nothing_written(self):
+        self.assertEqual(self.no_run(KIM_SHORT[0])[0], 0)
+        before = self.paths["logs_index"].read_bytes()
+        code, _, err = self.no_run(KIM_SHORT[1], KIM_SHORT[0])
+        self.assertEqual(code, 1)
+        self.assertIn(KIM_SHORT[0], err)
+        self.assertEqual(self.paths["logs_index"].read_bytes(), before)
+        # оценённая прогоном (reviewed) тоже не перетирается
+        code, _, err = self.no_run(GROWN, person="alex")
+        self.assertEqual(code, 1)
+        self.assertIn(GROWN, err)
+
+    def test_argument_combinations_are_2(self):
+        before = self.paths["logs_index"].read_bytes()
+        cases = [
+            ("mark-logs", "--no-run", RUN_P1, "--person", "kim", "--excluded", KIM_SHORT[0]),
+            ("mark-logs", "--no-run", "--person", "kim", "--sessions", KIM_SHORT[1], "--excluded", KIM_SHORT[0]),
+            ("mark-logs", RUN_P1, "--person", "kim", "--excluded", KIM_SHORT[0]),
+            ("mark-logs", "--no-run", "--excluded", KIM_SHORT[0]),
+            ("mark-logs", "--no-run", "--person", "kim"),
+            ("mark-logs", "--no-run", "--person", "kim", "--force", "--excluded", KIM_SHORT[0]),
+            ("mark-logs", "--excluded", KIM_SHORT[0]),
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                code, _, err = self.cli(*args)
+                self.assertEqual(code, 2, err)
+                self.assertTrue(err.strip())
+        self.assertEqual(self.paths["logs_index"].read_bytes(), before)
+
+    def test_grown_session_is_candidate_again(self):
+        """Рост после пометки: настоящий `inventory.merge` снимает исключение, сессия снова в нарезке."""
+        self.assertEqual(self.no_run(*KIM_SHORT)[0], 0)
+        index = self.index()
+        fresh = [{k: v for k, v in e.items() if k not in marks.MARK_FIELDS}
+                 for e in index["logs"] if e["state"] != "gone"]
+        grow = {KIM_SHORT[0]: (5, 12), KIM_SHORT[1]: (3, 6)}  # в пачку и снова короткая
+        for e in fresh:
+            if e["session_id"] in grow:
+                e["user_turns"], e["turns_total"] = grow[e["session_id"]]
+        merged = inventory.merge(index, fresh, "demo-team", "2026-09-20T10:00:00Z")
+        marks.save_index(self.root, merged)
+        self.assertEqual(_entry(self.index(), KIM_SHORT[0])["state"], "new")
+        self.assertNotIn("excluded", _entry(self.index(), KIM_SHORT[0]))
+        self.assertEqual(_entry(self.index(), KIM_SHORT[2])["state"], "excluded")
+        result = self.kim_batches()
+        self.assertEqual([[s["session_id"] for s in b["sessions"]] for b in result["batches"]], [[KIM_SHORT[0]]])
+        self.assertEqual([s["session_id"] for s in result["short"]], [KIM_SHORT[1]])
+        # короткую снова можно закрыть без прогона
+        self.assertEqual(self.no_run(KIM_SHORT[1])[0], 0)
+
+    def test_verify_clean_and_retract_leaves_no_run_marks(self):
+        self.append_p1()
+        self.review_file()
+        tracker.set_level(self.root, RUN_P1, now=LATER)
+        self.assertEqual(self.no_run(*KIM_SHORT)[0], 0)
+        self.assertEqual(tracker.verify(self.root), [])
+        self.assertEqual(self.code("validate"), 0)
+        before = {sid: _entry(self.index(), sid) for sid in KIM_SHORT}
+        tracker.retract(self.root, RUN_P1, "ошибка", now=LATEST)
+        self.assertEqual({sid: _entry(self.index(), sid) for sid in KIM_SHORT}, before)
+        self.assertEqual(_entry(self.index(), LOGIN)["state"], "new")
+
+    def test_busy_collect_lock_is_1_and_nothing_written(self):
+        """Индекс пишется под замком сбора логов (`collect.lock`), как у обычного `mark-logs`."""
+        before = self.paths["logs_index"].read_bytes()
+        with file_lock(self.paths["state_dir"] / marks.COLLECT_LOCK, timeout=0), \
+                mock.patch.object(marks, "INDEX_LOCK_TIMEOUT", 0.3):
+            code, _, err = self.no_run(KIM_SHORT[0])
+        self.assertEqual(code, 1)
+        self.assertIn("collect.lock", err)
+        self.assertEqual(self.paths["logs_index"].read_bytes(), before)
 
 
 class VerifyTest(OpsCase):

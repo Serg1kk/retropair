@@ -250,6 +250,21 @@ class SkillTest(unittest.TestCase):
         self.assertIn("метку не придумывай", first)
         self.assertIn("period_label", first)
 
+    def test_phase2_only_short_sessions_closed_without_run(self) -> None:
+        """B03: пачек нет, короткие есть → `mark-logs --no-run` по всем коротким, агентов не звать."""
+        phase = phases(self.body)[2]
+        calls = [ln for ln in command_lines(phase) if commands_in(ln)[:1] == ["mark-logs"]]
+        self.assertEqual(len(calls), 1, calls)
+        argv = shlex.split(calls[0][len(LITERAL):])
+        args = registry_cmds.build_parser().parse_args(argv)
+        self.assertTrue(args.no_run)
+        self.assertEqual(args.person, "<person>")
+        self.assertIsNone(args.run_id)
+        self.assertTrue(all(ref.endswith("=transcript_too_short") for ref in args.excluded), args.excluded)
+        for phrase in ("только короткие", "данных мало", "агентов не зови", "новых логов нет"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, phase)
+
     def test_phase3_recorded_judge_output_is_not_asked_about(self) -> None:
         """Записанный выход судьи прошлого прогона не повод для вопроса: незаписанный называет `verify`."""
         phase = phases(self.body)[3]

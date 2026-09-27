@@ -1272,6 +1272,78 @@ def mark_logs(root: Path, run_id: str, sessions=(), excluded=(), force: bool = F
             "coverage": {"marked": marked, "expected": expected}}
 
 
+# Причины, с которыми сессия закрывается без прогона: оценки нет, судить не о чем.
+NO_RUN_REASONS = ("transcript_too_short", "empty_transcript", "unreadable_input")
+NO_RUN_DEFAULT_REASON = "transcript_too_short"
+
+
+def mark_logs_no_run(root: Path, person_id: str, excluded, exclude_note: str | None = None,
+                     now: datetime | None = None) -> dict:
+    """Закрыть в индексе сессии человека без прогона: период, где все новые сессии короткие.
+
+    `excluded` — `REF` или `REF=причина`, причина только из `NO_RUN_REASONS` (по умолчанию
+    `transcript_too_short`), иначе `SrError(2)`. Ссылки ищутся только среди записей `person_id`
+    (`marks.find_entry`). Флаг ставит `inventory.mark` с `excluded_in_run: null` (прогона нет,
+    как у исключения по согласию), `excluded_at` = сейчас; трекер не пишется, `retract` и
+    покрытие прогонов эти пометки не видят. Замки те же, что у `mark_logs`: трекер → индекс.
+    Не нашлась хоть одна ссылка → ничего не пишется, `missing` непуст. Запись уже помечена
+    (`reviewed` или `excluded`) → `SrError(1)`, ничего не пишется. Нет индекса → `SrError(1)`.
+    Возвращает `{person_id, marked: [{session_id, key, path, reason}], missing: [ref]}`.
+    """
+    root = Path(root)
+    person_id = (person_id or "").strip()
+    if not person_id:
+        raise SrError("пометка без прогона: не указан человек (--person)", 2)
+    parsed = []
+    for value in excluded or ():
+        ref, reason = _split_excluded(value)
+        reason = reason or NO_RUN_DEFAULT_REASON
+        if reason not in NO_RUN_REASONS:
+            raise SrError(
+                f"причина {reason!r} (сессия {ref!r}) без прогона не ставится: допустимы "
+                f"{', '.join(NO_RUN_REASONS)}; остальные причины — у mark-logs с id прогона",
+                2,
+            )
+        parsed.append((ref, reason))
+    if not parsed:
+        raise SrError(f"пометка без прогона у {person_id}: нет сессий в --excluded", 2)
+    now = now or datetime.now(timezone.utc)
+    now_iso = marks.iso_utc(now)
+    with file_lock(tracker_path(root)):
+        with marks.index_lock(root):
+            index = marks.load_index(root)
+            if index is None:
+                raise SrError(f"индекса логов нет ({ws_paths(root)['logs_index']}): пометить сессии "
+                              f"{person_id} нечем, сначала соберите логи", 1)
+            targets, missing, seen = [], [], set()
+            for ref, reason in parsed:
+                entry = marks.find_entry(index, person_id, ref)
+                if entry is None:
+                    missing.append(ref)
+                    continue
+                if entry.get("key") in seen:
+                    continue
+                seen.add(entry.get("key"))
+                if entry.get("reviewed") or entry.get("excluded"):
+                    how = "оценена" if entry.get("reviewed") else f"исключена ({entry.get('excluded_reason')})"
+                    raise SrError(
+                        f"сессия {entry.get('session_id')} ({entry.get('path')}) у {person_id} уже {how}, "
+                        f"прогон {marks.stamped_by(entry) or 'нет'}; без прогона закрываются только "
+                        f"непомеченные сессии",
+                        1,
+                    )
+                targets.append((entry, reason))
+            if missing:
+                return {"person_id": person_id, "marked": [], "missing": missing}
+            done = []
+            for entry, reason in targets:
+                marks.mark_excluded(entry, None, reason, exclude_note, now_iso)
+                done.append({"session_id": entry.get("session_id"), "key": entry.get("key"),
+                             "path": entry.get("path"), "reason": reason})
+            marks.save_index(root, index, now=now)
+    return {"person_id": person_id, "marked": done, "missing": []}
+
+
 def _outcome(mark: dict) -> str:
     """Исход пометки для сверки с новой: `reviewed` или причина исключения."""
     if mark.get("kind") == "excluded":
