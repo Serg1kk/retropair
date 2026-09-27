@@ -1,0 +1,17 @@
+# Дефолты текста для всех карточек workspace. Карточка people/<id>.yaml
+# переопределяет любое поле своим блоком feedback:.
+feedback:
+  address: ты                # ты | вы | you
+  length: detailed           # short | detailed
+  tone: direct               # direct | supportive
+  opening_summary: false     # открывать обобщением простым языком
+  mark_sections: false       # подписывать «что менять» / «на чём стоит»
+  practices: true            # приёмы «как исправить» по слабым осям
+  skip_basics:               # чего не объяснять, по пункту на строку «  - …»
+  boundaries:                # жёсткие запреты (не переносить на рабочий стек, комплаенс…)
+  avoid:                     # чего не делать в тексте
+  value_focus: finding       # finding | full
+  show_dynamics: true
+  channel: file              # file | telegram | slack | email (влияет на переносы строк)
+  template: default          # default | workspace | <имя файла в templates/>
+  prefix: ""                 # строка перед текстом (например, приветствие)

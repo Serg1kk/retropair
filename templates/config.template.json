@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "workspace": {"id": "{{id}}", "title": "{{title}}", "groups": ["default"]},
+  "mode": "{{mode}}",
+  "lang": "{{lang}}",
+  "period": {"mode": "run"},
+  "sources": [
+    {"type": "specstory", "path": ".specstory/history"},
+    {"type": "claude-jsonl", "project": "auto"}
+  ],
+  "hook": {"enabled": true, "providers": ["claude"]},
+  "sanitize": {"names": [], "extra_patterns": []},
+  "models": {"collector": {"model": "sonnet", "effort": "medium"},
+             "judge": {"model": "opus", "effort": "high"},
+             "critic": {"model": "sonnet", "effort": "medium"}},
+  "batches": {"max_bytes": 100000, "max_user_turns": 150, "min_turns": 4},
+  "show_scores": false,
+  "reviewer_gate": true,
+  "template": "default",
+  "extensions": {"artifact": null}
+}

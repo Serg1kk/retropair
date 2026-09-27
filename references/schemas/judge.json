@@ -1,0 +1,828 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Выход второй ступени: оценка процесса работы с кодинг-агентом",
+  "description": "Что пишет судья (log-judge) по доказательствам всех пачек коллектора. Версия схемы бампится вместе с prompt_version судьи, кроме аддитивных необязательных полей: они обратно совместимы, старые прогоны валидны как есть, и бампа не требуют.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "data",
+    "metadata"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "status": {
+      "type": "object",
+      "required": [
+        "code",
+        "ok"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Статус ПРОГОНА, а не отдельной сессии. success — оценена хотя бы одна сессия; код ошибки ставится, только когда непригодны ВСЕ сессии прогона. Судьба каждой сессии — в data.session_scope.sessions[].status.",
+          "enum": [
+            "success",
+            "empty_transcript",
+            "transcript_too_short",
+            "unreadable_input"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "session_scope",
+        "axes",
+        "antipatterns",
+        "flags",
+        "gating_triggered",
+        "gating_evidence",
+        "summary",
+        "recommendations",
+        "feedback_parts",
+        "artifact"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_scope": {
+          "type": "object",
+          "description": "На чём именно поставлена оценка. Для выросшей сессии (state=grown) оценивается хвост.",
+          "additionalProperties": false,
+          "properties": {
+            "sessions": {
+              "type": "array",
+              "description": "Все сессии, поданные в прогон, включая непригодные. Статус держится ЗДЕСЬ: одна сессия-пустышка не останавливает прогон целиком.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "session_id",
+                  "path",
+                  "status"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "turns_total": {
+                    "type": "integer"
+                  },
+                  "reviewed_from_turn": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "grown"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "reviewed — сессия вошла в оценку; остальные значения означают, что она исключена, и почему. Исключённые сессии в баллы не идут и низкими баллами не оборачиваются. Значение попадает в logs-index.json как excluded_reason и закрывает сессию от следующего прогона, поэтому причина должна быть названа точно: agent_subtranscript — транскрипт субагента, где реплики за человека пишет оркестратор; duplicate_export — повторная выгрузка того же разговора; other_period — разговор относится к другому периоду; not_batched — не подавалась агенту в этом прогоне; excluded_other — причина не из перечисленных, обязателен status_note.",
+                    "enum": [
+                      "reviewed",
+                      "empty_transcript",
+                      "transcript_too_short",
+                      "unreadable_input",
+                      "agent_subtranscript",
+                      "duplicate_export",
+                      "other_period",
+                      "not_batched",
+                      "excluded_other"
+                    ]
+                  },
+                  "status_note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Одна строка: почему исключена, если status не reviewed"
+                  }
+                }
+              }
+            },
+            "agent_stack": {
+              "type": "array",
+              "description": "Коллектор и модели, с которыми работал участник",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "axes": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "score",
+              "insufficient_evidence",
+              "evidence",
+              "note"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "verification",
+                  "task_framing",
+                  "ownership",
+                  "self_correction",
+                  "context_engineering",
+                  "decomposition",
+                  "trust_calibration",
+                  "reversibility"
+                ]
+              },
+              "score": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 4
+              },
+              "insufficient_evidence": {
+                "type": "boolean"
+              },
+              "insufficient_evidence_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "short_log",
+                  "behaviour_absent",
+                  "no_context_report",
+                  "no_repo_access",
+                  "tool_has_no_trace",
+                  "log_truncated",
+                  "work_outside_transcript",
+                  "nothing_to_verify",
+                  null
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "description": "Минимум одна дословная цитата под любой выставленный балл. Для context_engineering допустимо числовое доказательство из context_report с turn_index: null.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "session_id",
+                    "turn_index",
+                    "quote",
+                    "reading"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "session_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Сессия, в которой стоит этот ход. Нумерация ходов в каждой сессии своя, поэтому turn_index без session_id не адресует ничего. null только там, где нет и хода (числовое доказательство из context_report)."
+                    },
+                    "turn_index": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 400
+                    },
+                    "reading": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "subcriteria": {
+                "type": "array",
+                "description": "Опционально: разбор по под-критериям оси (например, пять элементов промпта).",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "description": "externalized — элемент вынесен в файл правил (исключается из знаменателя, это правильное поведение). not_applicable — под-критерий на этом проекте невозможен (тестов нет вовсе и т.п.).",
+                      "enum": [
+                        "upfront",
+                        "later_proactive",
+                        "later_elicited",
+                        "reactive",
+                        "absent",
+                        "externalized",
+                        "not_applicable"
+                      ]
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "note": {
+                "type": "string",
+                "description": "Одна фраза: что именно определило балл"
+              }
+            }
+          }
+        },
+        "antipatterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "found"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "found": {
+                "type": "boolean",
+                "description": "true ставится по ВЕДУЩЕМУ симптому из antipatterns.md (он выделен там жирным), с цитатой. Ведущего симптома нет — антипаттерн в выход не идёт вовсе."
+              },
+              "axis": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Обязателен вместе с turn_index: без него номер хода не адресует ничего"
+              },
+              "turn_index": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "quote": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 400
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Сопутствующие симптомы, которые наблюдались или не наблюдались; для found: false — почему отвергнут"
+              }
+            }
+          }
+        },
+        "flags": {
+          "type": "array",
+          "description": "Бинарные находки вне шкалы. Пустой массив это нормальное состояние.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "session_id",
+              "turn_index",
+              "note"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "secret_in_the_open",
+                  "destructive_without_review",
+                  "permissions_off_on_foreign_code",
+                  "over_broad_access",
+                  "untrusted_content_as_instruction",
+                  "unredacted_input",
+                  "redaction_leak"
+                ]
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "turn_index": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": "string",
+                "description": "Факт, а не оценка. Секреты не цитировать: описать место и тип."
+              }
+            }
+          }
+        },
+        "gating_triggered": {
+          "type": "boolean"
+        },
+        "gating_evidence": {
+          "type": "array",
+          "description": "Сработавшие триггеры гейта. При gating_triggered: false здесь ВСЕГДА пустой массив, а не null: форма одна, чтобы два прогона были сравнимы.",
+          "items": {
+            "type": "object",
+            "required": [
+              "trigger",
+              "session_id",
+              "turn_index",
+              "quote"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "G1",
+                  "G2",
+                  "G3",
+                  "G4",
+                  "G5",
+                  "G6"
+                ]
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "turn_index": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "quote": {
+                "type": "string",
+                "maxLength": 400
+              }
+            }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "required": [
+            "level_judge",
+            "strongest_axis",
+            "weakest_axis",
+            "one_thing_to_change"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "level_judge": {
+              "type": "string",
+              "description": "Уровень по мнению судьи, для сверки. Итоговый уровень считает скрипт по формуле из axes.md; insufficient — оценённых осей меньше трёх.",
+              "enum": [
+                "passenger",
+                "naive",
+                "competent",
+                "confident_operator",
+                "orchestrator",
+                "developing",
+                "insufficient"
+              ]
+            },
+            "strongest_axis": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "weakest_axis": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "one_thing_to_change": {
+              "type": "string"
+            },
+            "task_solved": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Одна строка вне шкалы: довёл ли человек задачу до результата. Нужна, чтобы образцовая обрядность при отсутствующем результате была видна.",
+              "enum": [
+                "yes",
+                "no",
+                "unclear",
+                null
+              ]
+            }
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "description": "Рекомендации, выданные в этом прогоне. Всегда действие, а не диагноз.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "axis",
+              "text"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "REC-{person_id}-{NNN}, сквозной между периодами"
+              },
+              "axis": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "followed",
+                  "ignored",
+                  "retired"
+                ],
+                "default": "open"
+              }
+            }
+          }
+        },
+        "best_practices": {
+          "type": "array",
+          "description": "Приёмы под слабые оси. Поле НЕОБЯЗАТЕЛЬНОЕ: слабых осей нет — массива нет вовсе. Даётся только по осям с баллом 0-3; ось с баллом 4 либо с insufficient_evidence сюда не попадает никогда. Балл 3 с пунктом по единственному месту-исключению — один рычаг, чинящий это место. Бюджет: до трёх осей и до двух приёмов на ось; не больше четырёх рычагов на текст и ноль при length: short проверяет скрипт. В трекер поле не уезжает намеренно: приёмы не трекаются между периодами, в отличие от рекомендаций, у которых есть id и вердикт.",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": [
+              "axis",
+              "anchor",
+              "practices"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "axis": {
+                "type": "string",
+                "description": "Тот же перечень, что в axes[].id: имя оси, разошедшееся с ним, ловится схемой, а не глазами",
+                "enum": [
+                  "verification",
+                  "task_framing",
+                  "ownership",
+                  "self_correction",
+                  "context_engineering",
+                  "decomposition",
+                  "trust_calibration",
+                  "reversibility"
+                ]
+              },
+              "anchor": {
+                "type": "object",
+                "description": "Место в логах, к которому привязан блок приёмов. Берётся из evidence этой оси либо из её антипаттерна: балл 0-3 без доказательства не ставится, значит якорь есть всегда. Привязки нет — ось в секцию не идёт.",
+                "required": [
+                  "session_id",
+                  "turn_index",
+                  "quote"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "turn_index": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "quote": {
+                    "type": "string",
+                    "maxLength": 400
+                  }
+                }
+              },
+              "practices": {
+                "type": "array",
+                "description": "Приёмы короткими строками, в том же виде, в каком они пошли в текст. Не копии строк best-practices.md: там сигнал и механизм, здесь формулировка под место этого участника.",
+                "minItems": 1,
+                "maxItems": 2,
+                "items": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              }
+            }
+          }
+        },
+        "prev_recommendations": {
+          "type": "array",
+          "description": "Вердикт по каждой открытой рекомендации прошлых прогонов. not_observable оставляет рекомендацию открытой и НЕ означает «проигнорировал».",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "verdict"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "followed",
+                  "partial",
+                  "ignored",
+                  "not_observable"
+                ]
+              },
+              "evidence": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Сессия нового прогона, в которой видно поведение. Без неё трейл вердиктов между периодами не восстанавливается."
+                  },
+                  "turn_index": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "quote": {
+                    "type": "string",
+                    "maxLength": 400
+                  }
+                }
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "feedback_draft": {
+          "type": "string",
+          "description": "Текст адресату, собранный скриптом рендера из feedback_parts по шаблону. Судья это поле не пишет: у текста один источник правды. Без баллов, уровней, похвалы, сравнений и длинных тире."
+        },
+        "feedback_parts": {
+          "type": "object",
+          "description": "Структура текста адресату без разметки: судья пишет только её, markdown собирает скрипт рендера по шаблону. Условия, которых схема не выражает (вердикт *_place_above только при существующем пункте с этим номером; критерии в порядке axes.md без повторов; при length: short не больше двух пунктов и ноль рычагов; рычагов не больше четырёх на текст), проверяет скрипт.",
+          "required": [
+            "opening",
+            "actions",
+            "criteria",
+            "closing"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "opening": {
+              "type": "string",
+              "description": "Строка покрытия (сколько файлов логов подано в разбор, сколько разных разговоров, что разобрано); при `opening_summary`/`mark_sections` — добавки по карточке."
+            },
+            "actions": {
+              "type": "array",
+              "description": "Пункты действий по цене, применимые в следующей сессии. i-й пункт соответствует i-й рекомендации.",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "required": [
+                  "place",
+                  "date",
+                  "quote",
+                  "cost",
+                  "try",
+                  "levers"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "place": {
+                    "type": "string",
+                    "description": "Место в работе, понятное человеку: что он делал."
+                  },
+                  "date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Дата сессии YYYY-MM-DD или null, если неизвестна."
+                  },
+                  "quote": {
+                    "type": "string",
+                    "maxLength": 400,
+                    "description": "Дословная фраза из лога."
+                  },
+                  "cost": {
+                    "type": "string",
+                    "description": "Во что это обошлось в этой работе."
+                  },
+                  "try": {
+                    "type": "string",
+                    "description": "Одно действие, которое попробовать в следующей сессии."
+                  },
+                  "levers": {
+                    "type": "array",
+                    "description": "Рычаги-приёмы к пункту, не больше двух.",
+                    "maxItems": 2,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 400
+                    }
+                  }
+                }
+              }
+            },
+            "criteria": {
+              "type": "array",
+              "description": "Восемь критериев, по одному на ось, в порядке axes.md. Не выпадают никогда.",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "required": [
+                  "axis",
+                  "verdict",
+                  "evidence"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "axis": {
+                    "type": "string",
+                    "description": "Ключ секции axes в i18n.json.",
+                    "enum": [
+                      "verification",
+                      "task_framing",
+                      "ownership",
+                      "self_correction",
+                      "context_engineering",
+                      "decomposition",
+                      "trust_calibration",
+                      "reversibility"
+                    ]
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "description": "Ключ секции verdicts в i18n.json; строку на языке текста подставляет рендер.",
+                    "enum": [
+                      "even",
+                      "even_but_one",
+                      "first_place_above",
+                      "second_place_above",
+                      "third_place_above",
+                      "not_visible"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "string",
+                    "maxLength": 400,
+                    "description": "До двух предложений с адресом в логах (дата и дословная фраза)."
+                  }
+                }
+              }
+            },
+            "closing": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Строка про устойчивые приёмы с адресом (не похвала) при tone: supportive; иначе null."
+            }
+          }
+        },
+        "artifact": {
+          "type": "null",
+          "description": "Точка расширения под оценку артефакта. В этой версии всегда null: оценивается только процесс."
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "turns_analyzed",
+        "warnings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "turns_analyzed": {
+          "type": "integer",
+          "description": "Сумма metrics.turns_total по всем пачкам. Судья логов не читает, и другого источника у него нет: выдуманное число уезжает в трекер как turns_total прогона и делает объёмы периодов несравнимыми."
+        },
+        "axes_scored": {
+          "type": "integer"
+        },
+        "axes_insufficient": {
+          "type": "integer"
+        },
+        "metrics_available": {
+          "type": "boolean",
+          "description": "Были ли механические метрики на входе"
+        },
+        "context_report_available": {
+          "type": "boolean"
+        },
+        "prompt_version": {
+          "type": "string"
+        },
+        "collector_version": {
+          "type": "string",
+          "description": "Версия промпта первой ступени, из metadata.collector_version пачек. Версии разошлись — перечисляются через запятую и объясняются в notes: оценки, собранные разными редакциями коллектора, между собой сравнимы не полностью"
+        },
+        "batches": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Из скольких пачек сведён прогон. 1 означает, что логи участника поместились в одного коллектора, а не что вторая ступень пропущена: ступени две всегда"
+        },
+        "sessions_total": {
+          "type": "integer",
+          "description": "Сколько сессий было у участника за период по данным скрипта-координатора, включая не поданные в прогон. Вместе с длиной session_scope.sessions[] показывает покрытие"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "metrics_missing",
+              "no_context_report",
+              "redaction_leak",
+              "unredacted_input",
+              "log_truncated",
+              "timestamps_missing",
+              "spans_periods",
+              "no_feedback_examples",
+              "sessions_excluded",
+              "no_person_profile",
+              "sessions_not_selected",
+              "collector_versions_mixed",
+              "batch_failed",
+              "batch_truncated",
+              "no_subcriteria_map"
+            ]
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

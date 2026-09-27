@@ -1,0 +1,12 @@
+id: p03
+name: "Богдан Загорский"
+group: demo
+feedback:
+  address: ты
+  length: detailed
+  tone: direct
+  opening_summary: false
+  mark_sections: true
+  channel: file
+  value_focus: finding
+  prefix: ""

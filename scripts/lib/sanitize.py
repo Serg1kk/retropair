@@ -1,0 +1,331 @@
+"""Санитайзер логов: вырезает секреты и персональные данные до того, как лог попадёт в снапшот.
+
+Детерминированный, офлайн, только stdlib. Два режима:
+
+- `Sanitizer.sanitize_text(text)` — по тексту целиком (markdown, txt, сырой JSONL);
+- `Sanitizer.sanitize_obj(obj)` — рекурсивно по строковым значениям JSON-объекта: ключи не
+  трогаются, структура остаётся валидным JSON, значения служебных ключей (`STRUCTURAL_KEYS`:
+  идентификаторы, время, типы) не санитайзятся вовсе.
+
+Порядок: правила `RULES` до `email` включительно (секреты, строки подключения, почта) → имена
+людей → остальные правила `RULES` → логин ОС (`local_user`) → пользовательские `extra_patterns`.
+`email` раньше имён: иначе адрес, в котором есть имя из списка, стал бы `[NAME]@<домен>` с
+живым доменом; секреты раньше `email`: пароль в `postgres://user:pass@host` — строка подключения. Оба режима возвращают пару `(результат, hits)`, где
+`hits = {правило: число замен}`; замены имён считаются как `names`, пользовательских шаблонов —
+как `extra`.
+
+Санитайзер идемпотентен на своих метках: повторный проход по очищенному тексту ничего не меняет.
+`fingerprint(sanitizer)` — отпечаток набора правил: collect хранит его рядом со снапшотом и
+перечищает снапшот, когда отпечаток меняется (новое имя, шаблон, версия правил).
+
+ALLOWLIST (заглушки из документации, служебные значения вроде `bearer`, ссылки на переменные
+окружения) сравнивается со **значением секрета целиком** (`fullmatch`): у правил с группой `val`
+— с этой группой, у остальных — со всем совпадением. Слово-заглушка внутри значения
+(`"prod-test-2026"`) значение не спасает.
+
+UUID (`8-4-4-4-12` hex) не режутся числовыми правилами `phone`, `card`, `passport_by_ru`: в логах
+агентов это идентификаторы сессий и сообщений, а не телефоны.
+"""
+
+from __future__ import annotations
+
+import getpass
+import hashlib
+import json
+import re
+from pathlib import Path
+from typing import Iterable
+
+from .workspace import SrError
+
+# Версия правил: поднимается при любом изменении поведения санитайзера, которое меняет вывод
+# (порядок правил, новые метки). Входит в `fingerprint` вместе с самими шаблонами.
+RULES_VERSION = 4
+
+NAME_MARK = "[NAME]"
+EXTRA_MARK = "[REDACTED]"
+NAMES_KEY = "names"
+EXTRA_KEY = "extra"
+USER_MARK = "[USER]"
+LOCAL_USER_KEY = "local_user"
+# Логины, совпадающие с обычными словами логов: их замена испортила бы текст.
+GENERIC_LOGINS = frozenset({"user", "users", "admin", "root", "ubuntu", "runner", "home", "dev",
+                            "test", "guest", "default", "developer", "vagrant", "docker"})
+
+# Символ логина в домашнем пути: всё, кроме разделителей пути, пробелов, кавычек, скобок и
+# запрещённых в именах Windows символов. `[` не входит — маска `[USER]` повторно не меняется.
+_LOGIN_CH = r"""[^\\/\s"'<>|:*?()\[\],;`]"""
+_LOGIN_WIN = rf"(?:{_LOGIN_CH}+(?: {_LOGIN_CH}+)*(?=[\\/])|{_LOGIN_CH}+)"
+
+_SECRET_WORDS = (r"(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|"
+                 r"private[_-]?key|credential")
+
+# (имя правила, регулярка, подстановка). Группа `val` — значение секрета для ALLOWLIST.
+RULES: list[tuple[str, str, str]] = [
+    # ── секреты ────────────────────────────────────────────────────────────────
+    ("aws_key", r"\b(?:AKIA|ASIA|AROA|ABIA|ACCA)[A-Z0-9]{16}\b", "[AWS_KEY]"),
+    ("github_token", r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b", "[GITHUB_TOKEN]"),
+    ("github_pat", r"\bgithub_pat_[A-Za-z0-9_]{20,}\b", "[GITHUB_TOKEN]"),
+    ("anthropic_key", r"\bsk-ant-[A-Za-z0-9_-]{10,}\b", "[API_KEY]"),
+    ("openai_key", r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b", "[API_KEY]"),
+    ("stripe_key", r"\bsk_(?:live|test)_[A-Za-z0-9]{10,}\b", "[API_KEY]"),
+    ("slack_token", r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", "[SLACK_TOKEN]"),
+    ("google_key", r"\bAIza[A-Za-z0-9_-]{35}\b", "[API_KEY]"),
+    ("jwt", r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b", "[JWT]"),
+    ("private_key", r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----",
+     "[PRIVATE_KEY]"),
+    # Присваивание в кавычках: DB_PASSWORD = "hunter2", api_key: 'abc', self.token="xyz".
+    # Префикс до ключевого слова обязателен: без него правило не видит DB_PASSWORD.
+    # Lookbehind: матч начинается только с начала токена, иначе длинный токен без разделителей
+    # проверяется с каждой позиции (квадратично: 20 000 символов — 15 с).
+    ("code_secret", r"(?i)(?<![A-Za-z0-9_.\-])[A-Za-z0-9_.\-]*" + _SECRET_WORDS + r"|conn[_-]?str)"
+     r"""[A-Za-z0-9_]*\s*[:=]\s*\\*["'](?P<val>[^"'\n\\]{4,})\\*["']""",
+     "[SECRET_ASSIGNMENT]"),
+    # То же без кавычек: DB_PASSWORD=hunter2, export API_TOKEN=abc.
+    ("env_secret", r"(?i)(?<![A-Za-z0-9_.\-])[A-Za-z0-9_.\-]*" + _SECRET_WORDS + r")"
+     r"""[A-Za-z0-9_]*\s*=\s*(?P<val>[^\s"'\n,;)]{4,})""",
+     "[SECRET_ASSIGNMENT]"),
+    # Строка подключения с паролем: postgres://user:pass@host.
+    ("conn_string", r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s:@/]+:(?P<val>[^\s:@/]+)@[^\s/\"']+",
+     "[CONNECTION_STRING]"),
+
+    # ── персональные данные ────────────────────────────────────────────────────
+    ("email", r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b", "[EMAIL]"),
+    # Хвостовой lookahead пропускает точку конца предложения, но не десятичное продолжение.
+    ("phone", r"(?<![\w.])(?:\+?\d{1,3}[ \-]?)?\(?\d{2,4}\)?[ \-]?\d{3}[ \-]?\d{2}[ \-]?\d{2}"
+     r"(?!\w|\.\d)", "[PHONE]"),
+    ("passport_by_ru", r"\b\d{4}[ \-]?\d{6}\b", "[DOC_ID]"),
+    ("card", r"\b(?:\d{4}[ \-]?){3}\d{4}\b", "[CARD]"),
+    ("iban", r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b", "[IBAN]"),
+
+    # ── имя пользователя ОС в путях (логин часто совпадает с фамилией) ─────────
+    # Логин — любые символы (кириллица, `@`, `%`…) до разделителя пути, пробела, кавычки или
+    # скобки. macOS/Linux: каталог `Users` или `home` в корне плюс логин, с учётом регистра (маршрут
+    # URL `/api/users/42` — не домашний каталог); после буквы диска (`C:` и прямые слэши) и после
+    # `/mnt/<диск>/` (WSL) путь Windows — его ловит `home_path_win`.
+    ("home_path", r"(?<![A-Za-z]:)(?<!/[Mm][Nn][Tt]/[A-Za-z])(?P<pfx>/(?:Users|home)/)" + _LOGIN_CH + "+",
+     r"\g<pfx>[USER]"),
+    # Windows: `C:\Users\<логин>` сырой и экранированный в JSON-строках (`\\`, `\\\\`), с буквой
+    # диска и без (`..\\..\\Users\\<логин>`), смешанные слэши (`C:\Users/<логин>`, `C:/Users\<логин>`),
+    # диск с прямыми слэшами и WSL `/mnt/c/users/<логин>` в любом регистре. Логин Windows может содержать пробел
+    # (`Ivan Petrov`): слова через пробел берутся, если за ними идёт разделитель пути, иначе — одно слово.
+    ("home_path_win", r"(?i)(?P<pfx>\\+Users[\\/]+|/+Users\\+|(?<![a-z0-9])[a-z]:/+Users/+"
+     r"|/mnt/[a-z]/+Users/+)" + _LOGIN_WIN, r"\g<pfx>[USER]"),
+    # Свёрнутая форма путей в папках сессий агента: -Users-<логин>-…
+    # macOS `-Users-<логин>-…` и Linux `-home-<логин>-…`; не внутри слова («my-home-page»).
+    ("home_path_munged", r"(?<![A-Za-z0-9])(?P<pfx>-(?:Users|home)-)[A-Za-z0-9_.]+(?=-)",
+     r"\g<pfx>[USER]"),
+
+    # ── внутренняя инфраструктура ──────────────────────────────────────────────
+    ("internal_host", r"(?i)\bhttps?://[a-z0-9.\-]+\.(?:internal|local|corp|intranet|lan)\b"
+     r"[^\s\"'<>]*", "[INTERNAL_URL]"),
+    ("private_ip", r"\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b",
+     "[PRIVATE_IP]"),
+]
+
+# Значения, похожие на секрет, но им не являющиеся. Сравнение — fullmatch по значению.
+ALLOWLIST = re.compile(
+    r"(?i)(?:example|test|fake|dummy|sample|placeholder|your[_-]?key|changeme|x{3,}"
+    r"|bearer|basic|digest|none|null|true|false|string|number|boolean|required|optional"
+    r"|env|secret_name|redacted"
+    r"|(?:process\.env|os\.environ|os\.getenv)(?:[.\[(].*)?"
+    r"|<[^>]{1,40}>|\$\{[^}]{1,40}\}|\{\{[^}]{1,40}\}\})"
+)
+
+UUID_RE = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
+                     r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?![0-9A-Fa-f])")
+UUID_GUARDED = frozenset({"phone", "card", "passport_by_ru"})
+
+# Значения этих ключей (на любом уровне JSON) — идентификаторы, время и типы: не санитайзятся.
+STRUCTURAL_KEYS = frozenset({
+    "sessionId", "session_id", "uuid", "parentUuid", "timestamp", "requestId", "agentId",
+    "agentType", "tool_use_id", "toolUseId", "id", "type", "model", "subtype", "stop_reason",
+})
+
+# Граница имени и логина: соседний символ не буква и не цифра. `_` — разделитель, а не часть слова:
+# клоны вида `<хэндл>__<репо>` и `x_<логин>_y` в путях логов.
+_BOUND_L = r"(?<![^\W_])"
+_BOUND_R = r"(?![^\W_])"
+
+_COMPILED = [(rule, re.compile(pattern), repl) for rule, pattern, repl in RULES]
+# Секреты и `email` применяются до имён (см. описание файла), остальные правила — после.
+_EMAIL_AT = next(i for i, (rule, _, _) in enumerate(RULES) if rule == "email")
+FIRST_RULES = frozenset(rule for rule, _, _ in RULES[:_EMAIL_AT + 1])
+_COMPILED_FIRST = _COMPILED[:_EMAIL_AT + 1]
+_COMPILED_REST = _COMPILED[_EMAIL_AT + 1:]
+
+
+def _bump(hits: dict[str, int], key: str, n: int = 1) -> None:
+    hits[key] = hits.get(key, 0) + n
+
+
+def _in_uuid(spans: list[tuple[int, int]], start: int, end: int) -> bool:
+    return any(s < end and start < e for s, e in spans)
+
+
+class Sanitizer:
+    """Набор правил с именами людей и пользовательскими шаблонами; строится один раз на прогон."""
+
+    def __init__(self, names: Iterable[str] = (), extra_patterns: Iterable[str] = (),
+                 local_users: Iterable[str] = ()) -> None:
+        clean: list[str] = []
+        seen: set[str] = set()
+        for name in names:
+            if not isinstance(name, str):
+                raise SrError(f"sanitize: имя не строка (получено {name!r}, "
+                              f"тип {type(name).__name__})", 1)
+            name = name.strip()
+            if name and name.casefold() not in seen:
+                seen.add(name.casefold())
+                clean.append(name)
+        clean.sort(key=len, reverse=True)  # длинные раньше коротких: «Иван Петров» до «Иван»
+        self.names = clean
+        self._names_re = (re.compile(_BOUND_L + "(?:" + "|".join(re.escape(n) for n in clean)
+                                     + ")" + _BOUND_R, re.IGNORECASE) if clean else None)
+        users = sorted({u for u in local_users if isinstance(u, str) and u}, key=len, reverse=True)
+        self.local_users = users
+        self._users_re = (re.compile(_BOUND_L + "(?:" + "|".join(re.escape(u) for u in users)
+                                     + ")" + _BOUND_R, re.IGNORECASE) if users else None)
+        self._extra: list[re.Pattern] = []
+        self.extra_patterns: list[str] = []
+        for pat in extra_patterns:
+            try:
+                self._extra.append(re.compile(pat))
+            except (re.error, TypeError) as e:
+                raise SrError(f"sanitize: битый шаблон в extra_patterns ({pat!r}): {e}", 1) from e
+            self.extra_patterns.append(pat)
+
+    def sanitize_text(self, text: str) -> tuple[str, dict[str, int]]:
+        """Возвращает (очищенный текст, {правило: число замен})."""
+        if not isinstance(text, str):
+            raise SrError(f"sanitize: ожидался текст, получен {type(text).__name__}", 1)
+        hits: dict[str, int] = {}
+        text = self._apply(text, hits)
+        return text, hits
+
+    def sanitize_obj(self, obj: object) -> tuple[object, dict[str, int]]:
+        """Рекурсивно по строковым значениям; возвращает новый объект и hits. Вход не меняется."""
+        hits: dict[str, int] = {}
+        return self._walk(obj, hits), hits
+
+    # ── внутреннее ────────────────────────────────────────────────────────────
+
+    def _walk(self, obj: object, hits: dict[str, int]) -> object:
+        if isinstance(obj, str):
+            return self._apply(obj, hits)
+        if isinstance(obj, dict):
+            return {k: (v if k in STRUCTURAL_KEYS else self._walk(v, hits)) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._walk(v, hits) for v in obj]
+        return obj
+
+    def _apply(self, text: str, hits: dict[str, int]) -> str:
+        for rule, pattern, repl in _COMPILED_FIRST:
+            text = self._apply_rule(rule, pattern, repl, text, hits)
+        if self._names_re is not None:
+            text, n = self._names_re.subn(NAME_MARK, text)
+            if n:
+                _bump(hits, NAMES_KEY, n)
+        for rule, pattern, repl in _COMPILED_REST:
+            text = self._apply_rule(rule, pattern, repl, text, hits)
+        if self._users_re is not None:  # после home_path: сначала целые пути, потом голый логин
+            text, n = self._users_re.subn(USER_MARK, text)
+            if n:
+                _bump(hits, LOCAL_USER_KEY, n)
+        for pattern in self._extra:
+            text, n = pattern.subn(EXTRA_MARK, text)
+            if n:
+                _bump(hits, EXTRA_KEY, n)
+        return text
+
+    @staticmethod
+    def _apply_rule(rule: str, pattern: re.Pattern, repl: str, text: str,
+                    hits: dict[str, int]) -> str:
+        spans = ([m.span() for m in UUID_RE.finditer(text)] if rule in UUID_GUARDED else [])
+
+        def _sub(m: re.Match) -> str:
+            if spans and _in_uuid(spans, m.start(), m.end()):
+                return m.group(0)
+            value = m.group("val") if "val" in pattern.groupindex else m.group(0)
+            if value is not None and ALLOWLIST.fullmatch(value):
+                return m.group(0)
+            _bump(hits, rule)
+            return m.expand(repl) if "\\" in repl else repl
+
+        return pattern.sub(_sub, text)
+
+
+def fingerprint(sanitizer: Sanitizer) -> str:
+    """sha256 набора правил: `RULES_VERSION`, шаблоны `RULES`/`ALLOWLIST`/`STRUCTURAL_KEYS`,
+    отсортированные `names`, `extra_patterns`, `local_users`. Порядок в конфиге не влияет."""
+    payload = {
+        "rules_version": RULES_VERSION,
+        "rules": [[rule, pattern, repl] for rule, pattern, repl in RULES],
+        "first": sorted(FIRST_RULES),
+        "allowlist": ALLOWLIST.pattern,
+        "structural": sorted(STRUCTURAL_KEYS),
+        "names": sorted(n.casefold() for n in sanitizer.names),
+        "extra_patterns": sorted(sanitizer.extra_patterns),
+        "local_users": sorted(u.casefold() for u in sanitizer.local_users),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def names_from_people(cards: list[dict]) -> list[str]:
+    """Имена для санитайзера из карточек людей: `name` целиком и каждое слово — если в них ≥ 3 букв,
+    без дублей (без учёта регистра). Карточка без `name` (или с пустым) пропускается. Короткие имена
+    («Я» в карточке self, «Ли») не берутся: иначе заменялось бы каждое такое слово в тексте."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        if value.casefold() not in seen:
+            seen.add(value.casefold())
+            out.append(value)
+
+    for i, card in enumerate(cards):
+        if not isinstance(card, dict):
+            raise SrError(f"sanitize: карточка #{i} не отображение (тип {type(card).__name__})", 1)
+        name = card.get("name")
+        if name is None:
+            continue
+        if not isinstance(name, str):
+            raise SrError(f"sanitize: name в карточке #{i} не строка (в карточке: {name!r}, "
+                          f"тип {type(name).__name__})", 1)
+        name = " ".join(name.split())
+        if not name:
+            continue
+        if sum(c.isalpha() for c in name) >= 3:
+            add(name)
+        for word in name.split(" "):
+            if sum(c.isalpha() for c in word) >= 3:
+                add(word)
+    return out
+
+
+def local_user_names() -> list[str]:
+    """Логин ОС и имя домашней папки — они попадают в логи вне путей (`ls -l`, приглашение шелла).
+
+    Берутся, если в них ≥ 3 символов и это не обычное слово (`GENERIC_LOGINS`)."""
+    out: list[str] = []
+    candidates = []
+    try:
+        candidates.append(getpass.getuser())
+    except (KeyError, OSError):  # нет записи пользователя (контейнер) — остаётся имя папки
+        pass
+    candidates.append(Path.home().name)
+    for value in candidates:
+        if (value and len(value) >= 3 and value.casefold() not in GENERIC_LOGINS
+                and value.casefold() not in {o.casefold() for o in out}):
+            out.append(value)
+    return out
+
+
+def report(file: str, hits: dict[str, int]) -> dict:
+    """Отчёт санитайзера по файлу: `{file, rules_hit{правило: n} без имён, renamed}`."""
+    return {
+        "file": file,
+        "rules_hit": {k: v for k, v in hits.items() if k != NAMES_KEY},
+        "renamed": hits.get(NAMES_KEY, 0),
+    }

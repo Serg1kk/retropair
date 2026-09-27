@@ -1,0 +1,12 @@
+id: p05
+name: "Марина Мельчук"
+group: demo
+feedback:
+  address: ты
+  length: detailed
+  tone: direct
+  opening_summary: true
+  mark_sections: false
+  channel: file
+  value_focus: full
+  prefix: ""

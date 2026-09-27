@@ -1,0 +1,42 @@
+"""Команда `inventory`: пересчёт `logs-index.json` по снапшотам `.sessionretro/logs/`.
+
+Источники не читаются и снапшоты не пишутся (это делает `collect`); только скан снапшотов,
+слияние с прежним индексом и атомарная запись под блокировкой `.sessionretro/collect.lock`.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from lib import inventory, lock
+from lib.config import load_config
+from lib.workspace import find_workspace, ws_paths
+
+def register(subparsers) -> None:
+    p = subparsers.add_parser("inventory", help="пересчитать инвентарь логов по снапшотам")
+    p.add_argument("--json", action="store_true", help="вывести logs-index.json целиком")
+    p.set_defaults(func=handle)
+
+
+def format_text(index: dict, path: Path) -> str:
+    counts = inventory.summary(index)
+    lines = [f"инвентарь: {len(index['logs'])} записей ({path})",
+             " · ".join(f"{label}: {counts[state]}" for state, label in inventory.STATE_LABELS)]
+    if index.get("warnings"):
+        lines.append("предупреждения:")
+        lines += [f"- {w}" for w in index["warnings"]]
+    return "\n".join(lines)
+
+
+def handle(args) -> int:
+    root = find_workspace(Path.cwd(), args.workspace)
+    cfg = load_config(root)
+    paths = ws_paths(root)
+    with lock.file_lock(paths["state_dir"] / "collect"):
+        index = inventory.rebuild(root, cfg)
+    if args.json:
+        print(json.dumps(index, ensure_ascii=False, indent=2))
+    else:
+        print(format_text(index, paths["logs_index"]))
+    return 0

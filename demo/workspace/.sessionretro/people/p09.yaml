@@ -1,0 +1,12 @@
+id: p09
+name: "Гордей Панов"
+group: demo
+feedback:
+  address: ты
+  length: short
+  tone: direct
+  opening_summary: false
+  mark_sections: true
+  channel: file
+  value_focus: finding
+  prefix: ""

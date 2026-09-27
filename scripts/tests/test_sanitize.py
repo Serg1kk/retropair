@@ -1,0 +1,428 @@
+"""Санитайзер: правила секретов и персональных данных, ALLOWLIST по значению целиком, имена по
+целому слову, JSON-режим без поломки структуры, UUID и служебные ключи не режутся, отчёт.
+
+Токены-образцы и домашние пути собираются конкатенацией в рантайме: в исходнике их литералов нет.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import re
+import unittest
+
+import _util  # noqa: F401 — кладёт scripts/ в sys.path
+from _util import SCRIPTS
+
+from lib import cc_jsonl, sanitize
+from lib.workspace import SrError
+
+S = sanitize.Sanitizer(names=["Иван Петров", "Иван", "Петров"])
+PLAIN = sanitize.Sanitizer()
+UUID = "11111111-2222-3333-4444-555555555555"
+TS = "2026-09-27T10:15:30.123Z"
+HOME_MAC = "/" + "Users/alice/x"
+MAIL = "bob" + "@" + "mail-host.org"
+
+
+class Allowlist(unittest.TestCase):
+    def test_allowlist_whole_value(self):
+        out, hits = S.sanitize_text('PASSWORD="test-prod-2024"')
+        self.assertNotIn("test-prod-2024", out)
+        self.assertIn("[SECRET_ASSIGNMENT]", out)
+        self.assertEqual(hits, {"code_secret": 1})
+
+    def test_allowlist_keeps_placeholders(self):
+        for s in ('PASSWORD="test"', 'TOKEN="${TOKEN}"', 'API_KEY="<your-key>"',
+                  "password=changeme", 'secret: "{{ vault_secret }}"', 'token_type="bearer"'):
+            out, hits = S.sanitize_text(s)
+            self.assertEqual(out, s)
+            self.assertEqual(hits, {})
+
+    def test_word_inside_value_does_not_whitelist(self):
+        out, _ = PLAIN.sanitize_text('export DB_PASSWORD="prod-test-2026"')
+        self.assertNotIn("prod-test-2026", out)
+
+    def test_key_with_test_inside_is_cut(self):
+        key = "sk-" + "proj-" + "abcTESTabc-test-0123456789abcdef"
+        out, hits = PLAIN.sanitize_text(f"key {key} end")
+        self.assertNotIn(key, out)
+        self.assertEqual(hits, {"openai_key": 1})
+
+    def test_conn_string_on_example_domain_is_cut(self):
+        out, hits = PLAIN.sanitize_text("postgres://u:pass1234" + "@" + "db.example.com/app")
+        self.assertNotIn("pass1234", out)
+        self.assertEqual(hits, {"conn_string": 1})
+
+    def test_env_reference_kept(self):
+        for s in ("API_TOKEN=process.env.API_TOKEN", 'SECRET=os.environ["SECRET"]'):
+            out, hits = PLAIN.sanitize_text(s)
+            self.assertEqual(out, s)
+            self.assertEqual(hits, {})
+
+
+class Rules(unittest.TestCase):
+    CASES = {
+        "aws_key": ("AKIA" + "ABCDEFGHIJKLMNOP", "[AWS_KEY]"),
+        "github_token": ("ghp" + "_" + "a" * 36, "[GITHUB_TOKEN]"),
+        "github_pat": ("github" + "_pat_" + "B" * 30, "[GITHUB_TOKEN]"),
+        "anthropic_key": ("sk-" + "ant-" + "api03-AbCdEf123456", "[API_KEY]"),
+        "openai_key": ("sk-" + "proj-" + "Q" * 24, "[API_KEY]"),
+        "stripe_key": ("sk_" + "live_" + "Z" * 16, "[API_KEY]"),
+        "slack_token": ("xox" + "b-" + "1234567890-abcdef", "[SLACK_TOKEN]"),
+        "google_key": ("AI" + "za" + "K" * 35, "[API_KEY]"),
+        "jwt": ("ey" + "JhbGciOiJIUzI1.ey" + "JzdWIiOiIxMjM0.SflKxwRJSMeKKF2QT4", "[JWT]"),
+        "private_key": ("-----BEGIN RSA " + "PRIVATE KEY-----\nMIIabc\n-----END RSA "
+                        + "PRIVATE KEY-----", "[PRIVATE_KEY]"),
+        "code_secret": ('db_password = "hunter22"', "[SECRET_ASSIGNMENT]"),
+        "env_secret": ("export API_TOKEN=hunter22", "[SECRET_ASSIGNMENT]"),
+        "conn_string": ("mysql://root:hunter22@db1/app", "[CONNECTION_STRING]"),
+        "email": ("bob.smith" + "@" + "mail-host.org", "[EMAIL]"),
+        "phone": ("+375 29 123-45-67", "[PHONE]"),
+        "passport_by_ru": ("4510 123456", "[DOC_ID]"),
+        "card": ("4111-1111-1111-1111", "[CARD]"),
+        "iban": ("DE89370400440532013000", "[IBAN]"),
+        "home_path": (HOME_MAC, "[USER]"),
+        "home_path_win": ("C:\\Users\\alice\\proj", "[USER]"),
+        "home_path_munged": ("-Users-alice-proj", "[USER]"),
+        "internal_host": ("http://build.corp/job/1", "[INTERNAL_URL]"),
+        "private_ip": ("192.168.1.10", "[PRIVATE_IP]"),
+    }
+
+    def test_each_rule_fires(self):
+        for rule, (sample, marker) in self.CASES.items():
+            with self.subTest(rule=rule):
+                out, hits = PLAIN.sanitize_text(f"см. {sample} тут")
+                self.assertIn(marker, out)
+                self.assertIn(rule, hits)
+
+    def test_home_paths_keep_prefix(self):
+        self.assertEqual(PLAIN.sanitize_text(HOME_MAC)[0], "/" + "Users/[USER]/x")
+        self.assertEqual(PLAIN.sanitize_text("/home/alice/x")[0], "/home/[USER]/x")
+        self.assertEqual(PLAIN.sanitize_text("-Users-alice-proj")[0], "-Users-[USER]-proj")
+
+    def test_windows_home_escaped_and_without_drive(self):
+        # Windows-путь в сыром виде, в JSON-строке (\\), дважды экранированный (\\\\), без буквы
+        # диска и с прямыми слэшами: логин → [USER], префикс как был.
+        bs = "\\"
+        cases = [
+            ("C:" + bs + "Users" + bs + "alice" + bs + "x", "C:" + bs + "Users" + bs + "[USER]" + bs + "x"),
+            ("C:" + bs * 2 + "Users" + bs * 2 + "alice" + bs * 2 + "x",
+             "C:" + bs * 2 + "Users" + bs * 2 + "[USER]" + bs * 2 + "x"),
+            ("C:" + bs * 4 + "Users" + bs * 4 + "alice", "C:" + bs * 4 + "Users" + bs * 4 + "[USER]"),
+            (".." + bs * 2 + "Users" + bs * 2 + "alice", ".." + bs * 2 + "Users" + bs * 2 + "[USER]"),
+            ("D:/" + "Users/alice", "D:/" + "Users/[USER]"),
+        ]
+        for raw, want in cases:
+            with self.subTest(raw=raw):
+                out, hits = PLAIN.sanitize_text(f"cwd {raw} ok")
+                self.assertEqual(out, f"cwd {want} ok")
+                self.assertEqual(sum(hits.values()), 1, hits)
+                self.assertNotIn("alice", out)
+
+    def test_home_login_any_letters_space_mixed_slashes_wsl(self):
+        # Логин — любые символы до разделителя: кириллица, пробел внутри (Windows), смешанные
+        # слэши, WSL `/mnt/c/users/<логин>` в любом регистре; префикс остаётся как был.
+        bs = "\\"
+        cases = [
+            ("C:" + bs + "Users" + bs + "Иван" + bs + "proj", "C:" + bs + "Users" + bs + "[USER]" + bs + "proj"),
+            ("C:" + bs + "Users" + bs + "Ivan Petrov" + bs + "proj",
+             "C:" + bs + "Users" + bs + "[USER]" + bs + "proj"),
+            ("C:" + bs * 2 + "Users" + bs * 2 + "Иван Петров" + bs * 2 + "p",
+             "C:" + bs * 2 + "Users" + bs * 2 + "[USER]" + bs * 2 + "p"),
+            ("C:" + bs + "Users" + "/alice/proj", "C:" + bs + "Users" + "/[USER]/proj"),
+            ("C:/" + "Users" + bs + "alice" + bs + "proj", "C:/" + "Users" + bs + "[USER]" + bs + "proj"),
+            ("c:/" + "users/ivanp/proj", "c:/" + "users/[USER]/proj"),
+            ("/mnt/c/" + "users/ivanp/x", "/mnt/c/" + "users/[USER]/x"),
+            ("/MNT/D/" + "Users/Ivan Petrov/x", "/MNT/D/" + "Users/[USER]/x"),
+            ("/" + "Users/Иван/x", "/" + "Users/[USER]/x"),
+            ("/home/иван/x", "/home/[USER]/x"),
+        ]
+        for raw, want in cases:
+            with self.subTest(raw=raw):
+                out, hits = PLAIN.sanitize_text(f"cwd {raw} ok")
+                self.assertEqual(out, f"cwd {want} ok")
+                self.assertEqual(sum(hits.values()), 1, hits)
+                self.assertEqual(PLAIN.sanitize_text(out), (out, {}), "повторный проход")
+
+    def test_home_login_without_separator_takes_one_word(self):
+        # Логин без следующего разделителя — одно слово, прочий текст строки не съедается.
+        bs = "\\"
+        out, _ = PLAIN.sanitize_text("cd C:" + bs + "Users" + bs + "alice and go /tmp")
+        self.assertEqual(out, "cd C:" + bs + "Users" + bs + "[USER] and go /tmp")
+        out, _ = PLAIN.sanitize_text("see (/" + "Users/alice), then")
+        self.assertEqual(out, "see (/" + "Users/[USER]), then")
+
+    def test_url_users_route_untouched(self):
+        for text in ("GET /api/users/42", "https://x.test/api/users/42/edit", "users/42"):
+            with self.subTest(text=text):
+                self.assertEqual(PLAIN.sanitize_text(text), (text, {}))
+
+    def test_windows_home_idempotent(self):
+        masked = "C:" + "\\" + "Users" + "\\" + "[USER]" + "\\" + "x"
+        self.assertEqual(PLAIN.sanitize_text(masked), (masked, {}))
+
+    def test_windows_home_in_json_obj(self):
+        raw = json.dumps({"cwd": "C:" + "\\" + "Users" + "\\" + "alice" + "\\" + "proj"})
+        out, hits = PLAIN.sanitize_text(raw)
+        self.assertNotIn("alice", out)
+        self.assertEqual(json.loads(out)["cwd"], "C:" + "\\" + "Users" + "\\" + "[USER]" + "\\" + "proj")
+        self.assertEqual(hits, {"home_path_win": 1})
+
+    def test_munged_linux_home(self):
+        # Linux-форма папки сессий: -home-<логин>-…; внутри слова («my-home-page») не режется.
+        self.assertEqual(PLAIN.sanitize_text("projects/-home-jdoe-proj")[0],
+                         "projects/-home-[USER]-proj")
+        self.assertEqual(PLAIN.sanitize_text("-home-jdoe-proj")[1], {"home_path_munged": 1})
+        self.assertEqual(PLAIN.sanitize_text("my-home-page-v2"), ("my-home-page-v2", {}))
+
+    def test_rules_list_complete(self):
+        self.assertEqual({r for r, _, _ in sanitize.RULES}, set(self.CASES))
+
+    def test_clean_text_untouched(self):
+        s = "Обычный текст: функция add(a, b) и 3 теста, версия 1.2.3."
+        self.assertEqual(PLAIN.sanitize_text(s), (s, {}))
+
+
+class Uuid(unittest.TestCase):
+    def test_uuid_not_phone(self):
+        out, hits = PLAIN.sanitize_text(f"id {UUID}")
+        self.assertEqual(out, f"id {UUID}")
+        self.assertNotIn("[PHONE]", out)
+        self.assertEqual(hits, {})
+
+    def test_uuid_not_card(self):
+        u = "12345678-1234-1234-1234-123456789012"
+        out, hits = PLAIN.sanitize_text(f"файл {u}.jsonl")
+        self.assertEqual(out, f"файл {u}.jsonl")
+        self.assertEqual(hits, {})
+
+    def test_phone_next_to_uuid_still_cut(self):
+        out, hits = PLAIN.sanitize_text(f"{UUID} звони +375 29 123-45-67")
+        self.assertIn(UUID, out)
+        self.assertEqual(hits, {"phone": 1})
+
+
+class Names(unittest.TestCase):
+    def test_names_whole_word(self):
+        out, hits = S.sanitize_text("Иван сказал; Иванов не трогаем; петров тоже имя")
+        self.assertIn("Иванов", out)
+        self.assertEqual(hits["names"], 2)
+        self.assertEqual(out, "[NAME] сказал; Иванов не трогаем; [NAME] тоже имя")
+
+    def test_name_inside_word_on_left_untouched(self):
+        self.assertEqual(S.sanitize_text("ДеИван и ИванПетров"), ("ДеИван и ИванПетров", {}))
+
+    def test_underscore_is_word_boundary(self):
+        # Клоны вида <хэндл>__<репо> в путях логов: `_` — разделитель, а не часть имени.
+        s = sanitize.Sanitizer(names=["alice"])
+        out, hits = s.sanitize_text("alice__repo x_alice_y Петров_2 malice")
+        self.assertEqual(out, "[NAME]__repo x_[NAME]_y Петров_2 malice")
+        self.assertEqual(hits, {"names": 2})
+        self.assertEqual(S.sanitize_text("Петров_2")[0], "[NAME]_2")
+
+    def test_full_name_before_parts(self):
+        out, hits = S.sanitize_text("пишет Иван Петров.")
+        self.assertEqual(out, "пишет [NAME].")
+        self.assertEqual(hits, {"names": 1})
+
+    def test_blank_names_ignored(self):
+        s = sanitize.Sanitizer(names=["", "  ", "Ли"])
+        self.assertEqual(s.sanitize_text("Ли и Лиза"), ("[NAME] и Лиза", {"names": 1}))
+
+    def test_names_from_people(self):
+        self.assertEqual(sanitize.names_from_people([{"name": "Анна Ли"}]), ["Анна Ли", "Анна"])
+
+    def test_short_full_name_skipped(self):
+        # Карточка self по умолчанию: name "Я" — иначе каждое слово «я» в логе стало бы [NAME].
+        self.assertEqual(sanitize.names_from_people([{"name": "Я"}, {"name": "Ли"}]), [])
+        out, hits = sanitize.Sanitizer(names=sanitize.names_from_people([{"name": "Я"}])).sanitize_text(
+            "я сделал, а ты?")
+        self.assertEqual(out, "я сделал, а ты?")
+
+    def test_names_from_people_dedup_and_skip_nameless(self):
+        cards = [{"name": "Анна Ли"}, {"id": "default"}, {"name": "анна"}, {"name": "Bob O'Neil"}]
+        self.assertEqual(sanitize.names_from_people(cards),
+                         ["Анна Ли", "Анна", "Bob O'Neil", "Bob", "O'Neil"])
+
+    def test_names_from_people_bad_type(self):
+        with self.assertRaises(SrError) as cm:
+            sanitize.names_from_people([{"name": 42}])
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("42", cm.exception.message)
+
+
+class EmailBeforeNames(unittest.TestCase):
+    def test_email_with_name_inside_is_email(self):
+        mail = "ivanov" + "@" + "corp.com"
+        out, hits = sanitize.Sanitizer(names=["Ivanov"]).sanitize_text(f"пиши на {mail}, Ivanov")
+        self.assertEqual(out, "пиши на [EMAIL], [NAME]")
+        self.assertEqual(hits, {"email": 1, "names": 1})
+
+
+class Fingerprint(unittest.TestCase):
+    def test_same_config_same_fp_order_insensitive(self):
+        a = sanitize.Sanitizer(names=["Acme", "Globex"], extra_patterns=["A-\\d+", "B-\\d+"],
+                               local_users=["jdoe", "jd2"])
+        b = sanitize.Sanitizer(names=["Globex", "Acme"], extra_patterns=["B-\\d+", "A-\\d+"],
+                               local_users=["jd2", "jdoe"])
+        self.assertEqual(sanitize.fingerprint(a), sanitize.fingerprint(b))
+        self.assertRegex(sanitize.fingerprint(a), r"^[0-9a-f]{64}$")
+
+    def test_fp_changes_with_names_patterns_users_and_version(self):
+        base = sanitize.fingerprint(sanitize.Sanitizer(names=["Acme"]))
+        variants = [
+            sanitize.Sanitizer(names=["Acme", "Globex"]),
+            sanitize.Sanitizer(names=["Acme"], extra_patterns=["X-\\d+"]),
+            sanitize.Sanitizer(names=["Acme"], local_users=["jdoe"]),
+        ]
+        for s in variants:
+            self.assertNotEqual(sanitize.fingerprint(s), base)
+        from unittest import mock
+        with mock.patch.object(sanitize, "RULES_VERSION", sanitize.RULES_VERSION + 1):
+            self.assertNotEqual(sanitize.fingerprint(sanitize.Sanitizer(names=["Acme"])), base)
+
+    def test_sanitize_is_idempotent_on_marks(self):
+        s = sanitize.Sanitizer(names=["Acme"], extra_patterns=["INT-\\d+"], local_users=["jdoe"])
+        once, _ = s.sanitize_text(f"Acme {MAIL} {HOME_MAC} INT-7 jdoe -Users-jdoe-p")
+        self.assertEqual(s.sanitize_text(once), (once, {}))
+
+
+class Extra(unittest.TestCase):
+    def test_extra_patterns(self):
+        s = sanitize.Sanitizer(extra_patterns=[r"ACME-\d+"])
+        self.assertEqual(s.sanitize_text("тикет ACME-4411 и ACME-7"),
+                         ("тикет [REDACTED] и [REDACTED]", {"extra": 2}))
+
+    def test_bad_regex(self):
+        with self.assertRaises(SrError) as cm:
+            sanitize.Sanitizer(extra_patterns=["(unclosed"])
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("(unclosed", cm.exception.message)
+
+
+class JsonMode(unittest.TestCase):
+    def test_json_stays_json(self):
+        obj = {"message": {"content": f'export DB_PASSWORD="prod-x-99" и {HOME_MAC}'}}
+        out, hits = S.sanitize_obj(obj)
+        json.dumps(out)
+        self.assertNotIn("prod-x-99", out["message"]["content"])
+        self.assertNotIn("alice", out["message"]["content"])
+        self.assertEqual(hits, {"code_secret": 1, "home_path": 1})
+
+    def test_structural_keys_untouched(self):
+        obj = {"type": "user", "uuid": UUID, "parentUuid": UUID, "sessionId": UUID,
+               "timestamp": TS, "requestId": "req_4111111111111111",
+               "message": {"id": "msg_01", "model": "m", "stop_reason": "end_turn",
+                           "content": [{"type": "tool_result", "tool_use_id": "toolu_1",
+                                        "content": f"cwd {HOME_MAC}"}]},
+               "agentId": "a1", "agentType": "general-purpose", "subtype": "x",
+               "toolUseId": "t", "session_id": UUID}
+        out, hits = PLAIN.sanitize_obj(obj)
+        for k in ("type", "uuid", "parentUuid", "sessionId", "timestamp", "requestId",
+                  "agentId", "agentType", "subtype", "toolUseId", "session_id"):
+            self.assertEqual(out[k], obj[k], k)
+        self.assertEqual(out["message"]["id"], "msg_01")
+        self.assertEqual(out["message"]["content"][0]["tool_use_id"], "toolu_1")
+        self.assertEqual(out["message"]["content"][0]["content"], "cwd /" + "Users/[USER]/x")
+        self.assertEqual(hits, {"home_path": 1})
+
+    def test_structural_key_value_skipped_even_if_secretlike(self):
+        out, hits = PLAIN.sanitize_obj({"agentType": MAIL, "cwd": HOME_MAC})
+        self.assertEqual(out["agentType"], MAIL)
+        self.assertEqual(out["cwd"], "/" + "Users/[USER]/x")
+        self.assertEqual(hits, {"home_path": 1})
+
+    def test_keys_not_touched_and_input_not_mutated(self):
+        obj = {HOME_MAC: ["a", {"k": MAIL}, 3, None, True, 1.5]}
+        before = copy.deepcopy(obj)
+        out, hits = PLAIN.sanitize_obj(obj)
+        self.assertEqual(obj, before)
+        self.assertEqual(list(out), [HOME_MAC])
+        self.assertEqual(out[HOME_MAC], ["a", {"k": "[EMAIL]"}, 3, None, True, 1.5])
+        self.assertEqual(hits, {"email": 1})
+
+    def test_names_in_obj(self):
+        out, hits = S.sanitize_obj({"a": "Иван", "b": ["Петров здесь"]})
+        self.assertEqual(out, {"a": "[NAME]", "b": ["[NAME] здесь"]})
+        self.assertEqual(hits, {"names": 2})
+
+    def test_compact_snapshot_accepts_sanitize_obj(self):
+        main = _util.FIXTURES / "logs" / "claude-main.jsonl"
+        text, hits, _ = cc_jsonl.compact_snapshot(main, PLAIN.sanitize_obj)
+        rows = [json.loads(line) for line in text.splitlines()]
+        self.assertTrue(rows)
+        self.assertTrue(all(isinstance(v, int) for v in hits.values()))
+        raw_uuids = set()
+        for line in main.read_text(encoding="utf-8").splitlines():
+            try:
+                raw_uuids.add(json.loads(line).get("uuid"))
+            except (ValueError, AttributeError):
+                continue  # в фикстуре нарочно есть битые строки
+        self.assertTrue({r["uuid"] for r in rows if r.get("isSidechain") is not True} <= raw_uuids)
+
+
+class Report(unittest.TestCase):
+    def test_report_shape(self):
+        rep = sanitize.report("a.jsonl", {"names": 3, "email": 2, "phone": 1})
+        self.assertEqual(rep, {"file": "a.jsonl", "rules_hit": {"email": 2, "phone": 1},
+                               "renamed": 3})
+
+    def test_report_without_names(self):
+        self.assertEqual(sanitize.report("b.md", {}), {"file": "b.md", "rules_hit": {}, "renamed": 0})
+
+
+class LocalUser(unittest.TestCase):
+    def test_login_replaced_whole_word(self):
+        s = sanitize.Sanitizer(local_users=["jdoe"])
+        out, hits = s.sanitize_text("drwxr-xr-x  3 jdoe  staff  96 x; JDOE; ajdoe; jdoex")
+        self.assertEqual(out, "drwxr-xr-x  3 [USER]  staff  96 x; [USER]; ajdoe; jdoex")
+        self.assertEqual(hits["local_user"], 2)
+
+    def test_login_underscore_is_boundary(self):
+        s = sanitize.Sanitizer(local_users=["jdoe"])
+        self.assertEqual(s.sanitize_text("jdoe__repo x_jdoe"), ("[USER]__repo x_[USER]", {"local_user": 2}))
+
+    def test_local_user_names_filters_generic_and_short(self):
+        from unittest import mock
+        with mock.patch("getpass.getuser", return_value="root"), \
+                mock.patch("pathlib.Path.home", return_value=sanitize.Path("/home/jdoe")):
+            self.assertEqual(sanitize.local_user_names(), ["jdoe"])
+        with mock.patch("getpass.getuser", return_value="al"), \
+                mock.patch("pathlib.Path.home", return_value=sanitize.Path("/home/user")):
+            self.assertEqual(sanitize.local_user_names(), [])
+
+    def test_structural_keys_untouched(self):
+        out, _ = sanitize.Sanitizer(local_users=["jdoe"]).sanitize_obj({"agentId": "jdoe", "text": "jdoe"})
+        self.assertEqual(out, {"agentId": "jdoe", "text": "[USER]"})
+
+
+class Performance(unittest.TestCase):
+    """Длинные токены без разделителей (base64, хэши, минифицированный код) — линейно, не квадратично."""
+
+    def test_long_tokens_linear(self):
+        import time
+
+        s = sanitize.Sanitizer()
+        for text in ("a" * 20000, "a-" * 10000, "a." * 10000, "1" * 20000, "ab_c.d-" * 3000):
+            started = time.perf_counter()
+            s.sanitize_text(text)
+            self.assertLess(time.perf_counter() - started, 1.0, text[:12])
+
+    def test_prefixed_secret_still_caught(self):
+        s = sanitize.Sanitizer()
+        for text in ('self.db_password = "hunter22"', "export MY_API_TOKEN=abcd1234", 'x.y-secret: "zzzz9999"'):
+            out, hits = s.sanitize_text(text)
+            self.assertIn("[SECRET_ASSIGNMENT]", out, text)
+
+
+class Cleanliness(unittest.TestCase):
+    def test_no_private_words_in_module(self):
+        text = (SCRIPTS / "lib" / "sanitize.py").read_text(encoding="utf-8")
+        for word in ("студ" + "ент", "кур" + "с", "мод" + "ул", "опер" + "атор"):
+            self.assertIsNone(re.search(r"(?<!\w)" + word, text, re.IGNORECASE), word)
+        self.assertNotIn("/" + "Users/", text)
+
+
+if __name__ == "__main__":
+    unittest.main()

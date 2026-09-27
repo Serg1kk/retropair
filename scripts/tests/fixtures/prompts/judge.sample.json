@@ -1,0 +1,90 @@
+{
+  "schema_version": 3,
+  "status": {"code": "success", "ok": true},
+  "data": {
+    "session_scope": {
+      "sessions": [
+        {"session_id": "s-0001", "path": "/home/user/demo/.sessionretro/logs/alex/s-0001.md", "turns_total": 42, "reviewed_from_turn": null, "state": "new", "status": "reviewed", "status_note": null},
+        {"session_id": "s-0002", "path": "/home/user/demo/.sessionretro/logs/alex/s-0002.md", "turns_total": 3, "status": "agent_subtranscript", "status_note": "реплики за человека пишет оркестратор"}
+      ],
+      "agent_stack": ["claude-code"]
+    },
+    "axes": [
+      {
+        "id": "verification", "score": 1, "insufficient_evidence": false, "insufficient_evidence_reason": null,
+        "evidence": [{"session_id": "s-0001", "turn_index": 17, "quote": "ок, мержим", "reading": "дифф на четыре файла принят без запуска тестов"}],
+        "note": "содержательное изменение принято без проверки"
+      },
+      {
+        "id": "task_framing", "score": 3, "insufficient_evidence": false, "insufficient_evidence_reason": null,
+        "evidence": [{"session_id": "s-0001", "turn_index": 1, "quote": "готово, когда форма отклоняет пустой email и тест на это зелёный", "reading": "критерий готовности в постановочном промпте"}],
+        "note": "критерий готовности назван сразу"
+      },
+      {"id": "ownership", "score": null, "insufficient_evidence": true, "insufficient_evidence_reason": "behaviour_absent", "evidence": [], "note": "развилок в сессии не было"},
+      {"id": "self_correction", "score": null, "insufficient_evidence": true, "insufficient_evidence_reason": "short_log", "evidence": [], "note": "неудачных попыток не было"},
+      {"id": "context_engineering", "score": null, "insufficient_evidence": true, "insufficient_evidence_reason": "no_context_report", "evidence": [], "note": "нет отчёта о контексте"},
+      {"id": "decomposition", "score": null, "insufficient_evidence": true, "insufficient_evidence_reason": "short_log", "evidence": [], "note": "задача в одну сессию"},
+      {"id": "trust_calibration", "score": null, "insufficient_evidence": true, "insufficient_evidence_reason": "behaviour_absent", "evidence": [], "note": "сигнала нет"},
+      {"id": "reversibility", "score": null, "insufficient_evidence": true, "insufficient_evidence_reason": "tool_has_no_trace", "evidence": [], "note": "инструмент не пишет коммиты в лог"}
+    ],
+    "antipatterns": [],
+    "flags": [],
+    "gating_triggered": false,
+    "gating_evidence": [],
+    "summary": {
+      "level_judge": "insufficient",
+      "strongest_axis": null,
+      "weakest_axis": null,
+      "one_thing_to_change": "запускать тесты перед тем, как принять дифф",
+      "task_solved": "yes"
+    },
+    "recommendations": [
+      {"id": "REC-alex-001", "axis": "verification", "text": "перед «мержим» стоит запустить тесты и прочитать вывод", "status": "open"}
+    ],
+    "best_practices": [
+      {
+        "axis": "verification",
+        "anchor": {"session_id": "s-0001", "turn_index": 17, "quote": "ок, мержим"},
+        "practices": ["попроси агента показать вывод тестов до того, как принять дифф"]
+      }
+    ],
+    "prev_recommendations": [],
+    "feedback_parts": {
+      "opening": "Разобран один лог из двух поданных в разбор: второй оказался логом субагента.",
+      "actions": [
+        {
+          "place": "приём правки валидации формы",
+          "date": "2026-09-16",
+          "quote": "ок, мержим",
+          "cost": "четыре файла ушли в ветку без запуска тестов",
+          "try": "в следующей сессии перед «мержим» стоит запустить тесты и прочитать вывод",
+          "levers": ["попроси агента показать вывод тестов до того, как принять дифф"]
+        }
+      ],
+      "criteria": [
+        {"axis": "verification", "verdict": "first_place_above", "evidence": "16.09 дифф на четыре файла принят фразой «ок, мержим»."},
+        {"axis": "task_framing", "verdict": "even", "evidence": "16.09 в первом сообщении назван критерий готовности."},
+        {"axis": "ownership", "verdict": "not_visible", "evidence": "Развилок в сессии не было."},
+        {"axis": "self_correction", "verdict": "not_visible", "evidence": "Неудачных попыток не было."},
+        {"axis": "context_engineering", "verdict": "not_visible", "evidence": "Отчёта о контексте нет."},
+        {"axis": "decomposition", "verdict": "not_visible", "evidence": "Задача уместилась в одну сессию."},
+        {"axis": "trust_calibration", "verdict": "not_visible", "evidence": "Сигнала в логе нет."},
+        {"axis": "reversibility", "verdict": "not_visible", "evidence": "Инструмент не пишет коммиты в лог."}
+      ],
+      "closing": null
+    },
+    "artifact": null
+  },
+  "metadata": {
+    "turns_analyzed": 42,
+    "axes_scored": 2,
+    "axes_insufficient": 6,
+    "metrics_available": true,
+    "context_report_available": false,
+    "prompt_version": "v13",
+    "collector_version": "v3",
+    "batches": 1,
+    "sessions_total": 2,
+    "warnings": ["no_context_report", "sessions_excluded"]
+  }
+}

@@ -1,0 +1,735 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Выход первой ступени: доказательства по пачке сессий",
+  "description": "Что собирает коллектор (log-collector) с одной пачки логов одного участника. БАЛЛОВ ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ: коллектор видит часть материала, а балл, поставленный по части, потом невозможно свести. Схема запрещает поля оценки структурно (additionalProperties: false на каждом уровне), а не уговорами в промпте. Оценку ставит вторая ступень, судья (log-judge), на объединённых доказательствах всех пачек.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "status",
+    "batch",
+    "sessions",
+    "observations",
+    "axes_unobserved",
+    "metadata",
+    "axis_signal_sessions",
+    "subcriteria_unobserved"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "kind": {
+      "const": "log-evidence-batch"
+    },
+    "status": {
+      "type": "object",
+      "required": [
+        "code",
+        "ok"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Статус ПАЧКИ. success — прочитана хотя бы одна пригодная сессия. Код ошибки ставится, только когда непригодны все сессии пачки: судья такую пачку учтёт, но материала из неё не получит.",
+          "enum": [
+            "success",
+            "empty_transcript",
+            "transcript_too_short",
+            "unreadable_input"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "batch": {
+      "type": "object",
+      "required": [
+        "index",
+        "total",
+        "person_id",
+        "workspace",
+        "period"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Номер пачки, с единицы"
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Сколько пачек всего у этого участника за этот период"
+        },
+        "person_id": {
+          "type": "string",
+          "description": "id карточки участника"
+        },
+        "workspace": {
+          "type": "string",
+          "description": "id workspace"
+        },
+        "period": {
+          "type": "object",
+          "description": "Период ревью из входа агента, копируется как есть. label — имя периода; from и to — его календарные края (YYYY-MM-DD) или null; anchor — опорная точка периода (дата встречи, тег релиза), если период задан ею, иначе null.",
+          "required": [
+            "label"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "from": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "anchor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "description": "ВСЕ сессии пачки, включая непригодные. Судья собирает из этих массивов свой session_scope, и по нему же считается, что помечать оценённым в инвентаре.",
+      "items": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "path",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "turns_total": {
+            "type": "integer"
+          },
+          "user_turns": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reviewed_from_turn": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Для сессии, поданной с номером хода (state: grown), ОБЯЗАТЕЛЕН вместе с state. Без него судья оценит хвост как самостоятельную сессию, и то же поведение зачтётся дважды в двух периодах."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "new",
+              "grown"
+            ],
+            "description": "new или grown. Для grown обязателен вместе с reviewed_from_turn."
+          },
+          "status": {
+            "type": "string",
+            "description": "read — сессия прочитана и её материал в observations; остальные значения означают, что материала из неё нет, и почему. agent_subtranscript — транскрипт субагента, где реплики за человека пишет оркестратор. excluded_other — причина не из перечисленных, обязателен status_note. Слово reviewed здесь намеренно не используется: оценки на первой ступени не бывает.",
+            "enum": [
+              "read",
+              "empty_transcript",
+              "transcript_too_short",
+              "unreadable_input",
+              "agent_subtranscript",
+              "excluded_other"
+            ]
+          },
+          "status_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "description": "Наблюдения по осям: факт в логе плюс дословная цитата с адресом. Ровно то, из чего судья потом соберёт балл. Пересказывать нельзя, додумывать мотивы нельзя.",
+      "items": {
+        "type": "object",
+        "required": [
+          "axis",
+          "polarity",
+          "session_id",
+          "turn_index",
+          "quote",
+          "reading"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": [
+              "verification",
+              "task_framing",
+              "ownership",
+              "self_correction",
+              "context_engineering",
+              "decomposition",
+              "trust_calibration",
+              "reversibility"
+            ]
+          },
+          "subcriterion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Под-критерий из axes.md, если реплика ложится на него однозначно. Не ложится — null, разбираться будет судья"
+          },
+          "timing": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Когда элемент появился в разговоре. ОБЯЗАТЕЛЬНО для оси task_framing: её балл зависит не от наличия элемента, а от момента (см. веса в axes.md). setup_prompt — в постановочном промпте; later_self — позже по своей инициативе; elicited — в ответ на вопрос агента; after_cleanup — после реплики-уборки. Судья логов не читает и порядок иначе не восстановит.",
+            "enum": [
+              "setup_prompt",
+              "later_self",
+              "elicited",
+              "after_cleanup",
+              null
+            ]
+          },
+          "scale_note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Масштаб принятого изменения для отрицательных наблюдений по verification и для кандидатов G1/G4: «дифф на 7 файлов», «правка схемы БД». Якорь нуля требует содержательного изменения, а виден он только тебе — по карте инструментов и срезам. Без этого судья ставит ноль на голом «ок, мержим»."
+          },
+          "polarity": {
+            "type": "string",
+            "description": "Куда тянет наблюдение. positive — поведение, которое ось описывает как сильное; negative — как слабое; mixed — читается и так и так, судья решит.",
+            "enum": [
+              "positive",
+              "negative",
+              "mixed"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "null допустим только у числового доказательства из context_report, где хода нет вовсе"
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "ДОСЛОВНО из транскрипта, до 400 знаков: длиннее — дословный отрывок, несущий смысл, без пересказа. Фрагменты, похожие на секреты, не цитируются никогда"
+          },
+          "reading": {
+            "type": "string",
+            "description": "Одна строка: что именно эта цитата показывает. Без вердикта и без балла"
+          }
+        }
+      }
+    },
+    "antipattern_candidates": {
+      "type": "array",
+      "description": "Кандидаты, а не находки: судья решает, ведущий это симптом или сопутствующий. Перечислять каталог целиком запрещено.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "turn_index",
+          "quote"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_index": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "leading_symptom": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Наблюдался ли ведущий симптом из antipatterns.md (он выделен там жирным), или только сопутствующие"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessions_in_batch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "В скольких РАЗНЫХ сессиях пачки наблюдался этот антипаттерн. Судья обязан назвать частоту, а по числу принесённых кандидатов её не восстановить."
+          }
+        }
+      }
+    },
+    "flag_candidates": {
+      "type": "array",
+      "description": "Бинарные находки безопасности вне шкалы. Секрет не цитируется никогда: описывается место и тип.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "where"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "secret_in_the_open",
+              "destructive_without_review",
+              "permissions_off_on_foreign_code",
+              "over_broad_access",
+              "untrusted_content_as_instruction",
+              "unredacted_input",
+              "redaction_leak"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_index": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "where": {
+            "type": "string",
+            "description": "Место и тип фактом, без самого секрета"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "gating_candidates": {
+      "type": "array",
+      "description": "Сработавшие маркеры гейта с цитатами. Потолок уровня ставит судья, коллектор только приносит маркер. Исключения из axes.md применяются здесь же: то, что под исключение попало, в массив не идёт.",
+      "items": {
+        "type": "object",
+        "required": [
+          "trigger",
+          "session_id",
+          "turn_index",
+          "quote"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "G1",
+              "G2",
+              "G3",
+              "G4",
+              "G5",
+              "G6"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_index": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "rec_signals": {
+      "type": "array",
+      "description": "Материал по открытым рекомендациям прошлых периодов. Вердикт (followed / partial / ignored / not_observable) ставит судья: на одной пачке видно только эпизод, а вердикт стоит на всём периоде.",
+      "items": {
+        "type": "object",
+        "required": [
+          "rec_id",
+          "session_id",
+          "turn_index",
+          "quote",
+          "direction"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rec_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_index": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "direction": {
+            "type": "string",
+            "description": "matches — видно ровно рекомендованное поведение; contradicts — видно то, от чего предостерегали.",
+            "enum": [
+              "matches",
+              "contradicts"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "axes_unobserved": {
+      "type": "array",
+      "description": "Оси, по которым в ЭТОЙ пачке не было ни положительного, ни отрицательного материала, с причиной по каждой. Несущее поле: без него судья не отличит «поведения нет нигде» от «оно было в соседней пачке», и insufficient_evidence перестанет работать при сведении. Вместе с осями из observations[] обязано покрывать все восемь: ось, не попавшая ни туда, ни сюда, ставит судью перед двумя противоположными правилами.",
+      "items": {
+        "type": "object",
+        "required": [
+          "axis",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": [
+              "verification",
+              "task_framing",
+              "ownership",
+              "self_correction",
+              "context_engineering",
+              "decomposition",
+              "trust_calibration",
+              "reversibility"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Почему не наблюдалось. Причину знаешь только ты: судья видит голое имя оси и без этого поля напишет behaviour_absent на всё, а тогда «инструмент не пишет трейс» и «человек так не делает» сольются в одно.",
+            "enum": [
+              "short_log",
+              "behaviour_absent",
+              "no_context_report",
+              "no_repo_access",
+              "tool_has_no_trace",
+              "log_truncated",
+              "work_outside_transcript",
+              "nothing_to_verify"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "subcriteria_unobserved": {
+      "type": "array",
+      "description": "Под-критерии осей, по которым в пачке нет ни положительного, ни отрицательного материала (списки под-критериев — в axes.md). Нужны, чтобы у судьи работало общее правило 6: ненаблюдаемый под-критерий выпадает из знаменателя, а больше половины ненаблюдаемых уводят ось в insufficient_evidence. Без этого поля знаменатель считается полным, и ось получает низкий балл там, где материала просто нет.",
+      "items": {
+        "type": "object",
+        "required": [
+          "axis",
+          "subcriterion"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "axis": {
+            "type": "string",
+            "enum": [
+              "verification",
+              "task_framing",
+              "ownership",
+              "self_correction",
+              "context_engineering",
+              "decomposition",
+              "trust_calibration",
+              "reversibility"
+            ]
+          },
+          "subcriterion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Например: тестового фреймворка в проекте нет вовсе"
+          }
+        }
+      }
+    },
+    "axis_signal_sessions": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "По каждой оси — в СКОЛЬКИХ РАЗНЫХ СЕССИЯХ пачки встретился сигнал, независимо от того, сколько цитат ты вынес. Цитат ты приносишь единицы (иначе выход раздувается), а судья обязан назвать частоту: «принял без чтения в девяти сессиях из двадцати четырёх». Без этого поля частота считается по числу цитат и систематически занижается тем сильнее, чем больше у участника логов.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "outcome_signals": {
+      "type": "array",
+      "description": "Довёл ли человек работу до результата — цитатами, без вердикта. Судья обязан заполнить summary.task_solved, а основать его больше не на чем: batch_note писать с вердиктами запрещено. Поле нужно ровно в редком случае, ради которого и заведено: образцовая обрядность при отсутствующем результате.",
+      "items": {
+        "type": "object",
+        "required": [
+          "direction",
+          "session_id",
+          "turn_index",
+          "quote"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "done",
+              "not_done",
+              "unclear"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_index": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "agent_stack": {
+      "type": "array",
+      "description": "Коллектор и модели, с которыми работал участник в этой пачке (нормализатор отдаёт их в collector и models[]). Судья логов не читает и сам их не добудет, а без них разброс баллов между Cursor и Claude Code не объяснить.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metrics": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Счётчики нормализатора, просуммированные по пачке. null в счётчике означает «не измерено» (у коллектора нет такого следа), а не ноль.",
+      "additionalProperties": false,
+      "properties": {
+        "sessions_read": {
+          "type": "integer"
+        },
+        "turns_total": {
+          "type": "integer"
+        },
+        "user_turns": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "write_tool_calls": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "verification_commands": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "shell_tool_calls": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "instant_approvals": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "speed_accept_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "interrupts": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessions_read",
+        "turns_total"
+      ]
+    },
+    "context_report_facts": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Числа из context-report.md, если он есть, дословно. Не пересказ и не вывод"
+    },
+    "batch_note": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Одна-две строки судье: что в этой пачке было за работа, чего в ней не наблюдалось, где обрыв. БЕЗ вердиктов, без слов «слабо», «хорошо», «уровень»"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "collector_version",
+        "warnings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "collector_version": {
+          "type": "string"
+        },
+        "turns_analyzed": {
+          "type": "integer"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "metrics_missing",
+              "no_context_report",
+              "redaction_leak",
+              "unredacted_input",
+              "log_truncated",
+              "timestamps_missing",
+              "spans_periods",
+              "sessions_excluded",
+              "batch_truncated"
+            ]
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,270 @@
+{
+  "schema_version": 3,
+  "status": {
+    "code": "success",
+    "ok": true
+  },
+  "data": {
+    "session_scope": {
+      "sessions": [
+        {
+          "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+          "path": "logs/alex/2026-09-08_14-00-00Z-fix-tests.md",
+          "turns_total": 16,
+          "reviewed_from_turn": null,
+          "state": "new",
+          "status": "reviewed",
+          "status_note": null
+        }
+      ],
+      "agent_stack": [
+        "claude-code",
+        "sonnet"
+      ]
+    },
+    "axes": [
+      {
+        "id": "verification",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 6,
+            "quote": "прогони pytest и покажи вывод",
+            "reading": "попросил запуск тестов до приёмки"
+          }
+        ],
+        "subcriteria": [],
+        "note": "тесты запускаются до приёмки"
+      },
+      {
+        "id": "task_framing",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 0,
+            "quote": "почини падающие тесты корзины, API не трогай",
+            "reading": "цель и граница в первом сообщении"
+          }
+        ],
+        "subcriteria": [],
+        "note": "постановка с границами"
+      },
+      {
+        "id": "ownership",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 9,
+            "quote": "нет, оставим синхронный вызов, так проще отлаживать",
+            "reading": "решение принято и объяснено самим"
+          }
+        ],
+        "subcriteria": [],
+        "note": "решение за собой"
+      },
+      {
+        "id": "self_correction",
+        "score": null,
+        "insufficient_evidence": true,
+        "insufficient_evidence_reason": "behaviour_absent",
+        "evidence": [],
+        "subcriteria": [],
+        "note": "неудач в сессии не было"
+      },
+      {
+        "id": "context_engineering",
+        "score": 2,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 4,
+            "quote": "вот весь лог CI, разберись",
+            "reading": "в контекст подан весь лог без отбора"
+          }
+        ],
+        "subcriteria": [],
+        "note": "контекст подаётся целиком"
+      },
+      {
+        "id": "decomposition",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 2,
+            "quote": "сначала один тест, потом остальные",
+            "reading": "работа шагами"
+          }
+        ],
+        "subcriteria": [],
+        "note": "шаги с проверкой"
+      },
+      {
+        "id": "trust_calibration",
+        "score": 2,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 11,
+            "quote": "ладно, верю",
+            "reading": "принял объяснение агента без проверки"
+          }
+        ],
+        "subcriteria": [],
+        "note": "одно место без проверки"
+      },
+      {
+        "id": "reversibility",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+            "turn_index": 5,
+            "quote": "сделай ветку fix/cart-tests",
+            "reading": "отдельная ветка под правку"
+          }
+        ],
+        "subcriteria": [],
+        "note": "правка в отдельной ветке"
+      }
+    ],
+    "antipatterns": [],
+    "flags": [],
+    "gating_triggered": false,
+    "gating_evidence": [],
+    "summary": {
+      "level_judge": "confident_operator",
+      "strongest_axis": "ownership",
+      "weakest_axis": "context_engineering",
+      "one_thing_to_change": "подавать агенту выдержку из лога, а не лог целиком",
+      "task_solved": "yes"
+    },
+    "recommendations": [
+      {
+        "id": "REC-alex-003",
+        "axis": "context_engineering",
+        "text": "Когда даёшь агенту лог CI, вырежи из него упавший шаг и первую ошибку.",
+        "status": "open"
+      }
+    ],
+    "best_practices": [
+      {
+        "axis": "context_engineering",
+        "anchor": {
+          "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+          "turn_index": 4,
+          "quote": "вот весь лог CI, разберись"
+        },
+        "practices": [
+          "попросить агента сначала назвать, какой шаг упал"
+        ]
+      }
+    ],
+    "prev_recommendations": [
+      {
+        "id": "REC-alex-001",
+        "verdict": "followed",
+        "evidence": {
+          "session_id": "b61d0e48-27c3-4f95-a8e1-6d0c93b2f574",
+          "turn_index": 6,
+          "quote": "прогони pytest и покажи вывод"
+        },
+        "note": null
+      },
+      {
+        "id": "REC-alex-002",
+        "verdict": "not_observable",
+        "evidence": null,
+        "note": "правок в нескольких местах в сессии не было"
+      }
+    ],
+    "feedback_parts": {
+      "opening": "В разбор подан один лог, он же один разговор, и он разобран целиком.",
+      "actions": [
+        {
+          "place": "починка тестов, начало разбора",
+          "date": "2026-09-08",
+          "quote": "вот весь лог CI, разберись",
+          "cost": "агент потратил несколько ходов на шум из лога, прежде чем дошёл до упавшего шага",
+          "try": "вырезать из лога упавший шаг и первую ошибку и давать агенту только их",
+          "levers": [
+            "попросить агента сначала назвать, какой шаг упал"
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "axis": "verification",
+          "verdict": "even",
+          "evidence": "Тесты запускаются до приёмки изменений."
+        },
+        {
+          "axis": "task_framing",
+          "verdict": "even",
+          "evidence": "Цель и граница названы в первом сообщении."
+        },
+        {
+          "axis": "ownership",
+          "verdict": "even",
+          "evidence": "Выбор синхронного вызова сделан и объяснён самим."
+        },
+        {
+          "axis": "self_correction",
+          "verdict": "not_visible",
+          "evidence": "Неудач, после которых стоило менять подход, в сессии не было."
+        },
+        {
+          "axis": "context_engineering",
+          "verdict": "first_place_above",
+          "evidence": "Лог CI подан целиком без отбора."
+        },
+        {
+          "axis": "decomposition",
+          "verdict": "even",
+          "evidence": "Сначала один тест, потом остальные."
+        },
+        {
+          "axis": "trust_calibration",
+          "verdict": "even_but_one",
+          "evidence": "Одно объяснение агента принято без проверки."
+        },
+        {
+          "axis": "reversibility",
+          "verdict": "even",
+          "evidence": "Правка сделана в отдельной ветке."
+        }
+      ],
+      "closing": "Прошлый совет про тесты перед приёмкой виден в работе."
+    },
+    "artifact": null
+  },
+  "metadata": {
+    "turns_analyzed": 16,
+    "axes_scored": 7,
+    "axes_insufficient": 1,
+    "metrics_available": true,
+    "context_report_available": false,
+    "prompt_version": "v13",
+    "collector_version": "v3",
+    "batches": 1,
+    "sessions_total": 1,
+    "warnings": []
+  }
+}

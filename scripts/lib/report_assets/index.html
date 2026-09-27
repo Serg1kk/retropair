@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; img-src data:">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="sessionretro">
+<title>__TITLE__</title>
+<style>
+/* sessionretro · страница workspaces: без сети, системные шрифты, светлая и тёмная тема. */
+:root {
+  color-scheme: light;
+  --page: #f4f5f8; --surface: #ffffff; --surface-2: #eef0f4;
+  --ink: #15181d; --ink-2: #454b57; --muted: #737a88;
+  --hairline: #e2e5eb; --border: rgba(21,24,29,.12);
+  --accent: #256abf; --accent-ink: #1c5cab; --accent-soft: #e4eefb; --focus: #256abf;
+  --warn: #8a5a00; --warn-soft: rgba(250,178,25,.22);
+  --neutral-soft: rgba(21,24,29,.07);
+  --shadow: 0 1px 2px rgba(21,24,29,.05), 0 4px 16px rgba(21,24,29,.05);
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0f1114; --surface: #191c21; --surface-2: #22262c;
+    --ink: #f1f2f4; --ink-2: #c3c7cf; --muted: #8e95a3;
+    --hairline: #2b3038; --border: rgba(255,255,255,.12);
+    --accent: #3987e5; --accent-ink: #86b6ef; --accent-soft: rgba(57,135,229,.18); --focus: #6da7ec;
+    --warn: #f5c04a; --warn-soft: rgba(250,178,25,.2);
+    --neutral-soft: rgba(255,255,255,.08);
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding-block: 24px 64px; padding-inline: 20px; }
+h1 { margin: 0 0 4px; font-size: 24px; line-height: 1.25; font-weight: 600; letter-spacing: -.01em; }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+a { color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow); }
+.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12.5px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+td { padding: 12px 14px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.ws b { font-weight: 600; display: block; overflow-wrap: anywhere; }
+.id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+.path { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 1px 9px; font-size: 12.5px; line-height: 1.6; white-space: nowrap; background: var(--neutral-soft); color: var(--ink-2); }
+.chip.mode { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.note { display: block; margin-top: 4px; font-size: 12.5px; color: var(--warn); }
+.links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.links .off { color: var(--muted); }
+.empty { padding: 18px 14px; color: var(--muted); }
+.muted { color: var(--muted); }
+.tnum { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 760px) {
+  .wrap { padding-inline: 16px; }
+  h1 { font-size: 21px; }
+  thead { display: none; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tr { border-bottom: 1px solid var(--hairline); padding: 6px 0; }
+  tr:last-child { border-bottom: 0; }
+  td { border-bottom: 0; padding: 6px 14px; }
+  td[data-label]::before { content: attr(data-label); display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+}
+@media print {
+  :root { --page: #ffffff; --surface: #ffffff; --shadow: none; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+__BODY__
+</main>
+</body>
+</html>

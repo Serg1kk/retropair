@@ -1,0 +1,195 @@
+{
+  "schema_version": 2,
+  "kind": "log-evidence-batch",
+  "status": {
+    "code": "success",
+    "ok": true
+  },
+  "batch": {
+    "index": 1,
+    "total": 1,
+    "person_id": "alex",
+    "workspace": "demo-team",
+    "period": {
+      "label": "p1",
+      "from": "2026-09-01",
+      "to": "2026-09-04",
+      "anchor": null
+    }
+  },
+  "sessions": [
+    {
+      "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+      "path": "logs/alex/2026-09-02_09-00-00Z-login-form.md",
+      "turns_total": 24,
+      "user_turns": 9,
+      "reviewed_from_turn": null,
+      "state": "new",
+      "status": "read",
+      "status_note": null
+    },
+    {
+      "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+      "path": "logs/alex/2026-09-01_11-30-00Z-refactor-api.md",
+      "turns_total": 18,
+      "user_turns": 7,
+      "reviewed_from_turn": 10,
+      "state": "grown",
+      "status": "read",
+      "status_note": null
+    },
+    {
+      "session_id": "e07a4d93-6f18-4c5b-b2d7-8a3e10f4c965",
+      "path": "logs/alex/2026-09-04_16-00-00Z-quick-question.md",
+      "turns_total": 4,
+      "user_turns": 2,
+      "reviewed_from_turn": null,
+      "state": "new",
+      "status": "transcript_too_short",
+      "status_note": "два хода"
+    }
+  ],
+  "observations": [
+    {
+      "axis": "verification",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": "дифф на четыре файла",
+      "polarity": "negative",
+      "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+      "turn_index": 14,
+      "quote": "ок, мержим",
+      "reading": "принят дифф без запуска тестов"
+    },
+    {
+      "axis": "task_framing",
+      "subcriterion": null,
+      "timing": "setup_prompt",
+      "scale_note": null,
+      "polarity": "positive",
+      "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+      "turn_index": 0,
+      "quote": "сделай форму входа: email и пароль, ошибки под полями, без новых зависимостей",
+      "reading": "цель и границы в первом сообщении"
+    },
+    {
+      "axis": "ownership",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": null,
+      "polarity": "negative",
+      "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+      "turn_index": 12,
+      "quote": "делай как считаешь нужным",
+      "reading": "выбор структуры отдан агенту"
+    },
+    {
+      "axis": "self_correction",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": null,
+      "polarity": "positive",
+      "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+      "turn_index": 15,
+      "quote": "стоп, откатываем, пробуем через адаптер",
+      "reading": "смена подхода после неудачи"
+    },
+    {
+      "axis": "decomposition",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": null,
+      "polarity": "negative",
+      "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+      "turn_index": 3,
+      "quote": "сначала сделай всё целиком, потом посмотрим",
+      "reading": "крупный шаг без проверки"
+    },
+    {
+      "axis": "trust_calibration",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": "правка в трёх слоях",
+      "polarity": "negative",
+      "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+      "turn_index": 13,
+      "quote": "да, применяй всё",
+      "reading": "предложение принято целиком"
+    },
+    {
+      "axis": "reversibility",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": null,
+      "polarity": "positive",
+      "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+      "turn_index": 11,
+      "quote": "закоммить текущее перед рефакторингом",
+      "reading": "точка отката перед рискованным шагом"
+    }
+  ],
+  "antipattern_candidates": [
+    {
+      "id": "tests_instead_of_eyes",
+      "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+      "turn_index": 14,
+      "quote": "ок, мержим",
+      "leading_symptom": true,
+      "note": null,
+      "sessions_in_batch": 1
+    }
+  ],
+  "flag_candidates": [],
+  "gating_candidates": [],
+  "rec_signals": [],
+  "axes_unobserved": [
+    {
+      "axis": "context_engineering",
+      "reason": "short_log",
+      "note": null
+    }
+  ],
+  "subcriteria_unobserved": [],
+  "axis_signal_sessions": {
+    "verification": 1,
+    "task_framing": 1,
+    "ownership": 1,
+    "self_correction": 1,
+    "decomposition": 1,
+    "trust_calibration": 1,
+    "reversibility": 1
+  },
+  "outcome_signals": [
+    {
+      "direction": "done",
+      "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+      "turn_index": 22,
+      "quote": "форма работает, закрываю",
+      "note": null
+    }
+  ],
+  "agent_stack": [
+    "claude-code",
+    "sonnet"
+  ],
+  "metrics": {
+    "sessions_read": 2,
+    "turns_total": 32,
+    "user_turns": 16,
+    "write_tool_calls": 9,
+    "verification_commands": 1,
+    "shell_tool_calls": 4,
+    "instant_approvals": 2,
+    "speed_accept_count": null,
+    "interrupts": 0
+  },
+  "context_report_facts": null,
+  "batch_note": "форма входа и рефакторинг слоя API; короткая сессия без материала",
+  "metadata": {
+    "collector_version": "v3",
+    "turns_analyzed": 32,
+    "warnings": [
+      "sessions_excluded"
+    ]
+  }
+}

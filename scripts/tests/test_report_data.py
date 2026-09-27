@@ -1,0 +1,608 @@
+"""Агрегация трекера в модель и payload по режимам (`lib/report_data.py`)."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+import _util  # noqa: F401  (кладёт scripts/ в sys.path)
+import report_fixture
+from _util import FIXTURES
+from lib import report_data as rd
+from lib.config import load_config
+from lib.people import add_person
+from lib.workspace import SrError, ws_paths
+
+
+def _keys(value, out: set | None = None) -> set:
+    """Все ключи dict при рекурсивном обходе."""
+    out = set() if out is None else out
+    if isinstance(value, dict):
+        for key, item in value.items():
+            out.add(key)
+            _keys(item, out)
+    elif isinstance(value, list):
+        for item in value:
+            _keys(item, out)
+    return out
+
+
+def _tracker(root: Path) -> dict:
+    return json.loads((ws_paths(root)["runs"] / "process-reviews.json").read_text(encoding="utf-8"))
+
+
+def _write_tracker(root: Path, doc: dict) -> None:
+    (ws_paths(root)["runs"] / "process-reviews.json").write_text(
+        json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+
+class _Base(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = report_fixture.make_workspace(Path(cls._tmp.name) / "ws")
+        cls.warnings: list[str] = []
+        cls.model = rd.collect(cls.root, cls.warnings.append)
+        cls.tracker = _tracker(cls.root)
+        cls.person = {p["id"]: p for p in cls.model["people"]}
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def fresh(self, **kwargs) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return report_fixture.make_workspace(Path(tmp.name) / "ws", **kwargs)
+
+    def runs_of(self, pid: str) -> list[dict]:
+        return [r for r in self.tracker["runs"] if r["person_id"] == pid]
+
+
+class TestI18n(unittest.TestCase):
+    def test_load_i18n_drops_cli(self) -> None:
+        i18n = rd.load_i18n()
+        self.assertNotIn("cli", i18n)
+        self.assertEqual(len(i18n["axes"]), 8)
+        self.assertEqual(list(i18n["axes"])[0], "verification")
+
+    def test_load_i18n_drops_underscore_names(self) -> None:
+        data = {"_note": "x", "axes": {"a": {"ru": "А", "en": "A"}, "_meta": "y"}, "cli": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "i18n.json"
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            old, rd._I18N_PATH = rd._I18N_PATH, path
+            try:
+                got = rd.load_i18n()
+            finally:
+                rd._I18N_PATH = old
+        self.assertEqual(got, {"axes": {"a": {"ru": "А", "en": "A"}}})
+
+
+class TestCollect(_Base):
+    def test_model_shape_and_axes_order(self) -> None:
+        self.assertEqual(self.model["axes"], list(rd.load_i18n()["axes"]))
+        ws = self.model["workspace"]
+        self.assertEqual((ws["id"], ws["mode"], ws["lang"], ws["show_scores"]),
+                         ("demo-team", "team", "ru", False))
+
+    def test_retracted_run_is_not_a_point(self) -> None:
+        twin = [r for r in self.runs_of("anna") if r.get("retracted")]
+        self.assertEqual(len(twin), 1)
+        ids = [pt["run_id"] for pt in self.person["anna"]["points"]]
+        self.assertNotIn(twin[0]["run_id"], ids)
+        self.assertEqual([pt["period"] for pt in self.person["anna"]["points"]], ["P1", "P2", "P3"])
+
+    def test_live_duplicate_takes_latest_revision(self) -> None:
+        p1 = [r for r in self.runs_of("boris") if r["period"]["label"] == "P1"]
+        self.assertEqual(len(p1), 2)
+        newest = max(p1, key=lambda r: r["reviewed_at"])
+        self.assertEqual(newest["revision"], 2)
+        points = [pt for pt in self.person["boris"]["points"] if pt["period_key"] == "P1"]
+        self.assertEqual([pt["run_id"] for pt in points], [newest["run_id"]])
+
+    def test_insufficient_evidence_is_null_not_zero(self) -> None:
+        axis = self.person["anna"]["points"][-1]["axes"]["reversibility"]
+        self.assertIsNone(axis["score"])
+        self.assertTrue(axis["ie"])
+        self.assertEqual(axis["reason"], "no_signal")
+        for person in self.model["people"]:
+            for pt in person["points"]:
+                for ax in pt["axes"].values():
+                    self.assertNotEqual(ax["score"], 0)
+
+    def test_manual_override_replaces_score(self) -> None:
+        pt = [p for p in self.person["boris"]["points"] if p["period_key"] == "P2"][0]
+        ax = pt["axes"]["verification"]
+        self.assertEqual((ax["score"], ax["overridden"], ax["ie"]), (4, True, False))
+        self.assertTrue(pt["gate"])
+        self.assertFalse(pt["axes"]["ownership"]["overridden"])
+
+    def test_level_falls_back_to_judge_with_warning(self) -> None:
+        run = [r for r in self.runs_of("vera") if r["period"]["label"] == "P1"][0]
+        pt = self.person["vera"]["points"][0]
+        self.assertEqual(pt["level"], run["level_judge"])
+        self.assertTrue(any(run["run_id"] in w and "level_judge" in w for w in self.warnings),
+                        self.warnings)
+
+    def test_recommendation_open_by_verdict(self) -> None:
+        def rec(pid: str) -> dict:
+            return [r for r in self.person[pid]["recs"] if r["id"] == f"REC-{pid}-001"][0]
+
+        self.assertEqual(rec("anna")["verdicts"][0]["verdict"], "followed")
+        self.assertFalse(rec("anna")["open"])
+        self.assertEqual(rec("boris")["verdicts"][0]["verdict"], "not_observable")
+        self.assertTrue(rec("boris")["open"])
+        self.assertEqual(rec("vera")["verdicts"][0]["verdict"], "ignored")
+        self.assertFalse(rec("vera")["open"])
+        self.assertEqual(rec("anna")["given_in"], "P1")
+
+    def test_unbound_review_of_retracted_run(self) -> None:
+        twin = [r for r in self.runs_of("anna") if r.get("retracted")][0]
+        self.assertEqual(self.model["unbound_reviews"], [twin["run_id"]])
+        self.assertTrue(any(twin["run_id"] in w for w in self.warnings), self.warnings)
+
+    def test_reviews_bound_to_points(self) -> None:
+        pts = self.person["anna"]["points"]
+        self.assertEqual([pt["review"]["status"] for pt in pts], ["approved", "approved", "draft"])
+        self.assertTrue(pts[0]["review"]["path"].startswith("reviews/anna/"))
+        self.assertTrue(pts[0]["review"]["sent_md"])
+
+    def test_person_without_runs_skipped_with_count(self) -> None:
+        self.assertEqual(sorted(self.person), ["anna", "boris", "vera"])
+        self.assertTrue(any("без прогонов" in w and "1" in w for w in self.warnings), self.warnings)
+
+    def test_people_sorted_by_name(self) -> None:
+        root = self.fresh()
+        card = ws_paths(root)["people"] / "vera.yaml"
+        card.write_text(card.read_text(encoding="utf-8").replace("Вера", "Аврора"), encoding="utf-8")
+        model = rd.collect(root, lambda _m: None)
+        self.assertEqual([p["id"] for p in model["people"]], ["vera", "anna", "boris"])
+
+    def test_points_ordered_by_period_start(self) -> None:
+        root = self.fresh(people=1, periods=3)
+        doc = _tracker(root)
+        doc["runs"].reverse()
+        _write_tracker(root, doc)
+        model = rd.collect(root, lambda _m: None)
+        self.assertEqual([pt["period"] for pt in model["people"][0]["points"]], ["P1", "P2", "P3"])
+
+
+class TestTransitions(unittest.TestCase):
+    def test_up_down_flat_none(self) -> None:
+        def pt(score):
+            return {"axes": {"a": {"score": score, "ie": score is None}}}
+
+        points = [pt(2), pt(3), pt(3), pt(1), pt(None), pt(4)]
+        got = [t["a"] for t in rd.transitions(points, ["a"])]
+        self.assertEqual(got, ["none", "up", "flat", "down", "none", "none"])
+
+
+class TestPayload(_Base):
+    def personal(self, pid: str = "anna", **kwargs) -> dict:
+        return rd.build_payload(self.model, mode="personal", person=pid, **kwargs)
+
+    def test_personal_has_one_person_and_no_forbidden_keys(self) -> None:
+        payload = self.personal()
+        self.assertEqual([p["id"] for p in payload["people"]], ["anna"])
+        keys = _keys(payload)
+        self.assertFalse(keys & rd.PERSONAL_FORBIDDEN_KEYS, keys & rd.PERSONAL_FORBIDDEN_KEYS)
+        self.assertNotIn("score", keys)
+        self.assertNotIn("level", keys)
+        self.assertNotIn("group", payload["people"][0])
+        self.assertIn("transitions", payload["people"][0]["points"][1])
+        self.assertNotIn("boris", json.dumps(payload, ensure_ascii=False))
+
+    def test_personal_show_scores_adds_only_score_and_level(self) -> None:
+        payload = self.personal(show_scores=True)
+        keys = _keys(payload)
+        self.assertIn("score", keys)
+        self.assertIn("level", keys)
+        self.assertFalse(keys & rd.PERSONAL_FORBIDDEN_KEYS, keys & rd.PERSONAL_FORBIDDEN_KEYS)
+        self.assertTrue(payload["meta"]["show_scores"])
+
+    def test_personal_review_only_approved_sent_block(self) -> None:
+        pts = self.personal()["people"][0]["points"]
+        self.assertEqual(set(pts[0]["review"]), {"sent_md"})
+        self.assertEqual(pts[0]["review"]["sent_md"], self.person["anna"]["points"][0]["review"]["sent_md"])
+        self.assertIsNone(pts[-1]["review"])
+
+    def test_personal_recs_with_status(self) -> None:
+        recs = {r["given_in"]: r for r in self.personal()["people"][0]["recs"]}
+        self.assertEqual(set(recs["P1"]), {"text", "axis", "given_in", "status"})
+        self.assertEqual(recs["P1"]["status"], "followed")
+        vera = {r["given_in"]: r for r in self.personal("vera")["people"][0]["recs"]}
+        self.assertEqual(vera["P1"]["status"], "ignored")
+        boris = {r["given_in"]: r for r in self.personal("boris")["people"][0]["recs"]}
+        self.assertEqual(boris["P1"]["status"], "open")
+
+    def test_personal_without_dynamics_has_no_transitions(self) -> None:
+        self.assertNotIn("transitions", _keys(self.personal(show_dynamics=False)))
+
+    def test_personal_person_required_and_known(self) -> None:
+        with self.assertRaises(SrError) as ctx:
+            rd.build_payload(self.model, mode="personal")
+        self.assertEqual(ctx.exception.code, 2)
+        with self.assertRaises(SrError) as ctx:
+            self.personal("nobody")
+        self.assertEqual(ctx.exception.code, 2)
+        with self.assertRaises(SrError) as ctx:
+            rd.build_payload(self.model, mode="everyone")
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_group_has_no_texts(self) -> None:
+        payload = rd.build_payload(self.model, mode="group", title="Команда")
+        self.assertEqual(len(payload["people"]), 3)
+        keys = _keys(payload)
+        for key in ("evidence", "summary", "note", "feedback_draft", "sent_md", "antipatterns"):
+            self.assertNotIn(key, keys)
+        for person in payload["people"]:
+            self.assertEqual(person["recs"], [])
+            self.assertIn("group", person)
+            for pt in person["points"]:
+                self.assertIsNone(pt["review"])
+                self.assertIn("score", pt["axes"]["verification"])
+        meta = payload["meta"]
+        self.assertEqual((meta["mode"], meta["title"], meta["reviews_unbound"]), ("group", "Команда", 1))
+        self.assertEqual(meta["date_from"], "2026-01-18")
+
+    def test_reviewer_carries_everything(self) -> None:
+        payload = rd.build_payload(self.model, mode="reviewer")
+        anna = [p for p in payload["people"] if p["id"] == "anna"][0]
+        pt = anna["points"][0]
+        for key in ("run_id", "summary", "feedback_draft", "antipatterns", "transitions", "gate"):
+            self.assertIn(key, pt)
+        self.assertEqual(set(pt["review"]), {"status", "service_md", "sent_md", "dossier_md",
+                                             "path", "recognized", "warning"})
+        self.assertIn("verdicts", anna["recs"][0])
+        self.assertTrue(pt["axes"]["verification"]["evidence"])
+
+    def test_reviewer_quotes_only_in_last_periods(self) -> None:
+        model = rd.collect(self.fresh(people=1, periods=6), lambda _m: None)
+        pts = rd.build_payload(model, mode="reviewer", quote_periods=3)["people"][0]["points"]
+        self.assertEqual(len(pts), 6)
+        for pt in pts[:3]:
+            self.assertTrue(all(ax["evidence"] == [] for ax in pt["axes"].values()))
+            self.assertNotIn("dossier_md", pt["review"])
+            self.assertEqual(pt["review"]["dossier_ref"], pt["review"]["path"])
+        for pt in pts[3:]:
+            self.assertTrue(pt["axes"]["verification"]["evidence"])
+            self.assertIn("dossier_md", pt["review"])
+            self.assertNotIn("dossier_ref", pt["review"])
+        unlimited = rd.build_payload(model, mode="reviewer", quote_periods=None)["people"][0]["points"]
+        self.assertTrue(all("dossier_md" in pt["review"] for pt in unlimited))
+
+    def test_build_payload_does_not_mutate_model(self) -> None:
+        before = json.dumps(self.model, ensure_ascii=False, sort_keys=True)
+        rd.attach_html(rd.build_payload(self.model, mode="reviewer", quote_periods=1))
+        rd.build_payload(self.model, mode="personal", person="anna")
+        self.assertEqual(json.dumps(self.model, ensure_ascii=False, sort_keys=True), before)
+
+    def test_attach_html_replaces_md(self) -> None:
+        payload = rd.attach_html(rd.build_payload(self.model, mode="reviewer"))
+        keys = _keys(payload)
+        self.assertFalse({k for k in keys if k.endswith("_md")})
+        self.assertIn("sent_html", keys)
+        self.assertIn("dossier_html", keys)
+        self.assertIn("feedback_draft", keys)
+        pt = payload["people"][0]["points"][0]
+        self.assertTrue(pt["review"]["sent_html"].startswith("<"))
+        dossier = payload["people"][0]["points"][0]["review"]["dossier_html"]
+        self.assertIn("&lt;img", dossier)
+        self.assertNotIn("<img", dossier)
+
+
+class TestTrackerErrors(_Base):
+    def assert_code(self, root: Path, code: int, needle: str) -> None:
+        with self.assertRaises(SrError) as ctx:
+            rd.collect(root, lambda _m: None)
+        self.assertEqual(ctx.exception.code, code)
+        self.assertIn(needle, ctx.exception.message)
+
+    def test_missing_tracker(self) -> None:
+        root = self.fresh()
+        path = ws_paths(root)["runs"] / "process-reviews.json"
+        path.unlink()
+        self.assert_code(root, 1, str(path))
+
+    def test_broken_tracker(self) -> None:
+        root = self.fresh()
+        path = ws_paths(root)["runs"] / "process-reviews.json"
+        path.write_bytes(b"\xff\xfe{")
+        self.assert_code(root, 1, str(path))
+        path.write_text("{", encoding="utf-8")
+        self.assert_code(root, 1, str(path))
+
+    def test_tracker_v1_rejected(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        doc["tracker_version"] = 1
+        _write_tracker(root, doc)
+        self.assert_code(root, 1, "tracker_version")
+
+    def test_empty_runs_rejected(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        doc["runs"] = []
+        _write_tracker(root, doc)
+        self.assert_code(root, 1, "нет прогонов")
+
+    def test_run_without_card_rejected(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        doc["runs"][0]["person_id"] = "ghost"
+        _write_tracker(root, doc)
+        self.assert_code(root, 1, "ghost")
+
+
+def _review_file(root: Path, pid: str, period: str) -> Path:
+    for path in sorted((ws_paths(root)["reviews"] / pid).glob("*.md")):
+        if f"period: {period}\n" in path.read_text(encoding="utf-8"):
+            return path
+    raise AssertionError(f"нет ревью {pid} {period}")
+
+
+def _collect(root: Path) -> tuple[dict, list[str]]:
+    warnings: list[str] = []
+    return rd.collect(root, warnings.append), warnings
+
+
+def _run_of(doc: dict, pid: str, period: str) -> dict:
+    return [r for r in doc["runs"] if r["person_id"] == pid and r["period"]["label"] == period
+            and not r.get("retracted")][-1]
+
+
+class TestReviewBinding(_Base):
+    def test_approved_review_without_service_mark_not_sent(self) -> None:
+        root = self.fresh()
+        path = _review_file(root, "anna", "P1")
+        path.write_text(path.read_text(encoding="utf-8").replace("<!-- service -->\n", "", 1),
+                        encoding="utf-8")
+        model, warnings = _collect(root)
+        pt = rd.build_payload(model, mode="personal", person="anna")["people"][0]["points"][0]
+        self.assertIsNone(pt["review"])
+        self.assertTrue(any("<!-- service -->" in w for w in warnings), warnings)
+
+    def test_foreign_person_id_in_frontmatter_not_bound(self) -> None:
+        root = self.fresh()
+        path = _review_file(root, "anna", "P1")
+        run_id = path.stem
+        path.write_text(path.read_text(encoding="utf-8").replace("person_id: anna", "person_id: boris"),
+                        encoding="utf-8")
+        model, warnings = _collect(root)
+        anna = [p for p in model["people"] if p["id"] == "anna"][0]
+        self.assertIsNone(anna["points"][0]["review"])
+        self.assertIn(run_id, model["unbound_reviews"])
+        self.assertTrue(any(run_id in w and "boris" in w for w in warnings), warnings)
+        personal = rd.build_payload(model, mode="personal", person="anna")
+        self.assertIsNone(personal["people"][0]["points"][0]["review"])
+
+    def test_review_in_foreign_folder_not_bound(self) -> None:
+        root = self.fresh()
+        path = _review_file(root, "anna", "P1")
+        run_id = path.stem
+        moved = ws_paths(root)["reviews"] / "boris" / path.name
+        path.rename(moved)
+        model, warnings = _collect(root)
+        anna = [p for p in model["people"] if p["id"] == "anna"][0]
+        self.assertIsNone(anna["points"][0]["review"])
+        self.assertIn(run_id, model["unbound_reviews"])
+        self.assertTrue(any(run_id in w and "reviews/boris/" in w for w in warnings), warnings)
+
+    def test_unbound_messages_distinguish_retracted_and_superseded(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        old = [r for r in doc["runs"] if r["person_id"] == "boris" and r["period"]["label"] == "P1"
+               and r["revision"] == 1][0]
+        src = _review_file(root, "boris", "P1")
+        (src.parent / f"{old['run_id']}.md").write_text(
+            src.read_text(encoding="utf-8").replace(src.stem, old["run_id"]), encoding="utf-8")
+        model, warnings = _collect(root)
+        self.assertIn(old["run_id"], model["unbound_reviews"])
+        superseded = [w for w in warnings if old["run_id"] in w]
+        self.assertTrue(any("заменён ревизией 2" in w for w in superseded), superseded)
+        twin = [r for r in doc["runs"] if r.get("retracted")][0]
+        retracted = [w for w in warnings if twin["run_id"] in w]
+        self.assertTrue(any("отозван" in w for w in retracted), retracted)
+
+
+class TestFreeTextEnums(_Base):
+    def test_unknown_reason_becomes_other(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        run = _run_of(doc, "anna", "P3")
+        for axis in run["axes"]:
+            if axis["id"] == "reversibility":
+                axis["insufficient_evidence_reason"] = "работа шла у Бориса в IDE"
+        _write_tracker(root, doc)
+        model, warnings = _collect(root)
+        payload = rd.build_payload(model, mode="personal", person="anna")
+        self.assertNotIn("Бориса", json.dumps(payload, ensure_ascii=False))
+        self.assertEqual(payload["people"][0]["points"][-1]["axes"]["reversibility"]["reason"],
+                         "other")
+        self.assertTrue(any(run["run_id"] in w and "reason" in w for w in warnings), warnings)
+
+    def test_known_reason_kept(self) -> None:
+        self.assertEqual(self.person["anna"]["points"][-1]["axes"]["reversibility"]["reason"],
+                         "no_signal")
+
+    def test_reason_other_has_i18n(self) -> None:
+        entry = rd.load_i18n()["report"]["reason_other"]
+        self.assertTrue(entry["ru"] and entry["en"])
+
+    def test_recommendation_with_unknown_axis_skipped(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        run = _run_of(doc, "anna", "P2")
+        run["recommendations"][0]["axis"] = "у Бориса"
+        _write_tracker(root, doc)
+        model, warnings = _collect(root)
+        anna = [p for p in model["people"] if p["id"] == "anna"][0]
+        self.assertNotIn(run["recommendations"][0]["id"], [r["id"] for r in anna["recs"]])
+        self.assertNotIn("Бориса", json.dumps(
+            rd.build_payload(model, mode="personal", person="anna"), ensure_ascii=False))
+        self.assertTrue(any(run["run_id"] in w and "у Бориса" in w for w in warnings), warnings)
+
+
+class TestTypes(_Base):
+    def assert_bad(self, mutate, needle: str) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        run = _run_of(doc, "anna", "P2")
+        mutate(run)
+        _write_tracker(root, doc)
+        with self.assertRaises(SrError) as ctx:
+            rd.collect(root, lambda _m: None)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn(run["run_id"], ctx.exception.message)
+        self.assertIn(needle, ctx.exception.message)
+
+    def test_score_types(self) -> None:
+        for bad in ("3", 5, -1, True, 2.5):
+            def mutate(run, bad=bad):
+                run["axes"][0]["score"] = bad
+            with self.subTest(bad=bad):
+                self.assert_bad(mutate, "score")
+
+    def test_override_types(self) -> None:
+        for bad in ("4", 7, False):
+            def mutate(run, bad=bad):
+                run["operator_override"] = {"axes": {"verification": bad}}
+            with self.subTest(bad=bad):
+                self.assert_bad(mutate, OVERRIDE_FIELD)
+
+    def test_revision_types(self) -> None:
+        for bad in ("2", 0, True):
+            def mutate(run, bad=bad):
+                run["revision"] = bad
+            with self.subTest(bad=bad):
+                self.assert_bad(mutate, "revision")
+
+    def test_revision_absent_is_ok(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        for run in doc["runs"]:
+            if run["person_id"] == "vera":
+                run.pop("revision")
+        _write_tracker(root, doc)
+        rd.collect(root, lambda _m: None)
+
+    def test_non_dict_run_rejected_with_index(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        doc["runs"].insert(2, "не прогон")
+        _write_tracker(root, doc)
+        with self.assertRaises(SrError) as ctx:
+            rd.collect(root, lambda _m: None)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("runs[2]", ctx.exception.message)
+
+    def test_show_dynamics_validated_in_collect(self) -> None:
+        root = self.fresh()
+        card = ws_paths(root)["people"] / "boris.yaml"
+        card.write_text(card.read_text(encoding="utf-8") + "  show_dynamics: false\n",
+                        encoding="utf-8")
+        model = rd.collect(root, lambda _m: None)
+        flags = {p["id"]: p["show_dynamics"] for p in model["people"]}
+        self.assertEqual(flags, {"anna": True, "boris": False, "vera": True})
+        reviewer = rd.build_payload(model, mode="reviewer")
+        self.assertEqual({p["id"]: p["show_dynamics"] for p in reviewer["people"]}, flags)
+        self.assertNotIn("show_dynamics", rd.build_payload(model, mode="group")["people"][0])
+
+    def test_quote_periods_bool_rejected(self) -> None:
+        with self.assertRaises(SrError) as ctx:
+            rd.build_payload(self.model, mode="reviewer", quote_periods=True)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+OVERRIDE_FIELD = rd.OVERRIDE_KEY
+
+
+class TestPersonalKeys(_Base):
+    def test_exact_keys_without_scores(self) -> None:
+        self.check(False)
+
+    def test_exact_keys_with_scores(self) -> None:
+        self.check(True)
+
+    def check(self, show_scores: bool) -> None:
+        payload = rd.build_payload(self.model, mode="personal", person="anna",
+                                   show_scores=show_scores)
+        self.assertEqual(set(payload), {"meta", "axes", "people"})
+        person = payload["people"][0]
+        self.assertEqual(set(person), {"id", "name", "points", "recs"})
+        point_keys = {"period", "date", "sessions", "axes", "review", "transitions"}
+        axis_keys = {"ie", "reason"}
+        if show_scores:
+            point_keys |= {"level"}
+            axis_keys |= {"score"}
+        reviews = 0
+        for pt in person["points"]:
+            self.assertEqual(set(pt), point_keys)
+            for item in pt["axes"].values():
+                self.assertEqual(set(item), axis_keys)
+            if pt["review"] is not None:
+                reviews += 1
+                self.assertEqual(set(pt["review"]), {"sent_md"})
+        self.assertTrue(reviews)
+        self.assertTrue(person["recs"])
+        for rec in person["recs"]:
+            self.assertEqual(set(rec), {"text", "axis", "given_in", "status"})
+
+
+class TestReviewerTrim(_Base):
+    def test_older_points_lose_quotes_and_draft(self) -> None:
+        root = self.fresh(people=2, periods=6)
+        doc = _tracker(root)
+        for run in doc["runs"]:
+            run["gating_evidence"] = [{"trigger": "x", "session_id": "s", "turn_index": 1,
+                                       "quote": "rm -rf build"}]
+        _write_tracker(root, doc)
+        model = rd.collect(root, lambda _m: None)
+        pts = rd.build_payload(model, mode="reviewer", quote_periods=3)["people"][0]["points"]
+        for pt in pts[:3]:
+            self.assertTrue(pt["trimmed"])
+            self.assertEqual(pt["feedback_draft"], "")
+            self.assertTrue(pt["antipatterns"])
+            self.assertTrue(all(ap["quote"] == "" for ap in pt["antipatterns"]))
+            self.assertTrue(all(g["quote"] == "" for g in pt["gating_evidence"]))
+        for pt in pts[3:]:
+            self.assertNotIn("trimmed", pt)
+            self.assertTrue(pt["feedback_draft"])
+            self.assertTrue(all(ap["quote"] for ap in pt["antipatterns"]))
+            self.assertTrue(all(g["quote"] for g in pt["gating_evidence"]))
+
+
+SAMPLE = FIXTURES / "process-reviews.sample.json"
+SAMPLE_REVIEWS = FIXTURES / "reviews"
+
+
+@unittest.skipUnless(SAMPLE.exists(), "нет fixtures/process-reviews.sample.json (пишет оценка)")
+class TestCompatWithAssessSample(unittest.TestCase):
+    def test_collect_and_payload_all_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "ws"
+            shutil.copytree(FIXTURES / "workspace-min", root)
+            paths = ws_paths(root)
+            paths["runs"].mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(SAMPLE, paths["runs"] / "process-reviews.json")
+            if SAMPLE_REVIEWS.is_dir():
+                shutil.copytree(SAMPLE_REVIEWS, paths["reviews"])
+            group = load_config(root)["workspace"]["groups"][0]
+            doc = json.loads(SAMPLE.read_text(encoding="utf-8"))
+            for pid in sorted({r["person_id"] for r in doc["runs"]}):
+                if not (paths["people"] / f"{pid}.yaml").exists():
+                    add_person(root, pid, pid, group)
+            model = rd.collect(root, lambda _m: None)
+            self.assertTrue(model["people"])
+            for mode in ("group", "reviewer"):
+                rd.attach_html(rd.build_payload(model, mode=mode))
+            rd.attach_html(rd.build_payload(model, mode="personal",
+                                            person=model["people"][0]["id"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

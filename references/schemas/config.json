@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sessionretro/config.json",
+  "title": "sessionretro workspace config",
+  "type": "object",
+  "required": ["schema_version", "workspace", "mode", "lang", "period", "sources", "hook", "sanitize", "models", "batches", "show_scores", "reviewer_gate", "template", "extensions"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "workspace": {
+      "type": "object",
+      "required": ["id", "title", "groups"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "title": {"type": "string", "minLength": 1},
+        "groups": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "mode": {"type": "string", "enum": ["self", "team", "course"]},
+    "lang": {"type": "string", "enum": ["ru", "en"]},
+    "period": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["run", "dates", "labels"]},
+        "windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label"],
+            "properties": {
+              "label": {"type": "string", "minLength": 1},
+              "from": {"type": ["string", "null"]},
+              "to": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {"type": "string", "enum": ["specstory", "claude-jsonl", "codex-jsonl", "cursor-jsonl", "git", "dir"]}
+        }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "required": ["enabled", "providers"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "providers": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "sanitize": {
+      "type": "object",
+      "properties": {
+        "names": {"type": "array", "items": {"type": "string"}},
+        "extra_patterns": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "models": {
+      "type": "object",
+      "required": ["collector", "judge", "critic"],
+      "properties": {
+        "collector": {
+          "type": "object",
+          "required": ["model", "effort"],
+          "properties": {
+            "model": {"type": "string", "enum": ["sonnet", "opus", "haiku", "inherit"]},
+            "effort": {"type": "string", "enum": ["low", "medium", "high", "max"]}
+          }
+        },
+        "judge": {
+          "type": "object",
+          "required": ["model", "effort"],
+          "properties": {
+            "model": {"type": "string", "enum": ["sonnet", "opus", "haiku", "inherit"]},
+            "effort": {"type": "string", "enum": ["low", "medium", "high", "max"]}
+          }
+        },
+        "critic": {
+          "type": "object",
+          "required": ["model", "effort"],
+          "properties": {
+            "model": {"type": "string", "enum": ["sonnet", "opus", "haiku", "inherit"]},
+            "effort": {"type": "string", "enum": ["low", "medium", "high", "max"]}
+          }
+        }
+      }
+    },
+    "batches": {
+      "type": "object",
+      "required": ["max_bytes", "max_user_turns", "min_turns"],
+      "properties": {
+        "max_bytes": {"type": "integer", "minimum": 1},
+        "max_user_turns": {"type": "integer", "minimum": 1},
+        "min_turns": {"type": "integer", "minimum": 1}
+      }
+    },
+    "show_scores": {"type": "boolean"},
+    "reviewer_gate": {"type": "boolean"},
+    "template": {"type": "string", "minLength": 1},
+    "extensions": {"type": "object"}
+  }
+}

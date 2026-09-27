@@ -1,0 +1,78 @@
+{
+  "schema_version": 2,
+  "kind": "log-evidence-batch",
+  "status": {"code": "success", "ok": true},
+  "batch": {
+    "index": 1,
+    "total": 1,
+    "person_id": "alex",
+    "workspace": "demo-team",
+    "period": {"label": "2026-W38", "from": "2026-09-14", "to": "2026-09-20", "anchor": null}
+  },
+  "sessions": [
+    {
+      "session_id": "s-0001",
+      "path": "/home/user/demo/.sessionretro/logs/alex/s-0001.md",
+      "turns_total": 42,
+      "user_turns": 12,
+      "reviewed_from_turn": null,
+      "state": "new",
+      "status": "read",
+      "status_note": null
+    },
+    {
+      "session_id": "s-0002",
+      "path": "/home/user/demo/.sessionretro/logs/alex/s-0002.md",
+      "turns_total": 3,
+      "user_turns": 1,
+      "status": "agent_subtranscript",
+      "status_note": "реплики за человека пишет оркестратор"
+    }
+  ],
+  "observations": [
+    {
+      "axis": "verification",
+      "subcriterion": null,
+      "timing": null,
+      "scale_note": "дифф на 4 файла",
+      "polarity": "negative",
+      "session_id": "s-0001",
+      "turn_index": 17,
+      "quote": "ок, мержим",
+      "reading": "принял дифф на четыре файла без запуска тестов"
+    },
+    {
+      "axis": "task_framing",
+      "subcriterion": "acceptance_criteria",
+      "timing": "setup_prompt",
+      "scale_note": null,
+      "polarity": "positive",
+      "session_id": "s-0001",
+      "turn_index": 1,
+      "quote": "готово, когда форма отклоняет пустой email и тест на это зелёный",
+      "reading": "критерий готовности назван в постановочном промпте"
+    }
+  ],
+  "antipattern_candidates": [],
+  "flag_candidates": [],
+  "gating_candidates": [],
+  "rec_signals": [],
+  "axes_unobserved": [
+    {"axis": "ownership", "reason": "behaviour_absent", "note": null},
+    {"axis": "self_correction", "reason": "short_log", "note": null},
+    {"axis": "context_engineering", "reason": "no_context_report", "note": null},
+    {"axis": "decomposition", "reason": "short_log", "note": null},
+    {"axis": "trust_calibration", "reason": "behaviour_absent", "note": null},
+    {"axis": "reversibility", "reason": "tool_has_no_trace", "note": null}
+  ],
+  "subcriteria_unobserved": [],
+  "axis_signal_sessions": {"verification": 1, "task_framing": 1},
+  "outcome_signals": [
+    {"direction": "done", "session_id": "s-0001", "turn_index": 40, "quote": "тесты зелёные, закрываю задачу", "note": null}
+  ],
+  "agent_stack": ["claude-code"],
+  "metrics": {"sessions_read": 1, "turns_total": 42, "user_turns": 12},
+  "context_report_facts": null,
+  "batch_note": "одна сессия про валидацию формы, обрыва нет",
+  "metadata": {"collector_version": "v3", "turns_analyzed": 42, "warnings": ["no_context_report"]}
+}

@@ -1,0 +1,299 @@
+{
+  "schema_version": 3,
+  "status": {
+    "code": "success",
+    "ok": true
+  },
+  "data": {
+    "session_scope": {
+      "sessions": [
+        {
+          "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+          "path": "logs/alex/2026-09-02_09-00-00Z-login-form.md",
+          "turns_total": 24,
+          "reviewed_from_turn": null,
+          "state": "new",
+          "status": "reviewed",
+          "status_note": null
+        },
+        {
+          "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+          "path": "logs/alex/2026-09-01_11-30-00Z-refactor-api.md",
+          "turns_total": 18,
+          "reviewed_from_turn": 10,
+          "state": "grown",
+          "status": "reviewed",
+          "status_note": null
+        },
+        {
+          "session_id": "e07a4d93-6f18-4c5b-b2d7-8a3e10f4c965",
+          "path": "logs/alex/2026-09-04_16-00-00Z-quick-question.md",
+          "turns_total": 4,
+          "reviewed_from_turn": null,
+          "state": "new",
+          "status": "transcript_too_short",
+          "status_note": "два хода, материала для оценки нет"
+        }
+      ],
+      "agent_stack": [
+        "claude-code",
+        "sonnet"
+      ]
+    },
+    "axes": [
+      {
+        "id": "verification",
+        "score": 2,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+            "turn_index": 14,
+            "quote": "ок, мержим",
+            "reading": "принял дифф на четыре файла без запуска тестов"
+          }
+        ],
+        "subcriteria": [],
+        "note": "проверка была в одной сессии из двух"
+      },
+      {
+        "id": "task_framing",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+            "turn_index": 0,
+            "quote": "сделай форму входа: email и пароль, ошибки под полями, без новых зависимостей",
+            "reading": "цель, границы и критерий готовности в первом сообщении"
+          }
+        ],
+        "subcriteria": [],
+        "note": "постановка полная с первого сообщения"
+      },
+      {
+        "id": "ownership",
+        "score": 2,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+            "turn_index": 12,
+            "quote": "делай как считаешь нужным",
+            "reading": "выбор структуры отдан агенту без обсуждения"
+          }
+        ],
+        "subcriteria": [],
+        "note": "решение о структуре отдано агенту"
+      },
+      {
+        "id": "self_correction",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+            "turn_index": 15,
+            "quote": "стоп, откатываем, пробуем через адаптер",
+            "reading": "сменил подход после второй неудачи"
+          }
+        ],
+        "subcriteria": [],
+        "note": "смена подхода после неудачи"
+      },
+      {
+        "id": "context_engineering",
+        "score": null,
+        "insufficient_evidence": true,
+        "insufficient_evidence_reason": "short_log",
+        "evidence": [],
+        "subcriteria": [],
+        "note": "материала нет"
+      },
+      {
+        "id": "decomposition",
+        "score": 2,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+            "turn_index": 3,
+            "quote": "сначала сделай всё целиком, потом посмотрим",
+            "reading": "крупный шаг без промежуточной проверки"
+          }
+        ],
+        "subcriteria": [],
+        "note": "работа одним куском"
+      },
+      {
+        "id": "trust_calibration",
+        "score": 2,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+            "turn_index": 13,
+            "quote": "да, применяй всё",
+            "reading": "принял предложение агента целиком"
+          }
+        ],
+        "subcriteria": [],
+        "note": "доверие без выборочной проверки"
+      },
+      {
+        "id": "reversibility",
+        "score": 3,
+        "insufficient_evidence": false,
+        "insufficient_evidence_reason": null,
+        "evidence": [
+          {
+            "session_id": "5c2e8f19-a4b7-4d20-8e63-f1b09c7d2a46",
+            "turn_index": 11,
+            "quote": "закоммить текущее перед рефакторингом",
+            "reading": "точка отката перед рискованным шагом"
+          }
+        ],
+        "subcriteria": [],
+        "note": "точка отката есть"
+      }
+    ],
+    "antipatterns": [
+      {
+        "id": "tests_instead_of_eyes",
+        "found": true,
+        "axis": "verification",
+        "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+        "turn_index": 14,
+        "quote": "ок, мержим",
+        "note": "дифф не открыт, тесты не запускались"
+      }
+    ],
+    "flags": [],
+    "gating_triggered": false,
+    "gating_evidence": [],
+    "summary": {
+      "level_judge": "competent",
+      "strongest_axis": "task_framing",
+      "weakest_axis": "verification",
+      "one_thing_to_change": "запускать тесты перед тем, как принять дифф",
+      "task_solved": "yes"
+    },
+    "recommendations": [
+      {
+        "id": "REC-alex-001",
+        "axis": "verification",
+        "text": "Перед тем как принять дифф, запусти тесты и открой хотя бы один изменённый файл.",
+        "status": "open"
+      },
+      {
+        "id": "REC-alex-002",
+        "axis": "trust_calibration",
+        "text": "Когда агент предлагает правку в нескольких местах, прими одну и посмотри результат, прежде чем брать остальные.",
+        "status": "open"
+      }
+    ],
+    "best_practices": [
+      {
+        "axis": "verification",
+        "anchor": {
+          "session_id": "3f9a2c71-8d4e-4b6a-9c15-2e7f0a4b8d31",
+          "turn_index": 14,
+          "quote": "ок, мержим"
+        },
+        "practices": [
+          "попросить агента показать команду проверки и её вывод",
+          "держать короткий список того, что смотреть в диффе"
+        ]
+      }
+    ],
+    "prev_recommendations": [],
+    "feedback_parts": {
+      "opening": "В разбор подано три лога, это три разных разговора; разобраны два, третий оказался слишком коротким.",
+      "actions": [
+        {
+          "place": "сессия про форму входа, ближе к концу",
+          "date": "2026-09-02",
+          "quote": "ок, мержим",
+          "cost": "дифф на четыре файла ушёл в ветку без запуска тестов, и сломанная валидация всплыла бы уже у коллег",
+          "try": "перед словом «мержим» запускать тесты и открывать хотя бы один изменённый файл",
+          "levers": [
+            "попросить агента показать команду проверки и её вывод",
+            "держать короткий список того, что смотреть в диффе"
+          ]
+        },
+        {
+          "place": "рефакторинг API, момент выбора структуры",
+          "date": "2026-09-03",
+          "quote": "да, применяй всё",
+          "cost": "правка легла сразу в три слоя, и откатывать её пришлось целиком",
+          "try": "принимать правку по частям и смотреть результат после первой",
+          "levers": []
+        }
+      ],
+      "criteria": [
+        {
+          "axis": "verification",
+          "verdict": "first_place_above",
+          "evidence": "В одной сессии изменения приняты без запуска тестов."
+        },
+        {
+          "axis": "task_framing",
+          "verdict": "even",
+          "evidence": "Цель и границы задачи названы в первом сообщении."
+        },
+        {
+          "axis": "ownership",
+          "verdict": "even_but_one",
+          "evidence": "Выбор структуры модели данных отдан агенту без обсуждения."
+        },
+        {
+          "axis": "self_correction",
+          "verdict": "even",
+          "evidence": "После второй неудачи подход сменён на адаптер."
+        },
+        {
+          "axis": "context_engineering",
+          "verdict": "not_visible",
+          "evidence": "Сессии короткие, работы с контекстом в них не видно."
+        },
+        {
+          "axis": "decomposition",
+          "verdict": "even_but_one",
+          "evidence": "Форма входа попрошена целиком одним шагом."
+        },
+        {
+          "axis": "trust_calibration",
+          "verdict": "second_place_above",
+          "evidence": "Предложение агента принято целиком без выборочной проверки."
+        },
+        {
+          "axis": "reversibility",
+          "verdict": "even",
+          "evidence": "Перед рефакторингом сделан коммит с текущим состоянием."
+        }
+      ],
+      "closing": null
+    },
+    "artifact": null
+  },
+  "metadata": {
+    "turns_analyzed": 36,
+    "axes_scored": 7,
+    "axes_insufficient": 1,
+    "metrics_available": true,
+    "context_report_available": false,
+    "prompt_version": "v13",
+    "collector_version": "v3",
+    "batches": 1,
+    "sessions_total": 3,
+    "warnings": [
+      "sessions_excluded"
+    ]
+  }
+}

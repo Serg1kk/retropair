@@ -1,0 +1,12 @@
+id: p04
+name: "Злата Ежова"
+group: demo
+feedback:
+  address: ты
+  length: detailed
+  tone: supportive
+  opening_summary: false
+  mark_sections: true
+  channel: telegram
+  value_focus: finding
+  prefix: ""

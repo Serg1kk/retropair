@@ -1,0 +1,774 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sessionretro/tracker.json",
+  "title": "sessionretro tracker v2 (runs/process-reviews.json)",
+  "description": "Прогоны оценки по людям workspace. Условия, которых подмножество схем не выражает (балл под цитату, потолок гейта, REC-id), проверяет validate.",
+  "type": "object",
+  "required": [
+    "tracker_version",
+    "workspace",
+    "updated_at",
+    "runs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tracker_version": {
+      "const": 2
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "workspace",
+          "period",
+          "period_confidence",
+          "person_id",
+          "reviewed_at",
+          "reviewer",
+          "collector",
+          "batches",
+          "sessions_total",
+          "tracker_version",
+          "sessions_reviewed",
+          "sessions_skipped_known",
+          "agent_stack",
+          "metrics_available",
+          "context_report_available",
+          "warnings",
+          "turns_total",
+          "axes",
+          "antipatterns",
+          "flags",
+          "gating_triggered",
+          "gating_evidence",
+          "task_solved",
+          "summary",
+          "recommendations",
+          "prev_recommendations",
+          "feedback_draft",
+          "feedback_parts",
+          "revision",
+          "operator_override",
+          "logs_index_marks",
+          "level_judge",
+          "level_computed",
+          "review_status",
+          "artifact",
+          "source"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "period": {
+            "type": "object",
+            "required": [
+              "label",
+              "from",
+              "to",
+              "anchor"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "from": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "anchor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "period_confidence": {
+            "type": "string",
+            "enum": [
+              "inferred",
+              "explicit"
+            ]
+          },
+          "person_id": {
+            "type": "string"
+          },
+          "reviewed_at": {
+            "type": "string"
+          },
+          "reviewer": {
+            "type": "string",
+            "description": "log-judge@<prompt_version>"
+          },
+          "collector": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batches": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sessions_total": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tracker_version": {
+            "const": 2
+          },
+          "sessions_reviewed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "session_id",
+                "path",
+                "status"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "turns_total": {
+                  "type": "integer"
+                },
+                "reviewed_from_turn": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "grown"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "description": "reviewed: сессия вошла в оценку; иначе причина исключения.",
+                  "enum": [
+                    "reviewed",
+                    "empty_transcript",
+                    "transcript_too_short",
+                    "unreadable_input",
+                    "agent_subtranscript",
+                    "duplicate_export",
+                    "other_period",
+                    "not_batched",
+                    "excluded_other"
+                  ]
+                },
+                "status_note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "sessions_skipped_known": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agent_stack": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metrics_available": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "context_report_available": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "turns_total": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "axes": {
+            "type": "array",
+            "minItems": 8,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "score",
+                "insufficient_evidence",
+                "evidence",
+                "note"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "verification",
+                    "task_framing",
+                    "ownership",
+                    "self_correction",
+                    "context_engineering",
+                    "decomposition",
+                    "trust_calibration",
+                    "reversibility"
+                  ]
+                },
+                "score": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "insufficient_evidence": {
+                  "type": "boolean"
+                },
+                "insufficient_evidence_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "short_log",
+                    "behaviour_absent",
+                    "no_context_report",
+                    "no_repo_access",
+                    "tool_has_no_trace",
+                    "log_truncated",
+                    "work_outside_transcript",
+                    "nothing_to_verify",
+                    null
+                  ]
+                },
+                "evidence": {
+                  "type": "array",
+                  "description": "Минимум одна дословная цитата под любой выставленный балл.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "session_id",
+                      "turn_index",
+                      "quote",
+                      "reading"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "session_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Сессия хода. null только у числового доказательства без хода."
+                      },
+                      "turn_index": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "quote": {
+                        "type": "string",
+                        "maxLength": 400
+                      },
+                      "reading": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "subcriteria": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "upfront",
+                          "later_proactive",
+                          "later_elicited",
+                          "reactive",
+                          "absent",
+                          "externalized",
+                          "not_applicable"
+                        ]
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Одна фраза: что определило балл."
+                }
+              }
+            }
+          },
+          "antipatterns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "found"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "found": {
+                  "type": "boolean"
+                },
+                "axis": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "turn_index": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "quote": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 400
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "session_id",
+                "turn_index",
+                "note"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "secret_in_the_open",
+                    "destructive_without_review",
+                    "permissions_off_on_foreign_code",
+                    "over_broad_access",
+                    "untrusted_content_as_instruction",
+                    "unredacted_input",
+                    "redaction_leak"
+                  ]
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "turn_index": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Факт, а не оценка. Секреты не цитируются."
+                }
+              }
+            }
+          },
+          "gating_triggered": {
+            "type": "boolean"
+          },
+          "gating_evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "trigger",
+                "session_id",
+                "turn_index",
+                "quote"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "trigger": {
+                  "type": "string",
+                  "enum": [
+                    "G1",
+                    "G2",
+                    "G3",
+                    "G4",
+                    "G5",
+                    "G6"
+                  ]
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "turn_index": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "quote": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              }
+            }
+          },
+          "task_solved": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "yes",
+              "no",
+              "unclear",
+              null
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recommendations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "axis",
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "REC-<person_id>-NNN, сквозная нумерация по периодам."
+                },
+                "axis": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "followed",
+                    "ignored",
+                    "retired"
+                  ]
+                }
+              }
+            }
+          },
+          "prev_recommendations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "verdict"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "verdict": {
+                  "type": "string",
+                  "description": "not_observable оставляет рекомендацию открытой.",
+                  "enum": [
+                    "followed",
+                    "partial",
+                    "ignored",
+                    "not_observable"
+                  ]
+                },
+                "evidence": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "session_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "turn_index": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 400
+                    }
+                  }
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "feedback_draft": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "null после append, заполняет render-review."
+          },
+          "feedback_parts": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "operator_override": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Правка баллов ревьюером. Переживает append --replace.",
+            "required": [
+              "axes",
+              "why",
+              "by",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "axes": {
+                "type": "object",
+                "description": "Ось → балл 0–4, только исправленные.",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4
+                }
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "logs_index_marks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "reviewed",
+                    "excluded"
+                  ]
+                }
+              }
+            }
+          },
+          "retracted": {
+            "type": "object",
+            "required": [
+              "at",
+              "why",
+              "logs_unmarked"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1
+              },
+              "logs_unmarked": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "level_judge": {
+            "type": "string",
+            "enum": [
+              "orchestrator",
+              "confident_operator",
+              "competent",
+              "naive",
+              "passenger",
+              "developing",
+              "insufficient"
+            ]
+          },
+          "level_computed": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "orchestrator",
+              "confident_operator",
+              "competent",
+              "naive",
+              "passenger",
+              "developing",
+              "insufficient",
+              null
+            ]
+          },
+          "review_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved"
+            ]
+          },
+          "artifact": {
+            "type": "null"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

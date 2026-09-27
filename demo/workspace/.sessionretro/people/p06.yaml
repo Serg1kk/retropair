@@ -1,0 +1,12 @@
+id: p06
+name: "Матвей Зимин"
+group: demo
+feedback:
+  address: ты
+  length: short
+  tone: supportive
+  opening_summary: true
+  mark_sections: false
+  channel: slack
+  value_focus: finding
+  prefix: "Добрый день!"

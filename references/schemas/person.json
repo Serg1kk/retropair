@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sessionretro/person.json",
+  "title": "sessionretro person card (after merge with _default.yaml)",
+  "type": "object",
+  "required": ["id", "name", "group", "feedback"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "name": {"type": "string", "minLength": 1},
+    "group": {"type": "string", "minLength": 1},
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {"type": ["string", "null"]},
+        "grade": {"type": ["string", "null"]},
+        "years": {"type": ["integer", "null"], "minimum": 0},
+        "stack": {"type": ["string", "null"]},
+        "tools": {"type": ["string", "null"]},
+        "constraints": {"type": ["string", "null"]}
+      }
+    },
+    "feedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "length", "tone", "opening_summary", "mark_sections", "practices", "skip_basics", "boundaries", "avoid", "value_focus", "show_dynamics", "channel", "template", "prefix"],
+      "properties": {
+        "address": {"type": "string", "enum": ["ты", "вы", "you"]},
+        "length": {"type": "string", "enum": ["short", "detailed"]},
+        "tone": {"type": "string", "enum": ["direct", "supportive"]},
+        "opening_summary": {"type": "boolean"},
+        "mark_sections": {"type": "boolean"},
+        "practices": {"type": "boolean"},
+        "skip_basics": {"type": "array", "items": {"type": "string"}},
+        "boundaries": {"type": "array", "items": {"type": "string"}},
+        "avoid": {"type": "array", "items": {"type": "string"}},
+        "value_focus": {"type": "string", "enum": ["finding", "full"]},
+        "show_dynamics": {"type": "boolean"},
+        "channel": {"type": "string", "enum": ["file", "telegram", "slack", "email"]},
+        "template": {"type": "string", "minLength": 1},
+        "prefix": {"type": "string"}
+      }
+    },
+    "sources": {"type": "array", "items": {"type": "object"}},
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logs": {"type": "boolean"},
+        "date": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

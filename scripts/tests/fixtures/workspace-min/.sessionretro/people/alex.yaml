@@ -1,0 +1,18 @@
+id: alex                    # вымышленный участник демо-команды
+name: "Alex Demo"
+group: team-a
+profile:
+  role: backend developer
+  grade: middle
+  years: 4
+  stack: Python, Postgres
+  tools: Claude Code
+  constraints: нет прав на прод
+feedback:
+  address: ты
+  skip_basics:
+    - что такое git
+sources:
+consent:
+  logs: true
+  date: 2026-09-01

@@ -1,0 +1,23 @@
+id: sam                     # вымышленный участник демо-команды
+name: "Sam Example"
+group: team-b
+profile:
+  role: frontend developer
+  grade: senior
+  years: 8
+  stack: TypeScript, React
+  tools: Claude Code, Codex
+  constraints: ""
+feedback:
+  address: вы
+  length: short
+  tone: supportive
+  boundaries:
+    - не переносить советы на рабочий репозиторий
+    - не упоминать сроки релиза
+  avoid:
+    - сравнения с другими людьми
+sources:
+consent:
+  logs: true
+  date: 2026-09-01

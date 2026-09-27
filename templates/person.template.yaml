@@ -1,0 +1,31 @@
+id: "{{id}}"                 # [a-z0-9-]+, имя папок и REC-id; всегда в кавычках
+name: {{name}}
+group: {{group}}
+profile:
+  role: ""                  # например: backend developer
+  grade: ""                 # например: senior
+  years: null               # опыт в годах, целое число
+  stack: ""                 # например: Java, Kotlin, Postgres
+  tools: ""                 # например: Claude Code, Cursor
+  constraints: ""           # например: закрытый контур, нет прав на прод
+# Настройки текста берутся из _default.yaml. Чтобы переопределить для этого человека,
+# раскомментируйте блок и нужные строки (остальное придёт из _default.yaml).
+# feedback:
+#   address: ты              # ты | вы | you
+#   length: detailed         # short | detailed
+#   tone: direct             # direct | supportive
+#   opening_summary: false   # открывать обобщением простым языком
+#   mark_sections: false     # подписывать «что менять» / «на чём стоит»
+#   practices: true          # приёмы «как исправить» по слабым осям
+#   skip_basics:             # чего не объяснять, по пункту на строку «  - …»
+#   boundaries:              # жёсткие запреты (не переносить на рабочий стек, комплаенс…)
+#   avoid:                   # чего не делать в тексте
+#   value_focus: finding     # finding | full
+#   show_dynamics: true
+#   channel: file            # file | telegram | slack | email (влияет на переносы строк)
+#   template: default        # default | workspace | <имя файла в templates/>
+#   prefix: ""               # строка перед текстом (например, приветствие)
+sources:                     # дополнительные источники, по элементу на строку: «  - type: dir» + «    path: …»
+consent:                     # team/course
+  logs: true
+  date: {{date}}

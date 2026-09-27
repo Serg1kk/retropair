@@ -1,0 +1,12 @@
+id: p14
+name: "Прохор Фомин"
+group: demo
+feedback:
+  address: ты
+  length: detailed
+  tone: supportive
+  opening_summary: true
+  mark_sections: false
+  channel: file
+  value_focus: finding
+  prefix: "Привет!"
