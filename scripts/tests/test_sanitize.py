@@ -90,6 +90,9 @@ class Rules(unittest.TestCase):
         "password_text": ("Пароль: " + "Qw7" + "zx9Lm", "[PASSWORD]"),
         "totp_secret": ("2FA: " + "k3m" + "q7p2", "[OTP_SECRET]"),
         "base32_secret": ("JBSW" + "Y3DP" + "EHPK" + "3PXP", "[OTP_SECRET]"),
+        "json_secret": ('{"password": "' + "hun" + 'ter22"}', "[SECRET_ASSIGNMENT]"),
+        "password_field": ("document.querySelector('#password').value = '" + "hun" + "ter22'",
+                           "[PASSWORD]"),
     }
 
     def test_each_rule_fires(self):
@@ -399,6 +402,157 @@ class PasswordTotpText(unittest.TestCase):
                 self.assertEqual(PLAIN.sanitize_text(text), (text, {}))
 
 
+# Выдуманный пароль B01; обратная косая + кавычка — экранированная кавычка JSON внутри строки.
+PWV = "Qz4" + "nR8" + "wLp2" + "xT6mK9"
+BQ = "\\" + '"'
+BBQ = "\\" * 3 + '"'
+
+
+class JsonPasswordField(unittest.TestCase):
+    """B01: пароль в JSON (обычном и экранированном в строке команды) и во вводе в поле пароля."""
+
+    def assertCut(self, text: str, want: str, rule: str, n: int = 1, extra: dict | None = None) -> str:
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertNotIn(PWV, out)
+        self.assertEqual(out, want)
+        self.assertEqual(hits, {rule: n, **(extra or {})})
+        self.assertEqual(PLAIN.sanitize_text(out), (out, {}), "повторный проход")
+        return out
+
+    def test_bug_shape_escaped_json_in_command(self):
+        # Случай 1: curl -d '{\"email\":\"…\",\"password\":\"…\"}' в строке команды.
+        head = "curl -d '{" + BQ + "email" + BQ + ":" + BQ + "a@example.com" + BQ + "," + BQ + "password" + BQ + ":" + BQ
+        want = ("curl -d '{" + BQ + "email" + BQ + ":" + BQ + "[EMAIL]" + BQ + "," + BQ + "password" + BQ + ":"
+                + BQ + "[SECRET_ASSIGNMENT]" + BQ + "}'")
+        self.assertCut(head + PWV + BQ + "}'", want, "json_secret", extra={"email": 1})
+
+    def test_plain_json_in_command_stays_json(self):
+        # Случай 2: обычный JSON — ключ в кавычках перед `:`; ключ и кавычки остаются, JSON валиден.
+        text = """curl -d '{"email":"a@example.com","password":\"""" + PWV + """\"}'"""
+        out = self.assertCut(text, """curl -d '{"email":"[EMAIL]","password":"[SECRET_ASSIGNMENT]"}'""",
+                             "json_secret", extra={"email": 1})
+        self.assertEqual(json.loads(out[len("curl -d '"):-1])["password"], "[SECRET_ASSIGNMENT]")
+
+    def test_json_key_variants(self):
+        for key in ("password", "passwd", "secret", "token", "api_key", "db_password", "Password", "API_TOKEN"):
+            for tpl, want in (('{"K": "V"}', '{"K": "[SECRET_ASSIGNMENT]"}'),
+                              ('{"K" : "V"}', '{"K" : "[SECRET_ASSIGNMENT]"}'),
+                              ('{"K":"V","x":1}', '{"K":"[SECRET_ASSIGNMENT]","x":1}'),
+                              ("{'K': 'V'}", "{'K': '[SECRET_ASSIGNMENT]'}"),
+                              ("cfg['K'] = 'V'", "cfg['K'] = '[SECRET_ASSIGNMENT]'"),
+                              ("{" + BBQ + "K" + BBQ + ":" + BBQ + "V" + BBQ + "}",
+                               "{" + BBQ + "K" + BBQ + ":" + BBQ + "[SECRET_ASSIGNMENT]" + BBQ + "}"),
+                              ("{&#34;K&#34;:&#34;V&#34;}", "{&#34;K&#34;:&#34;[SECRET_ASSIGNMENT]&#34;}"),
+                              ("{" + "\\" + "&#34;K" + "\\" + "&#34;:" + "\\" + "&#34;V" + "\\" + "&#34;}",
+                               "{" + "\\" + "&#34;K" + "\\" + "&#34;:" + "\\" + "&#34;[SECRET_ASSIGNMENT]"
+                               + "\\" + "&#34;}")):
+                text = tpl.replace("K", key).replace("V", PWV)
+                with self.subTest(text=text):
+                    self.assertCut(text, want.replace("K", key), "json_secret")
+
+    def test_value_with_backslash_escape(self):
+        val = "ab" + "\\" + "u0026" + PWV
+        self.assertCut('{"password": "' + val + '"}', '{"password": "[SECRET_ASSIGNMENT]"}', "json_secret")
+
+    def test_jsonl_tool_use_row(self):
+        cmd = """curl -s -d '{"email":"a@example.com","password":\"""" + PWV + """\"}' http://x.test/login"""
+        row = {"type": "assistant", "uuid": UUID, "timestamp": TS, "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": cmd}}]}}
+        line = json.dumps(row)
+        out, hits = PLAIN.sanitize_obj(json.loads(line))
+        got = out["message"]["content"][0]["input"]["command"]
+        self.assertNotIn(PWV, got)
+        self.assertIn('"password":"[SECRET_ASSIGNMENT]"', got)
+        self.assertEqual(hits, {"json_secret": 1, "email": 1})
+        raw_out, raw_hits = PLAIN.sanitize_text(line)  # сырая строка JSONL: `\"password\":\"…\"`
+        self.assertNotIn(PWV, raw_out)
+        self.assertEqual(json.loads(raw_out)["message"]["content"][0]["input"]["command"], got)
+        self.assertEqual(raw_hits, hits)
+
+    def test_js_bug_shapes(self):
+        # Случаи 3 и 4: присваивание значения полю, найденному по селектору пароля.
+        self.assertCut("document.querySelector('[name=" + BQ + "password" + BQ + "]').value = '" + PWV + "'",
+                       "document.querySelector('[name=" + BQ + "password" + BQ + "]').value = '[PASSWORD]'",
+                       "password_field")
+        self.assertCut('document.querySelector(\'input[type=password]\').value="' + PWV + '"',
+                       'document.querySelector(\'input[type=password]\').value="[PASSWORD]"', "password_field")
+
+    def test_js_selectors_and_inputs(self):
+        selectors = ("document.querySelector('[name=password]')", "document.querySelector('input[type=password]')",
+                     "$('#password')", "document.querySelector('#pwd')", "page.getByLabel('Password')",
+                     "page.locator('#user-passwd')", "document.getElementById('password')",
+                     "driver.find_element(By.NAME, \"password\")", "page.getByRole('textbox', { name: 'Password' })")
+        ops = (".value = 'V'", '.value="V"', ".fill('V')", ".type('V')", ".send_keys('V')",
+               ".clear().send_keys(\"V\")", ".fill(`V`)")
+        for sel in selectors:
+            for op in ops:
+                text = sel + op.replace("V", PWV) + ";\nnext()"
+                with self.subTest(text=text):
+                    self.assertCut(text, sel + op.replace("V", "[PASSWORD]") + ";\nnext()", "password_field")
+
+    def test_js_selector_as_argument(self):
+        for sel in ("'#password'", '"input[name=password]"', "'[type=password]'"):
+            text = "await page.fill(" + sel + ", '" + PWV + "')"
+            with self.subTest(text=text):
+                self.assertCut(text, "await page.fill(" + sel + ", '[PASSWORD]')", "password_field")
+
+    def test_js_password_variable(self):
+        # Форма из живого лога: селектор в переменной, значение — строкой позже или через helper.
+        bind = "const pass = document.querySelector('input[name=" + BQ + "password" + BQ + "]');" + "\\n  "
+        cases = [
+            (bind + "pass.value = '@V@';", bind + "pass.value = '[PASSWORD]';"),
+            (bind + "setVal(pass, '@V@');", bind + "setVal(pass, '[PASSWORD]');"),
+            ('passwordInput.fill("@V@")', 'passwordInput.fill("[PASSWORD]")'),
+            ('self.password_field.send_keys("@V@")', 'self.password_field.send_keys("[PASSWORD]")'),
+            ("newPassword.value = '@V@'", "newPassword.value = '[PASSWORD]'"),
+            ("PWD_INPUT.type('@V@')", "PWD_INPUT.type('[PASSWORD]')"),
+            ("typeInto(pwdField, '@V@')", "typeInto(pwdField, '[PASSWORD]')"),
+        ]
+        for raw, want in cases:
+            text = raw.replace("@V@", PWV)
+            with self.subTest(text=text):
+                self.assertCut(text, want, "password_field")
+
+    def test_negatives_untouched(self):
+        cases = [
+            'payload = {"email": EMAIL, "password": os.environ["N8N_OWNER_PASSWORD"]}',
+            "{" + BQ + "password" + BQ + ":" + BQ + "$N8N_OWNER_PASSWORD" + BQ + "}",
+            '-d "{\\"password\\":\\"$N8N_OWNER_PASSWORD\\"}"', 'echo "$N8N_OWNER_PASSWORD"',
+            '{"password": process.env.ADMIN_PASS}', '{"password": "${ADMIN_PASS}"}', '{"token": "{{ token }}"}',
+            '{"password": ""}', '{"password": null}', '{"password": "<your-password>"}', "{'secret': None}",
+            '{"password": "[PASSWORD]"}', '{"max_tokens": 4096}', '"password_text": 2,',
+            'data["password"] == other', 'os.environ["DB_PASSWORD"]',
+            "document.querySelector('#password').focus();",
+            "const pass = document.querySelector('input[name=password]');",
+            "document.querySelector('#password'); document.querySelector('#email').value = 'alice'",
+            "document.querySelector('#email').value = 'alice'",
+            "document.querySelector('#password').setAttribute('type', 'text')",
+            "pass.value = process.env.ADMIN_PASS", "pass.fill(password)", "pass.value = ''",
+            "bypass.value = 'north'", "compass.value = 'north'", "passenger.value = 'Bob'",
+            "passport.fill('AB12345')", "[password reset](https://x.test/reset)",
+            'grep -iE "token|secret|password|api_key|apikey" .env',
+            # формы из живых логов: метка источника, выражение n8n, адрес у ключа *_url
+            '{"api_token": "[REDACTED:project-api-key]"}', '{"accessToken": "={{ $env.service_api_token }}"}',
+            '{"token_url": "https://auth.example.com/oauth/token"}',
+            # формы из живых логов: перечень селекторов в markdown и в коде через перевод строки,
+            # заглушки значения, описание под ключом secret_*
+            "селекторы (`[name=password]`, `input[type=password]`, `#pwd`) и ввод",
+            "selectors = (\"page.getByLabel('Password')\",\n    \"driver.find_element(By.ID, 'x')\")",
+            '{"password": "..."}', '{"password": "…"}', '{"password": "' + "*" * 12 + '"}',
+            '{"secret_handling": "does not print keys to logs"}',
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(PLAIN.sanitize_text(text), (text, {}))
+
+    def test_lowercase_dollar_and_url_with_query_are_values(self):
+        # `$VAR` живёт только в верхнем регистре; URL с запросом или логином — не «просто адрес».
+        for val in ("$ecret" + "99x", "$" + PWV, "https://x.test/cb?token=" + PWV, "[" + PWV + "]"):
+            text = '{"password": "' + val + '"}'
+            with self.subTest(text=text):
+                self.assertCut(text, '{"password": "[SECRET_ASSIGNMENT]"}', "json_secret")
+
+
 class Fingerprint(unittest.TestCase):
     def test_same_config_same_fp_order_insensitive(self):
         a = sanitize.Sanitizer(names=["Acme", "Globex"], extra_patterns=["A-\\d+", "B-\\d+"],
@@ -560,6 +714,25 @@ class Performance(unittest.TestCase):
             started = time.perf_counter()
             s.sanitize_text(text)
             self.assertLess(time.perf_counter() - started, 1.0, text[:12])
+
+    def test_long_tokens_linear_json_password_field(self):
+        # Правила B01: ключи и кавычки подряд, незакрытое значение, селекторы и переменные пароля подряд.
+        import time
+
+        s = sanitize.Sanitizer()
+        bq = "\\" + '"'
+        for text in ('"password":"' * 3000, '"token": "' + "a" * 20000, "password" + bq + ":" + bq * 5000,
+                     "{&#34;password&#34;:&#34;" + "a&" * 10000, '"password":"' + "\\u" * 10000,
+                     "\\" * 20000, "#password" * 3000, "[name=password]" * 2000, "#password " + "a" * 20000,
+                     "getByLabel('Password'" * 2000, "[" * 20000, "pass.value = '" * 3000,
+                     "setVal(pass, '" * 3000, "(pass, " * 4000, "userPass" * 3000, "a_" * 8000 + "Password",
+                     "document.querySelector('#password')" + " x" * 10000, "#password" + "\\" * 20000,
+                     "#password" + "\\x" * 10000, "pass.value = '" + "\\" * 20000, '"password":"' + "a\\" * 10000,
+                     "ById" * 5000, "getBy" * 5000, "#" + "a" * 20000 + "pwd", "[password" * 5000,
+                     "$('#password').value = '" + "a" * 20000):
+            started = time.perf_counter()
+            s.sanitize_text(text)
+            self.assertLess(time.perf_counter() - started, 1.0, text[:16])
 
     def test_prefixed_secret_still_caught(self):
         s = sanitize.Sanitizer()

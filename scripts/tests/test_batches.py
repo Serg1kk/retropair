@@ -254,6 +254,16 @@ class ForPersonTest(TempHome, unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
         self.assertIn("nobody", ctx.exception.message)
 
+    def test_person_without_consent_is_1(self):      # B02
+        card = self.root / ".sessionretro" / "people" / "alex.yaml"
+        card.write_text(card.read_text(encoding="utf-8").replace("logs: true", "logs: false"), encoding="utf-8")
+        with self.assertRaises(SrError) as ctx:
+            batches.for_person(self.root, "alex", measure="index")
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("alex", ctx.exception.message)
+        self.assertIn("нет согласия на логи", ctx.exception.message)
+        self.assertEqual(len(ids(batches.for_person(self.root, "sam", measure="index"))[0]), 2)
+
     def test_no_index_is_1(self):
         ws_paths(self.root)["logs_index"].unlink()
         with self.assertRaises(SrError) as ctx:

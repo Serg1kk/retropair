@@ -11,6 +11,10 @@
 - `review_from_turn` есть только у `grown`: с этого хода оценивается хвост.
 - `reviewed` и `excluded` взаимоисключающие. Ставятся только через `mark()`; если прежний индекс
   несёт оба — побеждает более поздний по `*_at`, в `warnings` строка.
+- Согласие отозвано (`no_consent` у merge/rebuild): записи человека — `excluded` с
+  `excluded_reason`/`excluded_by: consent`, `reviewed` снимается; исключение, поставленное
+  оценкой, не перетирается. Согласие вернули — записи с `excluded_by: consent` считаются заново.
+  Снапшоты не удаляются: строка в `warnings` с их числом.
 - Дубли одного ключа: побеждает `claude-jsonl` (таймстемпы, usage, компакты, сабагенты), затем
   больше ходов, больше байтов, путь по алфавиту. Проигравший — `key#dup:<path>`, `duplicate_of`.
 
@@ -46,7 +50,9 @@ PERIOD_MODES = ("run", "dates", "labels")
 
 REVIEWED_FIELDS = ("reviewed_in_run", "reviewed_at", "reviewed_turns_total", "reviewed_bytes")
 EXCLUDED_FIELDS = ("excluded", "excluded_in_run", "excluded_at", "excluded_reason",
-                   "excluded_note", "excluded_turns_total", "excluded_bytes")
+                   "excluded_note", "excluded_turns_total", "excluded_bytes", "excluded_by")
+# исключение по отзыву согласия (`consent.logs: false`): ставит merge, снимает merge при возврате
+CONSENT = "consent"
 # приоритет формата в дубле: меньше — выше (q-04)
 FORMAT_PRIORITY = {"claude-jsonl": 0}
 # поля разбора исходника, которые сайдкар перекрывает у разбора снапшота
@@ -301,9 +307,31 @@ def _resolve_both(rec: dict, warnings: list[str]) -> None:
         f"оставлен {kept} (reviewed_at {r_at or 'нет'}, excluded_at {x_at or 'нет'})")
 
 
-def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str) -> dict:
-    """Слияние свежих записей с прежним индексом → новый индекс (записи не удаляются)."""
+def _exclude_for_consent(rec: dict, since: str | None, now: str) -> None:
+    """Запись человека без согласия → `excluded` (`excluded_by: consent`); исключение оценкой остаётся."""
+    if rec.get("excluded") and rec.get("excluded_by") != CONSENT:
+        rec["state"] = "excluded"
+        return
+    _clear_reviewed(rec)
+    _clear_excluded(rec)
+    rec.update({"excluded": True, "excluded_in_run": None, "excluded_at": since or now,
+                "excluded_reason": CONSENT, "excluded_note": None,
+                "excluded_turns_total": rec.get("turns_total"), "excluded_bytes": rec.get("bytes"),
+                "excluded_by": CONSENT, "state": "excluded"})
+
+
+def consent_warning(person_id: str, count: int) -> str:
+    return (f"{person_id}: в logs/{person_id}/ лежат снапшоты, собранные до отзыва согласия ({count}); "
+            f"оценка их не берёт; удалите папку, если нужно")
+
+
+def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str,
+          no_consent=frozenset()) -> dict:
+    """Слияние свежих записей с прежним индексом → новый индекс (записи не удаляются).
+
+    `no_consent` — id людей с `consent.logs: false`: их записи исключаются (см. описание файла)."""
     warnings: list[str] = []
+    no_consent = set(no_consent)
     old = {(r["person_id"], r["key"]): r for r in ((prev or {}).get("logs") or [])}
     fresh = collapse_duplicates(entries)
     out = []
@@ -317,10 +345,13 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str) -
             out.append(rec)
             continue
         before = old.get((e["person_id"], e["key"]))
+        denied = e["person_id"] in no_consent
         if before is None:
             _clear_excluded(rec)
             _clear_reviewed(rec)
             rec["state"] = "new"
+            if denied:
+                _exclude_for_consent(rec, None, now)
             out.append(rec)
             continue
         carried = {"reviewed": bool(before.get("reviewed"))}
@@ -330,6 +361,10 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str) -
         _resolve_both(carried, warnings)
         _clear_excluded(rec)
         rec.update({k: v for k, v in carried.items() if k not in ("person_id", "key")})
+        consent_since = None
+        if rec.get("excluded_by") == CONSENT:
+            consent_since = rec.get("excluded_at")
+            _clear_excluded(rec)     # исключение по согласию пересчитывается на каждом прогоне
         turns = rec.get("turns_total") or 0
         if rec.get("excluded"):
             if turns > (rec.get("excluded_turns_total") or 0):
@@ -344,7 +379,13 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str) -
             rec["review_from_turn"] = rec.get("reviewed_turns_total")
         else:
             rec["state"] = "unchanged"
+        if denied:
+            _exclude_for_consent(rec, consent_since, now)
         out.append(rec)
+    for pid in sorted(no_consent):
+        count = sum(1 for e in fresh if e["person_id"] == pid)
+        if count:
+            warnings.append(consent_warning(pid, count))
     fresh_keys = {(e["person_id"], e["key"]) for e in fresh}
     for k, before in old.items():
         if k in fresh_keys:
@@ -391,6 +432,7 @@ def mark(entry: dict, flag: str, run_id: str, at: str, **extra) -> dict:
     if not isinstance(reason, str) or not reason.strip():
         raise SrError(f"mark: для excluded нужен непустой reason (запись {entry.get('key')})", 2)
     _clear_reviewed(rec)
+    rec.pop("excluded_by", None)     # исключение оценкой не снимается возвратом согласия
     rec.update({"excluded": True, "excluded_in_run": run_id, "excluded_at": at,
                 "excluded_reason": reason, "excluded_note": extra.get("note"),
                 "excluded_turns_total": entry["turns_total"], "excluded_bytes": entry["bytes"]})
@@ -400,12 +442,14 @@ def mark(entry: dict, flag: str, run_id: str, at: str, **extra) -> dict:
 # ── пересчёт и сводка ────────────────────────────────────────────────────────
 
 
-def rebuild(root: Path, cfg: dict, now: str | None = None, warnings=()) -> dict:
-    """validate_period → scan → merge с прежним индексом → атомарная запись. Lock держит вызывающий."""
+def rebuild(root: Path, cfg: dict, now: str | None = None, warnings=(), no_consent=frozenset()) -> dict:
+    """validate_period → scan → merge с прежним индексом → атомарная запись. Lock держит вызывающий.
+
+    `no_consent` — id людей с `consent.logs: false` (`sources.no_consent`), передаётся в merge."""
     validate_period(cfg)
     entries, junk = scan(root, cfg)
     index = merge(load_index(root), entries,
-                  (cfg.get("workspace") or {}).get("id"), now or now_iso())
+                  (cfg.get("workspace") or {}).get("id"), now or now_iso(), no_consent=no_consent)
     index["warnings"] = [*warnings,
                          *(f"снапшот не разобран: {j['path']}: {j['error']}" for j in junk["unparsed"]),
                          *index["warnings"]]

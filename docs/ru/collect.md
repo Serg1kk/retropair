@@ -54,6 +54,18 @@ sources:
 не ошибка: он пропускается со строкой в предупреждениях. Типы `codex-jsonl` и `cursor-jsonl`
 в версии 0.1 не поддерживаются — логи Codex и Cursor собираются через SpecStory.
 
+**Согласие.** Логи человека собираются, только пока он не против. Если в карточке стоит
+`consent:` → `logs: false`, `collect` не читает ни один его источник (ни из карточки, ни из
+`config.json` с его `person`) и пишет в предупреждения «`<id>`: нет согласия на логи
+(consent.logs: false), источники пропущены». Снапшоты, собранные раньше, остаются в
+`logs/<id>/`, но в инвентаре становятся исключёнными (`excluded_by: consent`), в пачки и
+оценку не идут, а `sr.py batches <id>` отказывает с текстом «нет согласия на логи»; сами файлы
+плагин не удаляет — предупреждение называет их число, удалить папку можно руками. Вернули
+`logs: true` — эти сессии снова новые; исключения, поставленные оценкой, при этом остаются.
+Карточка без блока `consent` (так обычно в режиме self) собирается как обычно; значение,
+отличное от `true`/`false`, — ошибка. Сколько карточек без согласия, показывает
+`sr.py doctor` (строка `people_without_consent`).
+
 **Claude Code хранит свои логи ограниченное время** (по умолчанию около 30 дней, настройка
 `cleanupPeriodDays` в `~/.claude/settings.json`; текущее значение показывает `sr.py doctor`).
 Копия, которую сделал `collect`, остаётся в workspace и после того, как Claude Code удалит
@@ -219,8 +231,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" inventory --json
 | `slack_token` | токены Slack | `[SLACK_TOKEN]` |
 | `jwt` | JWT-токены | `[JWT]` |
 | `private_key` | приватные ключи (`-----BEGIN … PRIVATE KEY-----`) целиком | `[PRIVATE_KEY]` |
+| `json_secret` | пароль, токен, ключ в JSON и словарях, когда ключ в кавычках: `"password": "…"`, экранированный JSON в строке команды `\"password\":\"…\"`, `'api_key': '…'`, `cfg["token"] = "…"`; заменяется только значение, JSON остаётся валидным. Ссылки (`$VAR`, `${VAR}`, `os.environ[…]`, `process.env.…`) и пустые значения не трогаются | `[SECRET_ASSIGNMENT]` |
 | `code_secret` | пароль, токен, ключ в присваивании с кавычками: `DB_PASSWORD = "…"`, `api_key: '…'` | `[SECRET_ASSIGNMENT]` |
 | `env_secret` | то же без кавычек: `export API_TOKEN=…` | `[SECRET_ASSIGNMENT]` |
+| `password_field` | строка, которую вводят в поле пароля (автозаполнение формы в браузере, UI-тесты): после селектора поля (`[name=password]`, `input[type=password]`, `#pwd`, `getByLabel('Password')`) в той же инструкции — `.value = '…'`, `.fill('…')`, `.type('…')`, `send_keys('…')`; `page.fill('#password', '…')`; переменная поля — `pass.value = '…'`, `setVal(pass, '…')` | `[PASSWORD]` |
 | `conn_string` | строки подключения с паролем: `postgres://user:пароль@host` | `[CONNECTION_STRING]` |
 | `password_text` | пароль после метки в обычном тексте, списке или таблице (ячейка «Пароль», значение в соседней): `Пароль: …`, `- pwd — …`, `пароль Abc123` (после пробела — только значение с буквой и цифрой); метки пароль, password, passwd, pass, pwd | `[PASSWORD]` |
 | `totp_secret` | секрет 2FA/TOTP после метки: `2FA: …`, `Authenticator Key: …`, `ключ аутентификатора — …`; метки 2FA, TOTP, OTP, MFA, authenticator, secret, секрет; значение с цифрой, base32-группы через пробел или дефис берутся целиком | `[OTP_SECRET]` |

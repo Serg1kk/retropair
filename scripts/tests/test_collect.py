@@ -17,6 +17,7 @@ from unittest import mock
 from _util import FIXTURES, TempHome, copy_fixture, run_sr
 
 from lib import cmd_collect, inventory, lock, normalize, registry, sanitize
+from lib.workspace import SrError
 
 LOGS = FIXTURES / "logs"
 NOW = "2026-09-27T10:00:00Z"
@@ -656,14 +657,206 @@ class RegistryAndSpecstoryTest(CollectBase):
 class DoctorLinesTest(CollectBase):
     def test_no_workspace(self):
         self.assertEqual(cmd_collect.doctor_lines(None),
-                         [("last_snapshot_at", "нет workspace"), ("logs_indexed", "нет workspace")])
+                         [("last_snapshot_at", "нет workspace"), ("logs_indexed", "нет workspace"),
+                          ("people_without_consent", "нет workspace")])
 
     def test_before_and_after_collect(self):
         self.assertEqual(cmd_collect.doctor_lines(self.root),
-                         [("last_snapshot_at", "нет"), ("logs_indexed", 0)])
+                         [("last_snapshot_at", "нет"), ("logs_indexed", 0),
+                          ("people_without_consent", 0)])
         self.collect()
         self.assertEqual(cmd_collect.doctor_lines(self.root),
-                         [("last_snapshot_at", NOW), ("logs_indexed", 5)])
+                         [("last_snapshot_at", NOW), ("logs_indexed", 5),
+                          ("people_without_consent", 0)])
+
+
+def card(pid: str, src: Path, logs: str | None = "true") -> str:
+    """Карточка team с `dir`-источником; `logs=None` — без блока `consent`."""
+    text = f'id: {pid}\nname: "Person {pid.upper()}"\ngroup: team-a\nsources:\n  - type: dir\n    path: {src}\n'
+    if logs is not None:
+        text += f"consent:\n  logs: {logs}\n  date: 2026-09-01\n"
+    return text
+
+
+class ConsentTest(TempHome, unittest.TestCase):
+    """B02: `consent.logs: false` в карточке блокирует сбор и оценку логов человека."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory(prefix="sr-consent-")
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name).resolve()
+        self.root = copy_fixture("workspace-min", self.tmp)
+        self.state = self.root / ".sessionretro"
+        self.people = self.state / "people"
+        (self.people / "alex.yaml").unlink()
+        (self.people / "sam.yaml").unlink()
+        self.in_a, self.in_b = self.tmp / "in-a", self.tmp / "in-b"
+        self.in_a.mkdir()
+        self.in_b.mkdir()
+        shutil.copy(LOGS / "specstory-claude.md", self.in_a / "a.md")
+        shutil.copy(LOGS / "md-headings.md", self.in_b / "b.md")
+        cfg_path = self.state / "config.json"
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        cfg["sources"] = []
+        cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.set_b("true")
+        (self.people / "a.yaml").write_text(card("a", self.in_a), encoding="utf-8")
+        self.logs_b = self.state / "logs" / "b"
+
+    def set_b(self, logs: str | None) -> None:
+        (self.people / "b.yaml").write_text(card("b", self.in_b, logs), encoding="utf-8")
+
+    def collect(self, now: str = NOW) -> dict:
+        return cmd_collect.collect(self.root, None, now=now)
+
+    def recs(self, person: str) -> list[dict]:
+        return [r for r in inventory.load_index(self.root)["logs"] if r["person_id"] == person]
+
+    def snapshots_b(self) -> list[Path]:
+        if not self.logs_b.is_dir():
+            return []
+        return sorted(p for p in self.logs_b.iterdir() if p.suffix in (".md", ".jsonl"))
+
+    def test_no_consent_sources_not_collected(self):
+        self.set_b("false")
+        out = self.collect()
+        self.assertEqual(self.snapshots_b(), [])
+        self.assertEqual(out["counts"]["new"], 1)
+        self.assertEqual(self.recs("b"), [])
+        self.assertIn("b: нет согласия на логи (consent.logs: false), источники пропущены",
+                      out["warnings"])
+
+    def test_card_without_consent_block_collected(self):
+        self.set_b(None)
+        out = self.collect()
+        self.assertEqual(out["counts"]["new"], 2)
+        self.assertEqual(len(self.snapshots_b()), 1)
+        self.assertFalse([w for w in out["warnings"] if "соглас" in w])
+
+    def test_revoked_after_collect_excludes_keeps_files(self):
+        self.collect()
+        idx = inventory.load_index(self.root)
+        idx["logs"] = [inventory.mark(r, "reviewed", "r1", NOW) for r in idx["logs"]]
+        inventory.save_index(self.root, idx)
+        files = self.snapshots_b()
+        self.assertEqual(len(files), 1)
+        self.set_b("false")
+        out = self.collect(LATER)
+        self.assertEqual(self.snapshots_b(), files)
+        [rec] = self.recs("b")
+        self.assertEqual(rec["state"], "excluded")
+        self.assertIs(rec["excluded"], True)
+        self.assertEqual(rec["excluded_reason"], "consent")
+        self.assertEqual(rec["excluded_by"], "consent")
+        self.assertIs(rec["reviewed"], False)
+        self.assertIsNone(rec["reviewed_in_run"])
+        self.assertEqual(out["counts"]["excluded"], 1)
+        self.assertEqual(out["counts"]["unchanged"], 1)
+        self.assertTrue(any(w.startswith("b: в logs/b/ лежат снапшоты, собранные до отзыва согласия (1)")
+                            for w in out["warnings"]), out["warnings"])
+
+    def test_consent_returned_back_to_new(self):
+        self.collect()
+        self.set_b("false")
+        self.collect(LATER)
+        self.set_b("true")
+        out = self.collect(LATER)
+        [rec] = self.recs("b")
+        self.assertEqual(rec["state"], "new")
+        self.assertFalse(rec.get("excluded"))
+        self.assertNotIn("excluded_by", rec)
+        self.assertNotIn("excluded_reason", rec)
+        self.assertEqual(out["counts"]["new"], 2)
+        self.assertFalse([w for w in out["warnings"] if "соглас" in w])
+
+    def test_assessment_exclusion_survives_consent_return(self):
+        self.collect()
+        idx = inventory.load_index(self.root)
+        idx["logs"] = [inventory.mark(r, "excluded", "r1", NOW, reason="excluded_other")
+                       if r["person_id"] == "b" else r for r in idx["logs"]]
+        inventory.save_index(self.root, idx)
+        self.set_b("false")
+        self.collect(LATER)
+        [rec] = self.recs("b")
+        self.assertEqual((rec["state"], rec["excluded_reason"]), ("excluded", "excluded_other"))
+        self.assertNotIn("excluded_by", rec)
+        self.set_b("true")
+        self.collect(LATER)
+        [rec] = self.recs("b")
+        self.assertEqual((rec["state"], rec["excluded_reason"], rec["excluded_in_run"]),
+                         ("excluded", "excluded_other", "r1"))
+
+    def test_inventory_cli_applies_consent(self):
+        self.collect()
+        self.set_b("false")
+        res = run_sr("inventory", "--json", "--workspace", str(self.root), home=self.home, cwd=self.tmp)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        data = json.loads(res.stdout)
+        [rec] = [r for r in data["logs"] if r["person_id"] == "b"]
+        self.assertEqual((rec["state"], rec["excluded_by"]), ("excluded", "consent"))
+        self.assertTrue(any("до отзыва согласия" in w for w in data["warnings"]))
+
+    def test_batches_refuses_person_without_consent(self):
+        from lib import batches
+        self.collect()
+        self.set_b("false")
+        self.collect(LATER)
+        entries = self.recs("b")
+        planned = batches.plan(entries, {"max_bytes": 10**6, "max_user_turns": 10**3, "min_turns": 1},
+                               batches.index_measure)
+        self.assertEqual((planned["batches"], planned["short"]), ([], []))
+        with self.assertRaises(SrError) as ctx:
+            batches.for_person(self.root, "b", measure="index")
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("нет согласия на логи", ctx.exception.message)
+        self.assertIn("b", ctx.exception.message)
+        self.assertEqual(len(batches.for_person(self.root, "a", measure="index")["batches"]), 1)
+
+    def test_doctor_counts_people_without_consent(self):
+        self.set_b("false")
+        self.assertIn(("people_without_consent", 1), cmd_collect.doctor_lines(self.root))
+        self.set_b("true")
+        self.assertIn(("people_without_consent", 0), cmd_collect.doctor_lines(self.root))
+
+    def test_doctor_key_is_free(self):
+        from lib import cmd_doctor
+        lines, rc = cmd_doctor.collect_doctor_lines(self.root, modules=[cmd_collect])
+        self.assertEqual(rc, 0, lines)
+        self.assertIn("people_without_consent", dict(lines))
+
+    def test_bad_consent_value_is_error_1(self):
+        self.set_b('"no"')
+        with self.assertRaises(SrError) as ctx:
+            self.collect()
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("b.yaml", ctx.exception.message)
+        self.assertIn("consent.logs", ctx.exception.message)
+
+    def test_resolve_skips_denied_sources_without_reading(self):
+        from lib import sources
+        people = [{"id": "a", "sources": [{"type": "dir", "path": str(self.in_a)}]},
+                  {"id": "b", "consent": {"logs": False},
+                   "sources": [{"type": "git", "url": "https://example.com/b.git"}]}]
+        cfg = {"workspace": {"id": "demo-team"}, "mode": "team",
+               "sources": [{"type": "dir", "path": str(self.in_b), "person": "b"}]}
+        with mock.patch("lib.sources._run_git") as git:
+            files, warnings, _junk = sources.resolve(self.root, cfg, people)
+        git.assert_not_called()
+        self.assertEqual({f.person_id for f in files}, {"a"})
+        self.assertEqual(warnings, ["b: нет согласия на логи (consent.logs: false), источники пропущены"])
+
+    def test_no_consent_helper_names_id_and_value(self):
+        from lib import sources
+        self.assertEqual(sources.no_consent([{"id": "a", "consent": {"logs": True}}, {"id": "c"},
+                                             {"id": "d", "consent": {}},
+                                             {"id": "b", "consent": {"logs": False}}]), {"b"})
+        for bad in ("no", 0, None):
+            with self.assertRaises(SrError) as ctx:
+                sources.no_consent([{"id": "b", "consent": {"logs": bad}}])
+            self.assertEqual(ctx.exception.code, 1)
+            self.assertIn("b", ctx.exception.message)
+            self.assertIn(repr(bad), ctx.exception.message)
 
 
 class CliTest(CollectBase):

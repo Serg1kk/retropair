@@ -25,6 +25,10 @@
 Пути в `.meta.json`, `logs-index.json` и сводке санитайзера — переносимые (`workspace.portable_path`):
 внутри проекта относительные, внутри HOME `~/…`.
 
+Согласие: у человека с `consent.logs: false` в карточке источники не читаются (строка
+`warnings`), а снапшоты, собранные до отзыва, инвентарь исключает (`excluded_by: consent`);
+файлы не удаляются.
+
 Исходники не меняются никогда. Исходник, который не разобрался или дал 0 ходов, — строка в
 `warnings`, остальные собираются.
 """
@@ -364,10 +368,12 @@ class Run:
 # ── оркестрация ──────────────────────────────────────────────────────────────
 
 
-def _has_specstory(cfg: dict, people: list[dict]) -> bool:
-    all_sources = list(cfg.get("sources") or [])
+def _has_specstory(cfg: dict, people: list[dict], denied: set[str] = frozenset()) -> bool:
+    all_sources = [s for s in cfg.get("sources") or []
+                   if not (isinstance(s, dict) and s.get("person") in denied)]
     for card in people:
-        all_sources += card.get("sources") or []
+        if card.get("id") not in denied:
+            all_sources += card.get("sources") or []
     return any(isinstance(s, dict) and s.get("type") == "specstory" for s in all_sources)
 
 
@@ -386,11 +392,12 @@ def collect(root: Path, providers: list[str] | None, now: str | None = None,
     cfg = load_config(root)
     inventory.validate_period(cfg)
     people = list_people(root)
+    denied = sources.no_consent(people)
     run = Run(root, _sanitizer(cfg, people), replace or [])
     sync_lines: list[str] = []
     paths = ws_paths(root)
     with lock.file_lock(paths["state_dir"] / "collect", timeout=lock_timeout):
-        if _has_specstory(cfg, people):
+        if _has_specstory(cfg, people, denied):
             sync_lines = [specstory.sync(root, p) for p in specstory.providers(providers, cfg)]
         files, src_warnings, junk = sources.resolve(root, cfg, people)
         run.warnings += src_warnings
@@ -424,7 +431,7 @@ def collect(root: Path, providers: list[str] | None, now: str | None = None,
             run.warnings.append(f"workspace не в реестре ~/.sessionretro/workspaces.json, "
                                 f"last_collect_at не записан ({root})")
         warnings = [portable_text(w, root) for w in run.warnings]
-        index = inventory.rebuild(root, cfg, now=now, warnings=warnings)
+        index = inventory.rebuild(root, cfg, now=now, warnings=warnings, no_consent=denied)
         if entry is not None:
             registry.update(entry["id"], last_collect_at=now)
 
@@ -488,11 +495,14 @@ def handle(args) -> int:
 
 
 def doctor_lines(root: Path | None) -> list[tuple[str, object]]:
-    """`last_snapshot_at` (`logs-index.updated_at` или «нет») и `logs_indexed`."""
+    """`last_snapshot_at` (`logs-index.updated_at` или «нет»), `logs_indexed` и
+    `people_without_consent` (карточки с `consent.logs: false`)."""
     if root is None:
-        return [("last_snapshot_at", NO_WORKSPACE), ("logs_indexed", NO_WORKSPACE)]
+        return [("last_snapshot_at", NO_WORKSPACE), ("logs_indexed", NO_WORKSPACE),
+                ("people_without_consent", NO_WORKSPACE)]
+    denied = len(sources.no_consent(list_people(root)))
     index = inventory.load_index(root)
     if index is None:
-        return [("last_snapshot_at", NO_INDEX), ("logs_indexed", 0)]
+        return [("last_snapshot_at", NO_INDEX), ("logs_indexed", 0), ("people_without_consent", denied)]
     return [("last_snapshot_at", index.get("updated_at") or NO_INDEX),
-            ("logs_indexed", len(index["logs"]))]
+            ("logs_indexed", len(index["logs"])), ("people_without_consent", denied)]

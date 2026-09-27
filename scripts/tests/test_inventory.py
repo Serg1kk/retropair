@@ -175,6 +175,41 @@ class MergeStatesTest(unittest.TestCase):
         states = {(r["person_id"], r["state"]) for r in out["logs"]}
         self.assertEqual(states, {("sam", "new"), ("alex", "gone")})
 
+    def test_no_consent_excludes_new_and_reviewed(self):     # B02
+        reviewed = inventory.mark(entry(key="r"), "reviewed", "r1", "2026-09-02T00:00:00Z")
+        reviewed["state"] = "unchanged"
+        out = inventory.merge(idx(reviewed), [entry(key="r"), entry(key="n"),
+                                              entry(key="x", person_id="sam")],
+                              "ws", NOW, no_consent={"me"})
+        recs = by_key(out)
+        for key in ("r", "n"):
+            self.assertEqual(recs[key]["state"], "excluded")
+            self.assertEqual((recs[key]["excluded_reason"], recs[key]["excluded_by"]), ("consent", "consent"))
+            self.assertIs(recs[key]["reviewed"], False)
+            self.assertEqual(recs[key]["excluded_at"], NOW)
+        self.assertEqual(recs["x"]["state"], "new")
+        self.assertEqual(out["warnings"], [inventory.consent_warning("me", 2)])
+        later = inventory.merge(out, [entry(key="r", turns_total=14)], "ws", "2026-09-28T00:00:00Z",
+                                no_consent={"me"})
+        self.assertEqual(by_key(later)["r"]["state"], "excluded")
+        self.assertEqual(by_key(later)["r"]["excluded_at"], NOW)      # дата отзыва не сдвигается
+        back = inventory.merge(later, [entry(key="r", turns_total=14)], "ws", NOW)
+        self.assertEqual(by_key(back)["r"]["state"], "new")
+        self.assertNotIn("excluded_by", by_key(back)["r"])
+        remarked = inventory.mark(by_key(later)["r"], "excluded", "r2", NOW, reason="other_period")
+        self.assertNotIn("excluded_by", remarked)
+
+    def test_no_consent_keeps_assessment_exclusion(self):     # B02
+        marked = inventory.mark(entry(key="k"), "excluded", "r1", NOW, reason="other_period")
+        out = inventory.merge(idx(marked), [entry(key="k")], "ws", NOW, no_consent={"me"})
+        rec = by_key(out)["k"]
+        self.assertEqual((rec["state"], rec["excluded_reason"], rec["excluded_in_run"]),
+                         ("excluded", "other_period", "r1"))
+        self.assertNotIn("excluded_by", rec)
+        back = inventory.merge(out, [entry(key="k")], "ws", NOW)
+        self.assertEqual((by_key(back)["k"]["state"], by_key(back)["k"]["excluded_reason"]),
+                         ("excluded", "other_period"))
+
     def test_duplicate_state(self):
         a = entry(key="s1", path="logs/me/a.md", turns_total=30)
         b = entry(key="s1", path="logs/me/b.md", turns_total=12)

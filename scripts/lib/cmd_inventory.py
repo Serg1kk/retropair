@@ -2,6 +2,7 @@
 
 Источники не читаются и снапшоты не пишутся (это делает `collect`); только скан снапшотов,
 слияние с прежним индексом и атомарная запись под блокировкой `.sessionretro/collect.lock`.
+Записи людей с `consent.logs: false` исключаются так же, как в `collect`.
 """
 
 from __future__ import annotations
@@ -9,8 +10,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lib import inventory, lock
+from lib import inventory, lock, sources
 from lib.config import load_config
+from lib.people import list_people
 from lib.workspace import find_workspace, ws_paths
 
 def register(subparsers) -> None:
@@ -32,9 +34,10 @@ def format_text(index: dict, path: Path) -> str:
 def handle(args) -> int:
     root = find_workspace(Path.cwd(), args.workspace)
     cfg = load_config(root)
+    denied = sources.no_consent(list_people(root))
     paths = ws_paths(root)
     with lock.file_lock(paths["state_dir"] / "collect"):
-        index = inventory.rebuild(root, cfg)
+        index = inventory.rebuild(root, cfg, no_consent=denied)
     if args.json:
         print(json.dumps(index, ensure_ascii=False, indent=2))
     else:

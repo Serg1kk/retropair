@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from lib import marks
+from lib import marks, sources
 from lib.config import load_config
 from lib.workspace import SrError, ws_paths
 
@@ -175,9 +175,14 @@ def plan(entries, cfg_batches: dict, measure: Callable[[dict], int], period_labe
 
 
 def for_person(root: Path, person_id: str, measure: str = "human", period_label: str | None = None) -> dict:
-    """Нарезка по индексу логов workspace: бюджеты из `config.batches`, записи только этого человека."""
+    """Нарезка по индексу логов workspace: бюджеты из `config.batches`, записи только этого человека.
+
+    В карточке `consent.logs: false` — `SrError(1)`: логи человека не собираются и не оцениваются."""
     if measure not in MEASURES:
         raise SrError(f"неизвестный замер {measure!r}: доступны {', '.join(MEASURES)}", 2)
+    if sources.consent_refused(root, person_id):
+        raise SrError(f"у {person_id} нет согласия на логи (consent.logs: false в карточке): "
+                      f"логи не собираются и не оцениваются", 1)
     cfg = load_config(root)
     index = marks.load_index(root)
     if index is None:

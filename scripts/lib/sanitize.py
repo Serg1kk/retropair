@@ -41,7 +41,7 @@ from .workspace import SrError
 
 # Версия правил: поднимается при любом изменении поведения санитайзера, которое меняет вывод
 # (порядок правил, новые метки, проверки `CHECKS`). Входит в `fingerprint` вместе с самими шаблонами.
-RULES_VERSION = 5
+RULES_VERSION = 6
 
 NAME_MARK = "[NAME]"
 EXTRA_MARK = "[REDACTED]"
@@ -81,6 +81,28 @@ _TEXT_VALUE = r"""[^\s|`"\\\[/~*][^\s|`"\\]{2,}[^\s|`"\\,.;:!?)\]*]"""
 # Base32 группами по 4 через пробел или дефис (так ключ показывают приложения), от 16 символов.
 _B32_GROUPS = r"[A-Z2-7]{4}(?:[ \-][A-Z2-7]{4}){3,}(?:[ \-][A-Z2-7]{1,3})?"
 
+# ── пароль в JSON и во вводе в поле пароля (JS, Playwright, Selenium) ──
+# Кавычка строкового литерала: обычная, экранированная любое число раз (`\"`, `\\\"` — JSON внутри
+# строки команды) и HTML-сущностью (`&#34;`, `&quot;` — markdown-выгрузки логов). В JS ещё и `` ` ``.
+_QUOTE = r"""\\*(?:["']|&#3[49];|&#x2[27];|&quot;|&apos;)"""
+_JS_QUOTE = r"""\\*(?:["'`]|&#3[49];|&#x2[27];|&quot;|&apos;)"""
+# Символ значения в кавычках: всё, кроме кавычек и перевода строки; `&` — если это не кавычка-сущность;
+# обратные косые — если за ними не кавычка и не `\n`/`\r` (escape `\u0026` внутри значения допустим).
+_QCHAR = r"""(?:[^"'`\n\\&]|&(?!#3[49];|#x2[27];|quot;|apos;)|\\+(?![\\"'`&nr]))"""
+_PW_WORD = r"(?:password|passwd|pwd)"
+# Селектор поля пароля: атрибут в `[...]`, `#id`, локатор Playwright `getBy…(…)`, Selenium/DOM по id и name.
+_PW_SELECTOR = (r"(?:\[[^\]\n]{0,60}" + _PW_WORD + r"[^\]\n]{0,20}\]"
+                r"|(?<![&\w])#[\w\-]{0,40}" + _PW_WORD + r"[\w\-]{0,40}"
+                r"|getBy\w{1,20}\([^)\n]{0,60}?" + _PW_WORD + r"[^)\n]{0,40}\)"
+                r"|(?:ById|ByName|_by_id|_by_name|By\.(?:ID|NAME))\W{0,8}[\w\-]{0,40}" + _PW_WORD + r"[\w\-]{0,40})")
+# Ввод строки в поле: `.value = '…'`, `.fill('…')`, `.type(…)`, `send_keys(…)` и т. п.
+_PW_INPUT = (r"(?:\.\s*value\s*=\s*|\.\s*(?:fill|type|sendKeys|send_keys|setValue|pressSequentially|val)"
+             r"\s*\(\s*)" + _JS_QUOTE)
+# Переменная с полем пароля (с учётом регистра): `pass`, `passwordInput`, `newPassword`, `pwd_field`,
+# `PASSWORD`; не `bypass`, `compass`, `passenger`, `passport` (перед меткой — `_`/`$` или camelCase).
+_PW_IDENT = (r"(?-i:(?<![\w$])(?:[\w$]*[_$]|[\w$]*[a-z0-9](?=P))?"
+             r"(?:[Pp]ass(?:word|wd)?|PASS(?:WORD|WD)?|[Pp]wd|PWD)(?![a-z])[\w$]*)")
+
 # (имя правила, регулярка, подстановка). Группа `val` — значение секрета для ALLOWLIST.
 RULES: list[tuple[str, str, str]] = [
     # ── секреты ────────────────────────────────────────────────────────────────
@@ -95,6 +117,14 @@ RULES: list[tuple[str, str, str]] = [
     ("jwt", r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b", "[JWT]"),
     ("private_key", r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----",
      "[PRIVATE_KEY]"),
+    # Ключ в кавычках — JSON и словари: "password": "…", \"password\":\"…\" в строке команды,
+    # 'api_key': '…', cfg["token"] = "…", &#34;secret&#34;:&#34;…&#34;. Заменяется только значение: ключ
+    # и кавычки остаются, JSON (и сырой JSONL) остаётся валидным. Значение без кавычек (null, число,
+    # os.environ[…]) не трогается.
+    ("json_secret", r"(?i)(?P<pfx>(?<![A-Za-z0-9_.\-])[A-Za-z0-9_.\-]*" + _SECRET_WORDS
+     + r"|conn[_-]?str)[A-Za-z0-9_]*" + _QUOTE + r"[ \t]*\]?[ \t]*[:=][ \t]*" + _QUOTE + r")(?P<val>"
+     + _QCHAR + r"{4,})(?=" + _QUOTE + r")",
+     r"\g<pfx>[SECRET_ASSIGNMENT]"),
     # Присваивание в кавычках: DB_PASSWORD = "hunter2", api_key: 'abc', self.token="xyz".
     # Префикс до ключевого слова обязателен: без него правило не видит DB_PASSWORD.
     # Lookbehind: матч начинается только с начала токена, иначе длинный токен без разделителей
@@ -106,6 +136,16 @@ RULES: list[tuple[str, str, str]] = [
     ("env_secret", r"(?i)(?<![A-Za-z0-9_.\-])[A-Za-z0-9_.\-]*" + _SECRET_WORDS + r")"
      r"""[A-Za-z0-9_]*\s*=\s*(?P<val>[^\s"'\n,;)]{4,})""",
      "[SECRET_ASSIGNMENT]"),
+    # Ввод пароля в поле формы (автозаполнение в браузере, тесты UI), ключевого слова рядом со
+    # значением нет: (1) селектор пароля и в той же инструкции (до `;`/перевода строки, ≤ 200 символов)
+    # ввод строки; (2) селектор строкой-аргументом и значение следующим аргументом —
+    # `page.fill('#password', '…')` (кавычки `'`/`"`, в одной строке: перечень селекторов в markdown
+    # через `` ` `` — не ввод); (3) переменная поля пароля: `pass.value = '…'`, `setVal(pass, '…')`.
+    ("password_field", r"(?i)(?P<pfx>" + _PW_SELECTOR + r"(?:(?:[^;\n\\]|\\(?![nr])){0,200}?" + _PW_INPUT
+     + r"|" + _QUOTE + r"?[ \t]*,[ \t]*" + _QUOTE + r")|" + _PW_IDENT + r"\s*" + _PW_INPUT
+     + r"|\([ \t]*" + _PW_IDENT + r"[ \t]*,[ \t]*" + _JS_QUOTE + r")(?P<val>" + _QCHAR + r"{1,200})(?="
+     + _JS_QUOTE + r")",
+     r"\g<pfx>[PASSWORD]"),
     # Строка подключения с паролем: postgres://user:pass@host.
     ("conn_string", r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s:@/]+:(?P<val>[^\s:@/]+)@[^\s/\"']+",
      "[CONNECTION_STRING]"),
@@ -164,7 +204,10 @@ ALLOWLIST = re.compile(
     r"|bearer|basic|digest|none|null|true|false|string|number|boolean|required|optional"
     r"|env|secret_name|redacted"
     r"|(?:process\.env|os\.environ|os\.getenv)(?:[.\[(].*)?"
-    r"|<[^>]{1,40}>|\$\{[^}]{1,40}\}|\{\{[^}]{1,40}\}\}|\{[^{}]{1,40}\})"
+    # Ссылка `$VAR` — только имя в верхнем регистре: `$ecret99` может быть паролем. Метка
+    # санитайзера или источника (`[PASSWORD]`, `[REDACTED:api-key]`) — повторный проход её не трогает.
+    r"|(?-i:\$[A-Z_][A-Z0-9_]*|\[[A-Z][A-Z0-9_]*(?::[\w.\- ]{1,40})?\])"
+    r"|<[^>]{1,40}>|\$\{[^}]{1,40}\}|=?\{\{[^}]{1,60}\}\}|\{[^{}]{1,40}\}|…|\.{3}|\*{3,})"
 )
 
 
@@ -192,10 +235,17 @@ def _check_base32(m: re.Match) -> bool:
             and re.search(r"[2-7]", compact) is not None)
 
 
+def _check_json(m: re.Match) -> bool:
+    """URL без запроса и логина у ключа вроде `token_url` — адрес, а не секрет; значение из четырёх
+    и более слов (`"secret_handling": "не выводит ключи в лог"`) — описание, а не секрет."""
+    val = m.group("val")
+    return re.fullmatch(r"(?i)https?://[^\s?#@]*", val) is None and val.count(" ") < 3
+
+
 # Доп. проверка совпадения по правилу (после ALLOWLIST): `False` — совпадение остаётся как есть.
 # Меняете проверку — поднимите `RULES_VERSION`.
 CHECKS = {"password_text": _check_password, "totp_secret": _check_totp,
-          "base32_secret": _check_base32}
+          "base32_secret": _check_base32, "json_secret": _check_json}
 
 UUID_RE = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
                      r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?![0-9A-Fa-f])")

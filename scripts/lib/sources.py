@@ -15,7 +15,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from lib.people import DEFAULT_CARD
+from lib.people import DEFAULT_CARD, PERSON_ID_RE, card_path, load_person
 from lib.registry import sr_home
 from lib.workspace import STATE_DIR, SrError
 
@@ -74,6 +74,46 @@ def claude_project_dir(root: Path, project: str) -> Path:
 
 def _card_ids(people: list[dict]) -> list[str]:
     return [p["id"] for p in people if p.get("id") != DEFAULT_CARD]
+
+
+def no_consent(people: list[dict]) -> set[str]:
+    """id карточек, где `consent.logs` явно `false`: их источники не читаются, снапшоты не оцениваются.
+
+    Нет блока `consent` или поля `logs` — согласие не отзывалось (self-режим поля не имеет).
+    `consent` не объект или `logs` не булево — `SrError(1)` с id и значением.
+    """
+    denied: set[str] = set()
+    for card in people:
+        pid = card.get("id")
+        if pid == DEFAULT_CARD:
+            continue
+        consent = card.get("consent")
+        if consent is None:
+            continue
+        if not isinstance(consent, dict):
+            raise SrError(f"карточка {pid}: consent должен быть объектом (получено {consent!r})", 1)
+        if "logs" not in consent:
+            continue
+        logs = consent["logs"]
+        if not isinstance(logs, bool):
+            raise SrError(f"карточка {pid}: consent.logs должен быть true или false "
+                          f"(получено {logs!r})", 1)
+        if logs is False:
+            denied.add(pid)
+    return denied
+
+
+def consent_refused(root: Path, person_id: str) -> bool:
+    """Карточка человека есть и в ней `consent.logs: false`; нет карточки — `False`."""
+    if not isinstance(person_id, str) or not PERSON_ID_RE.fullmatch(person_id):
+        return False
+    if not card_path(root, person_id).is_file():
+        return False
+    return person_id in no_consent([load_person(root, person_id)])
+
+
+def no_consent_warning(person_id: str) -> str:
+    return f"{person_id}: нет согласия на логи (consent.logs: false), источники пропущены"
 
 
 def owner(src: dict, people: list[dict], index: int) -> str:
@@ -220,10 +260,13 @@ def resolve(root: Path, cfg: dict, people: list[dict]) -> tuple[list[SourceFile]
     """Все файлы логов по источникам конфига и карточек: (файлы, предупреждения, мусор).
 
     `*.orig` и `context[-_]report*` не берутся, но считаются; слаг-файлы SpecStory берутся
-    и считаются в `slug_named`.
+    и считаются в `slug_named`. Источники людей с `consent.logs: false` (конфига и карточки)
+    не читаются вовсе — по строке предупреждения на человека.
     """
     warnings: list[str] = []
     junk = {"orig": 0, "context_report": 0, "slug_named": 0}
+    denied = no_consent(people)
+    warnings += [no_consent_warning(pid) for pid in sorted(denied)]
     plan: list[tuple[str, str, str, dict]] = []
     for i, src in enumerate(cfg.get("sources") or [], start=1):
         label = f"источник {i} конфига"
@@ -237,6 +280,8 @@ def resolve(root: Path, cfg: dict, people: list[dict]) -> tuple[list[SourceFile]
 
     files: list[SourceFile] = []
     for person, source_id, label, src in plan:
+        if person in denied:
+            continue
         found = _candidates(Path(root), cfg, person, src, label, warnings)
         if found is None:
             continue
