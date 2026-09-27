@@ -136,7 +136,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" inventory --json
   не вывод о человеке.
 - Метка периода: `config.period.mode` `labels` или `dates` → метки из `period_guess` кандидатов;
   несколько меток → отдельный прогон на каждую, от старой к новой. Режим `run` или метки нет →
-  `run-<ГГГГММДД>` по дате запуска (UTC). Во всех случаях `--period-confidence inferred`;
+  метку не придумывай и в `append` не передавай: в режиме `run` её выдаёт сам `append`
+  (`run-<ГГГГММДД>` по дате UTC, второй прогон за сутки получает `-2` и становится своим
+  периодом), итог — поле `period_label` в выводе `append`. Для планового `run_id` и входа
+  агентов бери `run-<ГГГГММДД>` по дате запуска. Во всех случаях `--period-confidence inferred`;
   `explicit` — только если метку назвал пользователь.
 - Карточка и рекомендации человека:
 
@@ -217,13 +220,19 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" check-collector <pending>/batch-01
 ## Фаза 7. Запись прогона
 
 ```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" append <pending>/judge.json --person <person> --period-confidence inferred
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" append <pending>/judge.json --person <person> --period-label <label> --period-confidence inferred
 ```
 
-Сразу после судьи, не откладывая. Вывод JSON: `run_id` (дальше только он), `logs_marked`,
-`logs_unmatched`, `coverage{marked,expected}`, `warnings`. `1` → список нарушений схемы или
+Первая строка — режим `run` или метки нет: `--period-label` не передаётся, метку выдаёт
+`append`. Вторая — режимы `labels` и `dates` с меткой из `period_guess`.
+Сразу после судьи, не откладывая. Вывод JSON: `run_id` (дальше только он), `period_label`
+(итоговая метка периода, её называй в сводке), `logs_marked`, `logs_unmatched`,
+`coverage{marked,expected}`, `warnings`. `1` → список нарушений схемы или
 проверок (оценка без цитаты, уровень выше потолка гейта, запреты текста, рекомендации):
-перезапуск судьи со списком, затем снова `append`. `2` → вызов (карточка, метка, файл).
+перезапуск судьи со списком, затем снова `append`. `1` с текстом «уже есть прогон … с меткой» →
+у человека живой прогон с этой меткой: повтор того же периода — `--replace <run_id>` из
+сообщения, новый период — другая метка. `2` → вызов (карточка, метка, файл).
 Переоценка уже записанного прогона — только через `--replace <run_id>`: сохраняются id и
 правка ревьюера.
 

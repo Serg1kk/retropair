@@ -359,13 +359,14 @@ class DocsIndexTest(unittest.TestCase):
 
 
 class ChangelogReleaseTest(unittest.TestCase):
-    """Реальный артефакт: CHANGELOG с секцией 0.1.0 и пустым Unreleased."""
+    """Реальный артефакт: пустой Unreleased, под ним секция последнего релиза, секция 0.1.0 на месте."""
 
     def test_release_section_and_empty_unreleased(self) -> None:
         text = (PLUGIN / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertIn("\n## [0.1.0] — 2026-09-28\n", text)
         headings = h2_headings(text)
-        self.assertEqual(headings[:2], ["[Unreleased]", "[0.1.0] — 2026-09-28"])
+        self.assertEqual(headings[0], "[Unreleased]")
+        self.assertRegex(headings[1], r"^\[\d+\.\d+\.\d+\] — \d{4}-\d{2}-\d{2}$")
         self.assertEqual(section(text, "[Unreleased]").strip(), "")
 
 

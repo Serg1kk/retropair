@@ -14,7 +14,9 @@ def register(subparsers) -> None:
     p = subparsers.add_parser("append", help="записать прогон оценки из выхода судьи")
     p.add_argument("judge", metavar="JUDGE", help="файл выхода судьи (judge.json)")
     p.add_argument("--person", required=True, help="id человека (карточка people/<id>.yaml)")
-    p.add_argument("--period-label", help="метка периода: латиница, цифры, . _ - (до 64 знаков)")
+    p.add_argument("--period-label",
+                   help="метка периода: латиница, цифры, . _ - (до 64 знаков); без неё в режиме run "
+                        "метку run-ГГГГММДД[-N] выдаёт движок, итог — period_label в выводе")
     p.add_argument("--period-confidence", choices=("inferred", "explicit"), default="inferred",
                    help="метка периода выведена (inferred) или названа явно (explicit)")
     p.add_argument("--replace", metavar="RUN", help="переписать прогон RUN (id и правка ревьюера сохраняются)")

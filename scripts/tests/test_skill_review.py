@@ -233,6 +233,23 @@ class SkillTest(unittest.TestCase):
         self.assertIn("режиме `run`", phase)
         self.assertIn("без `--period-label`", phase)
 
+    def test_run_mode_append_without_label(self) -> None:
+        """В режиме `run` метку выдаёт `append`: скилл её не придумывает и не передаёт."""
+        phase = phases(self.body)[7]
+        appends = [ln for ln in command_lines(phase) if commands_in(ln)[:1] == ["append"]]
+        self.assertTrue(any("--period-label" not in ln for ln in appends),
+                        "нет вызова append без --period-label для режима run")
+        for line in appends:
+            with self.subTest(line=line):
+                self.assertIsNone(re.search(r"--period-label\s+\S*run-", line))
+        self.assertIn("режим `run`", phase)
+        self.assertIn("period_label", phase)
+        self.assertIn("уже есть прогон", phase)
+        self.assertIn("--replace <run_id>", phase)
+        first = phases(self.body)[1]
+        self.assertIn("метку не придумывай", first)
+        self.assertIn("period_label", first)
+
     def test_phase3_recorded_judge_output_is_not_asked_about(self) -> None:
         """Записанный выход судьи прошлого прогона не повод для вопроса: незаписанный называет `verify`."""
         phase = phases(self.body)[3]
@@ -353,6 +370,13 @@ class UserPagesTest(unittest.TestCase):
                        'sr.py" retract', "`0`", "`1`", "`2`", "что не подаётся", "how-it-works.md"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text if not phrase.islower() else text.lower())
+
+    def test_review_page_run_mode_labels(self) -> None:
+        """Несколько ретро за сутки в режиме `run` — отдельные периоды с суффиксом метки."""
+        text = _read(REVIEW_DOC)
+        for phrase in ("режим `run`", "run-<ГГГГММДД>", "`-2`", "отдельными периодами"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
 
     def test_pages_clean(self) -> None:
         for path in (HOW, REVIEW_DOC):

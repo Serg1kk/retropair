@@ -21,7 +21,8 @@
 ALLOWLIST (заглушки из документации, служебные значения вроде `bearer`, ссылки на переменные
 окружения) сравнивается со **значением секрета целиком** (`fullmatch`): у правил с группой `val`
 — с этой группой, у остальных — со всем совпадением. Слово-заглушка внутри значения
-(`"prod-test-2026"`) значение не спасает.
+(`"prod-test-2026"`) значение не спасает. После ALLOWLIST у части правил есть проверка `CHECKS`
+(в секрете 2FA есть цифра, base32 — от 16 символов с буквой и цифрой 2–7 и т. п.).
 
 UUID (`8-4-4-4-12` hex) не режутся числовыми правилами `phone`, `card`, `passport_by_ru`: в логах
 агентов это идентификаторы сессий и сообщений, а не телефоны.
@@ -39,8 +40,8 @@ from typing import Iterable
 from .workspace import SrError
 
 # Версия правил: поднимается при любом изменении поведения санитайзера, которое меняет вывод
-# (порядок правил, новые метки). Входит в `fingerprint` вместе с самими шаблонами.
-RULES_VERSION = 4
+# (порядок правил, новые метки, проверки `CHECKS`). Входит в `fingerprint` вместе с самими шаблонами.
+RULES_VERSION = 5
 
 NAME_MARK = "[NAME]"
 EXTRA_MARK = "[REDACTED]"
@@ -59,6 +60,26 @@ _LOGIN_WIN = rf"(?:{_LOGIN_CH}+(?: {_LOGIN_CH}+)*(?=[\\/])|{_LOGIN_CH}+)"
 
 _SECRET_WORDS = (r"(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|"
                  r"private[_-]?key|credential")
+
+# ── пароль и секрет 2FA/TOTP в свободном тексте (ответ агента, таблица, список) ──
+# Метка с начала токена (lookbehind — линейное время, как у `code_secret`); префикс через `_.-`
+# разрешён (`db_password:`), середина слова — нет (`bypass:`).
+_LABEL_START = r"(?<![\w.\-])(?:[\w.\-]*[_.\-])?"
+_PASS_LABEL = r"(?:парол[ьяеюи]\w{0,3}|password|passwd|passcode|pswd|pass|pwd)(?:_\w*)?"
+_TOTP_LABEL = (r"(?:2fa|totp|otp|mfa|authenticator|аутентификатор\w*|ключ\w*[ \t]+аутентификатора"
+               r"|secret|секрет\w*)(?:[ \t_\-]{1,2}(?:secret|key|seed|code|ключ|секрет|код)\w*){0,2}")
+# Разделитель: `:` (и полноширинный), тире; дефис — только в пробелах (`password-reset` не метка);
+# ячейка таблицы `|` — с пробелом хотя бы с одной стороны (`secret|password|api_key` в шаблоне grep
+# — не таблица). `=` — забота `env_secret`/`code_secret` (в коде `first_pass = f()` не пароль).
+# Вокруг — markdown-выделение `**`/`_` и обратная кавычка.
+_LABEL_SEP = (r"[*_]{0,3}(?:[ \t]*(?:[:：]|[—–])|[ \t]+-(?=[ \t])|[ \t]*\|(?=[ \t])|[ \t]+\|)"
+              r"[ \t]*[*_]{0,3}[ \t]*`?")
+# Значение: до пробела, `|`, обратной кавычки, `"` и `\` (граница строки JSON); не с `[` (метка
+# санитайзера), не с `/` и `~` (путь, `pwd: /tmp`), не с `*` (шаблон `password: *[a-z]`);
+# хвостовая пунктуация предложения не входит. Минимум 4 символа.
+_TEXT_VALUE = r"""[^\s|`"\\\[/~*][^\s|`"\\]{2,}[^\s|`"\\,.;:!?)\]*]"""
+# Base32 группами по 4 через пробел или дефис (так ключ показывают приложения), от 16 символов.
+_B32_GROUPS = r"[A-Z2-7]{4}(?:[ \-][A-Z2-7]{4}){3,}(?:[ \-][A-Z2-7]{1,3})?"
 
 # (имя правила, регулярка, подстановка). Группа `val` — значение секрета для ALLOWLIST.
 RULES: list[tuple[str, str, str]] = [
@@ -88,6 +109,20 @@ RULES: list[tuple[str, str, str]] = [
     # Строка подключения с паролем: postgres://user:pass@host.
     ("conn_string", r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s:@/]+:(?P<val>[^\s:@/]+)@[^\s/\"']+",
      "[CONNECTION_STRING]"),
+    # Пароль после метки: «Пароль: …», `| Password | … |`, `- pwd — …`; после «пароль» и пробела
+    # — только значение с буквой и цифрой (`CHECKS`), иначе «пароль будет в письме» стало бы меткой.
+    ("password_text", r"(?i)(?P<pfx>" + _LABEL_START + _PASS_LABEL + r"(?!\w)(?:(?P<sp>[ \t]+)"
+     r"(?=[^\s\[/~])|" + _LABEL_SEP + r"))(?P<val>" + _TEXT_VALUE + r")",
+     r"\g<pfx>[PASSWORD]"),
+    # Секрет 2FA/TOTP после метки: «2FA: …», «Authenticator Key: …», «ключ аутентификатора — …»;
+    # значение — base32 группами (любой регистр) или один токен; в нём должна быть цифра (`CHECKS`).
+    ("totp_secret", r"(?i)(?P<pfx>" + _LABEL_START + _TOTP_LABEL + r"(?!\w)" + _LABEL_SEP
+     + r")(?P<val>" + _B32_GROUPS + r"(?![\w\-])|" + _TEXT_VALUE + r")",
+     r"\g<pfx>[OTP_SECRET]"),
+    # Base32-ключ аутентификатора без метки: целый токен в верхнем регистре от 16 значимых символов
+    # (сплошной или группами по 4), с буквой и цифрой 2–7 (`CHECKS`); не кусок base64 или пути.
+    ("base32_secret", r"(?<![\w.\-+/=])(?:[A-Z2-7]{16,}={0,6}|" + _B32_GROUPS + r")(?![\w\-+/=])",
+     "[OTP_SECRET]"),
 
     # ── персональные данные ────────────────────────────────────────────────────
     ("email", r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b", "[EMAIL]"),
@@ -129,8 +164,38 @@ ALLOWLIST = re.compile(
     r"|bearer|basic|digest|none|null|true|false|string|number|boolean|required|optional"
     r"|env|secret_name|redacted"
     r"|(?:process\.env|os\.environ|os\.getenv)(?:[.\[(].*)?"
-    r"|<[^>]{1,40}>|\$\{[^}]{1,40}\}|\{\{[^}]{1,40}\}\})"
+    r"|<[^>]{1,40}>|\$\{[^}]{1,40}\}|\{\{[^}]{1,40}\}\}|\{[^{}]{1,40}\})"
 )
+
+
+def _check_password(m: re.Match) -> bool:
+    """Значение из одних русских букв — слово фразы («а пароль — отдельно»), не пароль. После
+    «пароль» и пробела (без `:`) — только значение с буквой и цифрой; англ. метки так не берутся."""
+    val = m.group("val")
+    if re.fullmatch(r"[А-Яа-яЁё\-]+", val):
+        return False
+    if m.group("sp") is None:
+        return True
+    return ("парол" in m.group("pfx").casefold() and any(c.isdigit() for c in val)
+            and any(c.isalpha() for c in val))
+
+
+def _check_totp(m: re.Match) -> bool:
+    """В секрете 2FA есть цифра: иначе «2FA: включена», «TOTP: enabled» стали бы метками."""
+    return any(c.isdigit() for c in m.group("val"))
+
+
+def _check_base32(m: re.Match) -> bool:
+    """Base32-блок: от 16 значимых символов, есть и буква, и цифра 2–7 (не КАПС-слова и не числа)."""
+    compact = re.sub(r"[ \-=]", "", m.group(0))
+    return (len(compact) >= 16 and re.search(r"[A-Z]", compact) is not None
+            and re.search(r"[2-7]", compact) is not None)
+
+
+# Доп. проверка совпадения по правилу (после ALLOWLIST): `False` — совпадение остаётся как есть.
+# Меняете проверку — поднимите `RULES_VERSION`.
+CHECKS = {"password_text": _check_password, "totp_secret": _check_totp,
+          "base32_secret": _check_base32}
 
 UUID_RE = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
                      r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?![0-9A-Fa-f])")
@@ -242,12 +307,15 @@ class Sanitizer:
     def _apply_rule(rule: str, pattern: re.Pattern, repl: str, text: str,
                     hits: dict[str, int]) -> str:
         spans = ([m.span() for m in UUID_RE.finditer(text)] if rule in UUID_GUARDED else [])
+        check = CHECKS.get(rule)
 
         def _sub(m: re.Match) -> str:
             if spans and _in_uuid(spans, m.start(), m.end()):
                 return m.group(0)
             value = m.group("val") if "val" in pattern.groupindex else m.group(0)
             if value is not None and ALLOWLIST.fullmatch(value):
+                return m.group(0)
+            if check is not None and not check(m):
                 return m.group(0)
             _bump(hits, rule)
             return m.expand(repl) if "\\" in repl else repl
@@ -256,12 +324,13 @@ class Sanitizer:
 
 
 def fingerprint(sanitizer: Sanitizer) -> str:
-    """sha256 набора правил: `RULES_VERSION`, шаблоны `RULES`/`ALLOWLIST`/`STRUCTURAL_KEYS`,
+    """sha256 набора правил: `RULES_VERSION`, шаблоны `RULES`/`ALLOWLIST`/`STRUCTURAL_KEYS`, `CHECKS`,
     отсортированные `names`, `extra_patterns`, `local_users`. Порядок в конфиге не влияет."""
     payload = {
         "rules_version": RULES_VERSION,
         "rules": [[rule, pattern, repl] for rule, pattern, repl in RULES],
         "first": sorted(FIRST_RULES),
+        "checks": sorted(CHECKS),
         "allowlist": ALLOWLIST.pattern,
         "structural": sorted(STRUCTURAL_KEYS),
         "names": sorted(n.casefold() for n in sanitizer.names),

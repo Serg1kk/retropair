@@ -367,6 +367,69 @@ class SanitizerChangeTest(CollectBase):
         self.assertEqual(self.mtimes(), before)
 
 
+# A01: пароль и секрет 2FA в ответе агента; значения выдуманные и собираются в рантайме.
+A01_SESSION = "99999999-2222-3333-4444-a01a01a01a01"
+A01_PWD = "Xy7" + "pass" + "9Q"
+A01_B32 = "JBSW" + "Y3DP" + "EHPK" + "3PXP"
+A01_NEW_RULES = {"password_text", "totp_secret", "base32_secret"}
+
+
+class PasswordLeakResanitizeTest(CollectBase):
+    """A01: снапшот, собранный правилами до `password_text`/`totp_secret`, перечищается после
+    подъёма `RULES_VERSION` — и из исходника, и на месте, когда исходника уже нет."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        text = (LOGS / "specstory-claude.md").read_text(encoding="utf-8").replace(SPECSTORY_SESSION, A01_SESSION)
+        text = text.replace("Готово, тест зелёный.",
+                            f"Готово.\n\n| Поле | Значение |\n|---|---|\n| Пароль | {A01_PWD} |\n"
+                            f"| 2FA | {A01_B32} |\n\n- Password: {A01_PWD}", 1)
+        self.assertIn(A01_PWD, text)
+        (self.src / "a01.md").write_text(text, encoding="utf-8")
+        self.snap = self.me / f"{A01_SESSION}.md"
+
+    def collect_with_old_rules(self) -> None:
+        old = [r for r in sanitize._COMPILED_FIRST if r[0] not in A01_NEW_RULES]
+        with mock.patch.object(sanitize, "_COMPILED_FIRST", old), \
+                mock.patch.object(sanitize, "RULES_VERSION", sanitize.RULES_VERSION - 1):
+            self.collect()
+        leaked = self.snap.read_text(encoding="utf-8")
+        self.assertIn(A01_PWD, leaked)                # утечка воспроизведена старыми правилами
+        self.assertIn(A01_B32, leaked)
+
+    def assert_cleaned(self, out: dict) -> None:
+        text = self.snap.read_text(encoding="utf-8")
+        self.assertNotIn(A01_PWD, text)
+        self.assertNotIn(A01_B32, text)
+        self.assertIn("| Пароль | [PASSWORD] |", text)
+        self.assertIn("| 2FA | [OTP_SECRET] |", text)
+        self.assertIn("- Password: [PASSWORD]", text)
+        meta = inventory.load_meta(self.me)[self.snap.name]
+        self.assertEqual({e["sanitizer_fp"] for e in inventory.load_meta(self.me).values()}, {meta["sanitizer_fp"]})
+        self.assertGreaterEqual(meta["sanitize"]["rules_hit"].get("password_text", 0), 2)
+        self.assertGreaterEqual(meta["sanitize"]["rules_hit"].get("totp_secret", 0), 1)
+        reps = [r for r in out["sanitized"] if r["rules_hit"].get("password_text")]
+        self.assertTrue(reps, out["sanitized"])
+
+    def test_old_fp_snapshot_resanitized_from_source(self):
+        self.collect_with_old_rules()
+        old_fp = inventory.load_meta(self.me)[self.snap.name]["sanitizer_fp"]
+        out = self.collect(LATER)
+        self.assert_cleaned(out)
+        self.assertNotEqual(inventory.load_meta(self.me)[self.snap.name]["sanitizer_fp"], old_fp)
+
+    def test_old_fp_snapshot_resanitized_when_source_gone(self):
+        self.collect_with_old_rules()
+        old_fp = inventory.load_meta(self.me)[self.snap.name]["sanitizer_fp"]
+        shutil.rmtree(self.src)
+        out = self.collect(LATER)
+        self.assert_cleaned(out)
+        self.assertNotEqual(inventory.load_meta(self.me)[self.snap.name]["sanitizer_fp"], old_fp)
+        before = self.mtimes()
+        self.collect("2026-09-27T12:00:00Z")      # отпечаток уже текущий — второй раз не трогается
+        self.assertEqual(self.mtimes(), before)
+
+
 class SkipUnchangedTest(CollectBase):
     """I5: неизменный исходник не разбирается и не санитайзится повторно; замок по режиму."""
 

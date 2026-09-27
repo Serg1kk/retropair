@@ -33,7 +33,7 @@ class Allowlist(unittest.TestCase):
         self.assertEqual(hits, {"code_secret": 1})
 
     def test_allowlist_keeps_placeholders(self):
-        for s in ('PASSWORD="test"', 'TOKEN="${TOKEN}"', 'API_KEY="<your-key>"',
+        for s in ('PASSWORD="test"', 'TOKEN="${TOKEN}"', 'API_KEY="<your-key>"', 'password = "{password}"',
                   "password=changeme", 'secret: "{{ vault_secret }}"', 'token_type="bearer"'):
             out, hits = S.sanitize_text(s)
             self.assertEqual(out, s)
@@ -87,6 +87,9 @@ class Rules(unittest.TestCase):
         "home_path_munged": ("-Users-alice-proj", "[USER]"),
         "internal_host": ("http://build.corp/job/1", "[INTERNAL_URL]"),
         "private_ip": ("192.168.1.10", "[PRIVATE_IP]"),
+        "password_text": ("Пароль: " + "Qw7" + "zx9Lm", "[PASSWORD]"),
+        "totp_secret": ("2FA: " + "k3m" + "q7p2", "[OTP_SECRET]"),
+        "base32_secret": ("JBSW" + "Y3DP" + "EHPK" + "3PXP", "[OTP_SECRET]"),
     }
 
     def test_each_rule_fires(self):
@@ -260,6 +263,142 @@ class EmailBeforeNames(unittest.TestCase):
         self.assertEqual(hits, {"email": 1, "names": 1})
 
 
+# Выдуманные пароль и секрет TOTP: собираются в рантайме, литералов в исходнике нет.
+PWD = "Xy7" + "pass" + "9Q"
+B32 = "JBSW" + "Y3DP" + "EHPK" + "3PXP"
+B32_SPACED = " ".join(B32[i:i + 4] for i in range(0, 16, 4))
+B32_DASHED = "-".join(B32[i:i + 4] for i in range(0, 16, 4))
+B32_LOWER_SPACED = B32_SPACED.lower()
+KEY_HEAD = "a1bc" + "de2f"
+
+
+class PasswordTotpText(unittest.TestCase):
+    """A01: пароль и секрет 2FA/TOTP в свободном тексте ответа агента — фразой, таблицей, списком."""
+
+    def assertClean(self, out: str, *values: str) -> None:
+        for v in values:
+            self.assertNotIn(v, out)
+            self.assertNotIn(v.lower(), out.lower())
+
+    def test_login_password_2fa_phrase(self):
+        text = f"Готово. Логин: {MAIL}, пароль: {PWD}, 2FA-секрет: {B32}."
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertClean(out, PWD, B32, MAIL)
+        self.assertEqual(out, "Готово. Логин: [EMAIL], пароль: [PASSWORD], 2FA-секрет: [OTP_SECRET].")
+        self.assertEqual(hits, {"email": 1, "password_text": 1, "totp_secret": 1})
+
+    def test_markdown_table(self):
+        text = (f"| Поле | Значение |\n|---|---|\n| Логин | {MAIL} |\n| Пароль | {PWD} |\n"
+                f"| 2FA | {B32_SPACED} |\n| **Password** | `{PWD}` |\n")
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertClean(out, PWD, B32_SPACED, "EHPK")
+        self.assertIn("| Пароль | [PASSWORD] |", out)
+        self.assertIn("| 2FA | [OTP_SECRET] |", out)
+        self.assertIn("| **Password** | `[PASSWORD]` |", out)
+        self.assertEqual(hits.get("password_text"), 2)
+        self.assertEqual(hits.get("totp_secret"), 1)
+
+    def test_markdown_list(self):
+        text = (f"- Email: {MAIL}\n- Password: {PWD}\n- Authenticator Key: {B32_LOWER_SPACED}\n"
+                f"* **Пароль:** {PWD}\n")
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertClean(out, PWD, B32_LOWER_SPACED, "ehpk")
+        self.assertIn("- Password: [PASSWORD]\n", out)
+        self.assertIn("- Authenticator Key: [OTP_SECRET]\n", out)
+        self.assertIn("* **Пароль:** [PASSWORD]\n", out)
+        self.assertEqual(hits, {"email": 1, "password_text": 2, "totp_secret": 1})
+
+    def test_bug_shape_code_block_in_agent_reply(self):
+        # Форма утечки A01: строки учёток через два пробела в блоке кода, ключ обрезан «...».
+        text = (f"Нашёл в логах:\n\n```\nUsername: {MAIL}  Password: {PWD}  Instance: acme.io ...\n"
+                f"Password: {PWD}  Authenticator Key: {KEY_HEAD}...\n```\n")
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertClean(out, PWD, KEY_HEAD)
+        self.assertIn("Password: [PASSWORD]  Authenticator Key: [OTP_SECRET]...", out)
+        self.assertIn("Instance: acme.io", out)
+        self.assertEqual(hits, {"email": 1, "password_text": 2, "totp_secret": 1})
+
+    def test_password_labels_and_separators(self):
+        for label in ("пароль", "Пароль", "ПАРОЛЬ", "password", "Password", "PASSWORD", "pass",
+                      "pwd", "passwd", "db_password", "паролем"):
+            for sep in (": ", ":", " — ", " - ", " | ", "： ", "—", " |"):
+                text = f"{label}{sep}{PWD}"
+                with self.subTest(text=text):
+                    out, hits = PLAIN.sanitize_text(text)
+                    self.assertEqual(out, f"{label}{sep}[PASSWORD]")
+                    self.assertEqual(sum(hits.values()), 1, hits)
+
+    def test_password_after_space_ru(self):
+        out, hits = PLAIN.sanitize_text(f"пароль {PWD} от админки")
+        self.assertEqual(out, "пароль [PASSWORD] от админки")
+        self.assertEqual(hits, {"password_text": 1})
+
+    def test_totp_labels(self):
+        for label in ("2FA", "2fa", "TOTP", "OTP", "MFA", "authenticator", "Authenticator Key",
+                      "2FA secret", "TOTP seed", "2FA-секрет", "2FA код", "секрет", "Secret",
+                      "secret key", "Secret Key", "ключ аутентификатора", "Ключ аутентификатора",
+                      "MFA code", "otp_secret"):
+            for value in (B32, B32_SPACED, B32_DASHED, B32_LOWER_SPACED, "k3mq7p2x"):
+                text = f"{label}: {value}"
+                with self.subTest(text=text):
+                    out, hits = PLAIN.sanitize_text(text)
+                    self.assertEqual(out, f"{label}: [OTP_SECRET]")
+                    self.assertEqual(sum(hits.values()), 1, hits)
+
+    def test_base32_without_label(self):
+        for value in (B32, B32_SPACED, B32_DASHED, B32 + "ABCDEFGH23", B32 + "====",
+                      B32 + "QRST" + "UVWX" + "Y234" + "567A"):
+            with self.subTest(value=value):
+                out, hits = PLAIN.sanitize_text(f"введи {value} в приложение")
+                self.assertEqual(out, "введи [OTP_SECRET] в приложение")
+                self.assertEqual(hits, {"base32_secret": 1})
+
+    def test_sanitize_obj_assistant_row(self):
+        row = {"type": "assistant", "uuid": UUID, "sessionId": UUID, "timestamp": TS,
+               "message": {"id": "msg_01", "role": "assistant", "content": [
+                   {"type": "text", "text": f"| Логин | {MAIL} |\n| Пароль | {PWD} |\n| 2FA | {B32_SPACED} |"},
+                   {"type": "text", "text": f"- Password: {PWD}\n- TOTP: {B32}"}]}}
+        line = json.dumps(row, ensure_ascii=False)
+        out, hits = PLAIN.sanitize_obj(json.loads(line))
+        dumped = json.dumps(out, ensure_ascii=False)
+        self.assertClean(dumped, PWD, B32, B32_SPACED, MAIL)
+        self.assertEqual(out["uuid"], UUID)
+        self.assertEqual(out["message"]["content"][1]["text"], "- Password: [PASSWORD]\n- TOTP: [OTP_SECRET]")
+        self.assertEqual(hits, {"email": 1, "password_text": 2, "totp_secret": 2})
+        # тот же ряд сырой строкой JSONL через sanitize_text: JSON остаётся валидным
+        raw_out, _ = PLAIN.sanitize_text(line)
+        self.assertClean(raw_out, PWD, B32)
+        json.loads(raw_out)
+
+    def test_idempotent(self):
+        text = f"Пароль: {PWD}\n| 2FA | {B32_SPACED} |\nсекрет {B32}\npassword {PWD}"
+        once, _ = PLAIN.sanitize_text(text)
+        self.assertEqual(PLAIN.sanitize_text(once), (once, {}))
+
+    def test_negatives_untouched(self):
+        hex40 = "0123456789abcdef" * 2 + "01234567"
+        cases = [
+            "Обычный текст ответа: всё собрано, 3 теста зелёные.",
+            "пароль не нужен", "пароль будет в письме", "Пароль: не нужен", "Password reset link sent.",
+            "password: ${PASS}", "password: <your-password>", "Пароль: <пароль>", "password: required",
+            "PASSWORD=${DB_PASS}", "Пароль: [PASSWORD]",
+            f"id {UUID} и {UUID.upper()}", f"commit {hex40}", f"sha {hex40.upper()}",
+            "MAX_RETRY_COUNT DEFAULT_TIMEOUT ABCDEFGHIJKLMNOPQRSTUVWX ABCD EFGH IJKL MNOP",
+            "2FA: включена", "TOTP: enabled for all users", "OTP: пришёл по SMS",
+            "pwd: /tmp/work", "$ pwd\n/tmp/work", "bypass: true", "compass: north",
+            "CamelCaseIdentifierABCDEFGH234 и prefix_ABCDEFGH23456789XYZ",
+            "otpauth-style", "Секреты не найдены.", "секретов нет",
+            # шаблоны grep и фразы из живых логов: не таблица и не значение
+            'grep -iE "token|secret|password|api_key|apikey" .env', 'grep -E "password: *[a-z0-9]"',
+            "а пароль — отдельно, через менеджер", "Пароль: отдельно",
+            "self.first_pass = compute_all(x)", "Пароль: {PWD}", "| 2FA | {B32_SPACED} |",
+            "data:image/png;base64,iVBOR+" + B32 + "/xyz", "blob/" + B32 + "=/next",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(PLAIN.sanitize_text(text), (text, {}))
+
+
 class Fingerprint(unittest.TestCase):
     def test_same_config_same_fp_order_insensitive(self):
         a = sanitize.Sanitizer(names=["Acme", "Globex"], extra_patterns=["A-\\d+", "B-\\d+"],
@@ -405,6 +544,19 @@ class Performance(unittest.TestCase):
 
         s = sanitize.Sanitizer()
         for text in ("a" * 20000, "a-" * 10000, "a." * 10000, "1" * 20000, "ab_c.d-" * 3000):
+            started = time.perf_counter()
+            s.sanitize_text(text)
+            self.assertLess(time.perf_counter() - started, 1.0, text[:12])
+
+    def test_long_tokens_linear_password_totp_base32(self):
+        # Новые правила A01: метки подряд, длинные base32-цепочки, группы через пробел и дефис.
+        import time
+
+        s = sanitize.Sanitizer()
+        for text in ("A" * 20000, "A2" * 10000, "ABCD " * 4000, "ABCD-" * 4000, "AB2D " * 4000 + "x",
+                     "A" * 20000 + "a", "пароль " * 3000, "password:" * 2000, "pass " * 4000,
+                     "2FA " * 5000, "2FA: " * 4000, "db_" * 6000 + "password", "a_" * 8000 + "x",
+                     "Пароль: " + "x" * 20000, "секрет: " + "abcd " * 4000, "| Пароль | " * 2000):
             started = time.perf_counter()
             s.sanitize_text(text)
             self.assertLess(time.perf_counter() - started, 1.0, text[:12])

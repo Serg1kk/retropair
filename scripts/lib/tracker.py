@@ -23,7 +23,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lib import i18n, level, marks, people, schema, text_rules
+from lib import i18n, level, marks, people, registry, schema, text_rules
 from lib.config import load_config
 from lib.lock import file_lock
 from lib.workspace import SrError, read_json, write_json_atomic, ws_paths
@@ -102,6 +102,32 @@ def make_run_id(ws_id: str, person_id: str, label: str | None, now: datetime) ->
     at = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
     stamp = at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"{ws_id}_{person_id}_{label or 'run'}_{stamp}"
+
+
+def run_mode_label(tr: dict, person_id: str, now: datetime) -> str:
+    """Метка прогона режима `period.mode: run`: `run-<ГГГГММДД>` по `now` (UTC), занята → `-2`, `-3`, …
+
+    Занятыми считаются метки всех прогонов человека, включая отозванные: метка не переиспользуется,
+    и второй прогон за сутки становится своим периодом, а не ревизией первого.
+    """
+    at = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    base = f"run-{at.astimezone(timezone.utc):%Y%m%d}"
+    taken = {(r.get("period") or {}).get("label") for r in tr.get("runs") or []
+             if isinstance(r, dict) and r.get("person_id") == person_id}
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base}-{n}" in taken:
+        n += 1
+    return f"{base}-{n}"
+
+
+def live_run_with_label(tr: dict, person_id: str, label: str) -> dict | None:
+    """Живой прогон человека с меткой периода `label` (первый в порядке файла) или `None`."""
+    for run in live_runs(tr, person_id):
+        if (run.get("period") or {}).get("label") == label:
+            return run
+    return None
 
 
 def is_live(run: dict) -> bool:
@@ -729,6 +755,23 @@ def _period_dates(run: dict, entries: list[dict]) -> tuple[str | None, str | Non
     return (min(dates), max(dates)) if dates else (None, None)
 
 
+def _touch_registry(root: Path, reviewed_at: str) -> list[str]:
+    """`last_run_at` = `reviewed_at` в реестре workspaces; вернуть предупреждения итога.
+
+    Вызывается после записи трекера и индекса: сбой реестра прогон не откатывает, а уходит
+    в предупреждение с текстом ошибки. Workspace не в реестре — тоже предупреждение.
+    """
+    try:
+        entry = registry.find_by_path(root)
+        if entry is None:
+            return [f"workspace не в реестре ~/.sessionretro/workspaces.json, "
+                    f"last_run_at не записан ({root})"]
+        registry.update(entry["id"], last_run_at=reviewed_at)
+    except SrError as err:
+        return [f"прогон записан, а реестр workspaces нет: last_run_at не обновлён: {err.message}"]
+    return []
+
+
 def append(root: Path, payload_path, person_id: str, *, period_label: str | None = None,
            period_confidence: str = "inferred", replace: str | None = None, skipped=(),
            now: datetime | None = None) -> dict:
@@ -738,7 +781,9 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
     (1) → `status.ok` и `data` (1) → `validate_run` и `check_practices` (1) → трекер → индекс. `--replace`: тот же
     человек, `run_id` сохраняется, прогон встаёт на место заменяемого, `revision + 1`,
     `operator_override` переносится, пометки заменяемого снимаются. Нет индекса или сессии в нём →
-    прогон пишется, в итоге `logs_unmatched`. Сессии со статусом из `marks.OPEN_STATUSES`
+    прогон пишется, в итоге `logs_unmatched`. Метки нет и `config.period.mode == "run"` → метку
+    выдаёт `run_mode_label` (уникальна у человека); явная метка живого прогона того же человека
+    без `--replace` → `SrError(1)`. Итоговая метка — в `period_label` результата. Сессии со статусом из `marks.OPEN_STATUSES`
     (`other_period`) в индексе не закрываются (`logs_left_open`); запись со штампом более нового
     прогона не перетирается (`logs_kept_newer`).
     """
@@ -769,8 +814,19 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
             override = victim.get("operator_override")
             label = period_label if period_label is not None else (victim.get("period") or {}).get("label")
             run_id = replace
-        else:
+        elif period_label is not None:
+            same = live_run_with_label(tr, person_id, period_label)
+            if same is not None:
+                raise SrError(
+                    f"у {person_id} уже есть прогон {same.get('run_id')} с меткой {period_label}: "
+                    f"повтор периода — `--replace {same.get('run_id')}`, новый период — другая метка",
+                    1,
+                )
             label = period_label
+            run_id = make_run_id(ws_id, person_id, label, now)
+        else:
+            mode = (load_config(root).get("period") or {}).get("mode")
+            label = run_mode_label(tr, person_id, now) if mode == "run" else None
             run_id = make_run_id(ws_id, person_id, label, now)
         run = _build_run(obj, run_id=run_id, ws_id=ws_id, person_id=person_id, label=label,
                          confidence=period_confidence, skipped=skipped, now_iso=now_iso,
@@ -847,8 +903,10 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
             if index is not None:
                 marks.save_index(root, index, now=now)
 
+    warnings += _touch_registry(root, run["reviewed_at"])
     return {
         "run_id": run_id,
+        "period_label": label,
         "revision": revision,
         "logs_marked": len(run["logs_index_marks"]),
         "logs_unmatched": len(unmatched),

@@ -14,10 +14,11 @@ from pathlib import Path
 
 import _util  # noqa: F401 — кладёт scripts/ в sys.path
 from _assess import make_ws, payload
-from _util import TempHome
+from _util import TempHome, run_sr
 
 import sr
-from lib import batches, marks, schema, tracker
+from lib import batches, marks, registry, render_review, report_data, schema, tracker
+from lib.config import load_config, save_config
 from lib.workspace import SrError, ws_paths
 
 NOW = datetime(2026, 9, 10, 12, 0, 0, tzinfo=timezone.utc)
@@ -479,7 +480,9 @@ class AppendTest(TrackerCase):
         self.assertIn("empty_transcript", self.rejected(obj))
 
     def test_duplicate_run_id_same_second(self):
+        """Метку отозванного прогона можно назвать явно, но тот же id в ту же секунду не пишется."""
         self.append_p1()
+        tracker.retract(self.root, RUN_P1, "ошибка", now=NOW)
         self.assertIn("дубликат", self.rejected(payload(), period_label="p1"))
 
     def test_broken_old_run_does_not_block_new(self):
@@ -819,6 +822,183 @@ class CliTest(TrackerCase):
         doc["runs"].append(json.loads(json.dumps(doc["runs"][0])))
         self.save_doc(doc)
         self.assertTrue(any("дубликат" in p for p in tracker.validate_file(self.root)))
+
+
+DAY_LABEL = "run-20260910"
+SAME_DAY = NOW + timedelta(hours=2)
+
+
+class RunModeLabelTest(TrackerCase):
+    """Режим `period.mode: run`: метку прогона выдаёт движок, прогоны одних суток — разные периоды."""
+
+    def p2_partial(self) -> dict:
+        obj = self.p2()
+        obj["data"]["prev_recommendations"][0]["verdict"] = "partial"
+        return obj
+
+    def set_period_mode(self, mode: str) -> None:
+        cfg = load_config(self.root)
+        cfg["period"] = {"mode": mode}
+        save_config(self.root, cfg)
+
+    def test_two_runs_same_day_get_distinct_labels(self):
+        """Регрессия: второй прогон за сутки не ревизия первого, вердикт по рекомендации первого находит её."""
+        first = self.append(payload())
+        second = self.append(self.p2_partial(), now=SAME_DAY)
+        self.assertEqual(first["period_label"], DAY_LABEL)
+        self.assertEqual(second["period_label"], DAY_LABEL + "-2")
+        self.assertEqual(first["run_id"], f"demo-team_alex_{DAY_LABEL}_20260910T120000Z")
+        self.assertEqual(second["run_id"], f"demo-team_alex_{DAY_LABEL}-2_20260910T140000Z")
+        tr = tracker.load(self.root)
+        self.assertEqual([r["period"]["label"] for r in tracker.live_runs(tr, "alex")],
+                         [DAY_LABEL, DAY_LABEL + "-2"])
+        self.assertEqual(second["revision"], 1)
+        opened = {item["id"]: item for item in tracker.open_recs(tr, "alex")["open"]}
+        self.assertIn("REC-alex-001", opened)
+        self.assertEqual(opened["REC-alex-001"]["period"], DAY_LABEL)
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_suffix_skips_label_of_retracted_run(self):
+        """Метка отозванного прогона занята: новая берёт следующий свободный суффикс."""
+        self.append(payload())
+        second = self.append(self.p2(), now=SAME_DAY)
+        tracker.retract(self.root, second["run_id"], "повтор по ошибке", now=SAME_DAY + timedelta(minutes=5))
+        third = self.append(self.p2(recommendations=[dict(self.p2()["data"]["recommendations"][0],
+                                                          id="REC-alex-004")]),
+                            now=SAME_DAY + timedelta(hours=1))
+        self.assertEqual(third["period_label"], DAY_LABEL + "-3")
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_other_people_same_day_have_no_suffix(self):
+        self.append(payload())
+        recs = [dict(r, id=r["id"].replace("alex", "kim")) for r in payload()["data"]["recommendations"]]
+        kim = self.append(payload(recommendations=recs), person="kim", now=SAME_DAY)
+        self.assertEqual(kim["period_label"], DAY_LABEL)
+        self.assertEqual(kim["run_id"], f"demo-team_kim_{DAY_LABEL}_20260910T140000Z")
+
+    def test_explicit_label_is_kept_in_run_mode(self):
+        result = self.append_p1()
+        self.assertEqual(result["period_label"], "p1")
+        self.assertEqual(result["run_id"], RUN_P1)
+
+    def test_explicit_duplicate_label_without_replace_is_error_1(self):
+        self.append_p1()
+        before = tracker.tracker_path(self.root).read_bytes()
+        message = self.rejected(self.p2(), now=LATER, period_label="p1")
+        self.assertIn(f"у alex уже есть прогон {RUN_P1} с меткой p1", message)
+        self.assertIn(f"--replace {RUN_P1}", message)
+        self.assertIn("другая метка", message)
+        self.assertEqual(tracker.tracker_path(self.root).read_bytes(), before)
+
+    def test_explicit_duplicate_label_with_replace_is_revision(self):
+        self.append_p1()
+        result = self.append(payload(), now=LATER, period_label="p1", replace=RUN_P1)
+        self.assertEqual(result["run_id"], RUN_P1)
+        self.assertEqual(result["revision"], 2)
+        self.assertEqual(result["period_label"], "p1")
+
+    def test_replace_without_label_keeps_label(self):
+        first = self.append(payload())
+        result = self.append(payload(), now=SAME_DAY, replace=first["run_id"])
+        self.assertEqual(result["period_label"], DAY_LABEL)
+        self.assertEqual(len(self.tracker_doc()["runs"]), 1)
+
+    def test_labels_mode_without_label_stays_unlabeled(self):
+        self.set_period_mode("labels")
+        result = self.append(payload())
+        self.assertIsNone(result["period_label"])
+        self.assertEqual(result["run_id"], "demo-team_alex_run_20260910T120000Z")
+
+    def test_cli_prints_period_label(self):
+        code, out, err = self.cli("append", str(self.write(payload())), "--person", "alex")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["period_label"].split("-")[0], "run")
+
+    def test_cli_duplicate_label_is_code_1(self):
+        self.append_p1()
+        code, out, err = self.cli("append", str(self.write(self.p2())), "--person", "alex",
+                                  "--period-label", "p1")
+        self.assertEqual(code, 1)
+        self.assertIn("--replace", err)
+
+    def test_report_two_runs_same_day_are_two_periods(self):
+        """`report --personal`: два прогона за сутки — две точки, без «ревью не привязано»."""
+        runs = []
+        for obj, moment, name in ((payload(), NOW, "judge-1.json"),
+                                  (self.p2_partial(), SAME_DAY, "judge-2.json")):
+            judge = self.write(obj, name=name)
+            result = tracker.append(self.root, judge, "alex", now=moment)
+            render_review.write_review(self.root, judge, "alex", result["run_id"], now=moment)
+            runs.append(result["run_id"])
+        res = run_sr("report", "--personal", "alex", "--json", home=self.home, cwd=self.root)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("не привязано", res.stderr)
+        self.assertNotIn("неизвестной рекомендации", res.stderr)
+        model = report_data.collect(self.root, lambda _m: None)
+        alex = next(p for p in model["people"] if p["id"] == "alex")
+        self.assertEqual([p["period"] for p in alex["points"]], [DAY_LABEL, DAY_LABEL + "-2"])
+        self.assertEqual(model["unbound_reviews"], [])
+
+
+class RegistryLastRunTest(TrackerCase):
+    """`append` пишет `last_run_at` = `reviewed_at` прогона в реестр workspaces."""
+
+    def registered(self) -> dict:
+        return registry.register(self.root, "Demo team", "team", [])
+
+    def test_append_writes_last_run_at(self):
+        entry = self.registered()
+        self.append_p1()
+        run = self.tracker_doc()["runs"][0]
+        saved = registry.find_by_path(self.root)
+        self.assertEqual(saved["id"], entry["id"])
+        self.assertEqual(saved["last_run_at"], run["reviewed_at"])
+        self.assertEqual(saved["last_run_at"], "2026-09-10T12:00:00Z")
+
+    def test_second_append_moves_last_run_at(self):
+        self.registered()
+        self.append_p1()
+        result = self.append(self.p2(), now=LATER, period_label="p2")
+        runs = self.tracker_doc()["runs"]
+        self.assertEqual(registry.find_by_path(self.root)["last_run_at"], runs[-1]["reviewed_at"])
+        self.assertEqual(runs[-1]["reviewed_at"], "2026-09-17T12:00:00Z")
+        self.assertFalse(any("реестр" in w for w in result["warnings"]), result["warnings"])
+
+    def test_not_registered_warns_and_run_is_written(self):
+        code, out, err = self.cli("append", str(self.write(payload())), "--person", "alex")
+        self.assertEqual(code, 0, err)
+        result = json.loads(out)
+        hits = [w for w in result["warnings"] if "не в реестре" in w]
+        self.assertEqual(len(hits), 1, result["warnings"])
+        self.assertIn("last_run_at не записан", hits[0])
+        self.assertIn(str(self.root), hits[0])
+        self.assertIn("не в реестре", err)
+        self.assertEqual(len(self.tracker_doc()["runs"]), 1)
+        self.assertIsNone(registry.find_by_path(self.root))
+
+    def test_registry_error_keeps_run_and_warns(self):
+        self.registered()
+        boom = SrError("реестр workspaces: сбой записи (файл: x)", 1)
+        with mock.patch.object(registry, "update", side_effect=boom):
+            result = self.append_p1()
+        self.assertEqual(len(self.tracker_doc()["runs"]), 1)
+        hits = [w for w in result["warnings"] if "сбой записи" in w]
+        self.assertEqual(len(hits), 1, result["warnings"])
+        self.assertIn("прогон записан", hits[0])
+        self.assertIsNone(registry.find_by_path(self.root)["last_run_at"])
+
+    def test_retract_keeps_last_run_at(self):
+        self.registered()
+        self.append_p1()
+        tracker.retract(self.root, RUN_P1, "ошибка", now=LATER)
+        self.assertEqual(registry.find_by_path(self.root)["last_run_at"], "2026-09-10T12:00:00Z")
+
+    def test_doctor_shows_last_run_at(self):
+        self.registered()
+        self.append_p1()
+        code, out, err = self.cli("doctor", "--json")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["last_run_at"], "2026-09-10T12:00:00Z")
 
 
 if __name__ == "__main__":
