@@ -339,11 +339,43 @@ def _period_value(run: dict) -> str:
     return "..".join(dates) if dates else str(run.get("run_id"))
 
 
-def _log_path(path: str) -> str:
-    return path if not path or Path(path).is_absolute() else f".sessionretro/{path}"
+def _inside(path: Path, state_dir: Path) -> str | None:
+    """Путь `path` от `state_dir` в posix-виде; вне него → None (сверка и как есть, и по resolve)."""
+    for p, base in ((path, state_dir), (path.resolve(), state_dir.resolve())):
+        try:
+            return p.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return None
 
 
-def _service(run: dict, card: dict, cfg: dict, lang: str, template_name: str) -> list[str]:
+def shown_path(path: str, state_dir: Path | None) -> str:
+    """Путь сессии для файла ревью: без абсолютных путей машины (файл пересылают).
+
+    Абсолютный внутри `.sessionretro/` → относительный от неё (`logs/<id>/<file>`);
+    абсолютный вне workspace (или workspace неизвестен) → только имя файла; относительный
+    (так пишет судья: от `.sessionretro/`) и пустой — как есть. Трекер не переписывается.
+    """
+    if not path or not Path(path).is_absolute():
+        return path
+    rel = _inside(Path(path), state_dir) if state_dir is not None else None
+    return rel if rel is not None else Path(path).name
+
+
+def _log_path(path: str, state_dir: Path | None) -> str:
+    """Аргумент `sr.py normalize` из корня проекта: путь внутри workspace → `.sessionretro/<rel>`,
+    абсолютный вне workspace → только имя файла (адрес машины в файл ревью не пишется)."""
+    if not path:
+        return path
+    p = Path(path)
+    if p.is_absolute():
+        rel = _inside(p, state_dir) if state_dir is not None else None
+        return f".sessionretro/{rel}" if rel is not None else p.name
+    return f".sessionretro/{path}"
+
+
+def _service(run: dict, card: dict, cfg: dict, lang: str, template_name: str,
+             state_dir: Path | None = None) -> list[str]:
     none = _t(ASSESS, "none", lang)
     sessions = [s for s in run.get("sessions_reviewed") or [] if isinstance(s, dict)]
     reviewed = [s for s in sessions if _session_status(s) == REVIEWED]
@@ -351,7 +383,7 @@ def _service(run: dict, card: dict, cfg: dict, lang: str, template_name: str) ->
     for s in sessions:
         if _session_status(s) != REVIEWED:
             note = f": {s['status_note']}" if s.get("status_note") else ""
-            left.append(f"`{s.get('path') or s.get('session_id')}` ({_status_name(_session_status(s), lang)}{note})")
+            left.append(f"`{shown_path(str(s.get('path') or ''), state_dir) or s.get('session_id')}` ({_status_name(_session_status(s), lang)}{note})")
     left += [f"`{sid}` ({_t(ASSESS, 'service_skipped_known', lang)})" for sid in run.get("sessions_skipped_known") or []]
     period = run.get("period") or {}
     dates = "..".join(str(period[k])[:10] for k in ("from", "to") if isinstance(period.get(k), str))
@@ -375,7 +407,7 @@ def _service(run: dict, card: dict, cfg: dict, lang: str, template_name: str) ->
     ]
 
 
-def _dossier(run: dict, lang: str) -> list[str]:
+def _dossier(run: dict, lang: str, state_dir: Path | None = None) -> list[str]:
     none = _t(ASSESS, "none", lang)
     cols = _t(ASSESS, "dossier_columns", lang).split(",")
     lines = [f"## {_t(ASSESS, 'dossier_title', lang)}", "",
@@ -387,11 +419,12 @@ def _dossier(run: dict, lang: str) -> list[str]:
         path = str(s.get("path") or "")
         m = _LEADING_DATE_RE.match(Path(path).name)
         from_turn = s.get("reviewed_from_turn")
-        lines.append(f"| {m.group(1) if m else ''} | `{path}` | `{s.get('session_id') or ''}` | "
+        lines.append(f"| {m.group(1) if m else ''} | `{shown_path(path, state_dir)}` | "
+                     f"`{s.get('session_id') or ''}` | "
                      f"{_status_name(_session_status(s), lang)} | {from_turn if from_turn is not None else 0} |")
         if _session_status(s) == REVIEWED and path:
             tail = f" --from-turn {from_turn}" if from_turn is not None else ""
-            slices.append(f"- `sr.py normalize {_log_path(path)}{tail}`")
+            slices.append(f"- `sr.py normalize {_log_path(path, state_dir)}{tail}`")
     lines += ["", f"**{_t(ASSESS, 'dossier_slices', lang)}:**"] + (slices or [none])
     recs = [f"- `{r.get('id')}` ({r.get('axis')}): {r.get('text')}"
             for r in run.get("recommendations") or [] if isinstance(r, dict)]
@@ -405,13 +438,19 @@ def _dossier(run: dict, lang: str) -> list[str]:
     return lines
 
 
-def build_file(run: dict, card: dict, cfg: dict, sent: str, lang: str, template_name: str) -> str:
-    """Файл ревью: frontmatter, служебный блок, `---`, отправляемый блок, `---`, досье."""
+def build_file(run: dict, card: dict, cfg: dict, sent: str, lang: str, template_name: str,
+               state_dir: Path | None = None) -> str:
+    """Файл ревью: frontmatter, служебный блок, `---`, отправляемый блок, `---`, досье.
+
+    Пути сессий идут через `shown_path` от `state_dir` (`.sessionretro/` workspace): абсолютные
+    пути машины в файл, который пересылают, не попадают.
+    """
     front = ["---", f"person_id: {run.get('person_id')}", f"run_id: {run.get('run_id')}",
              f"period: {_period_value(run)}", f"status: {status_for(cfg)}", f"lang: {lang}",
              f"template: {template_name}", "---"]
-    lines = front + _service(run, card, cfg, lang, template_name) + ["", "---", "", sent.strip(), "", "---", ""]
-    return "\n".join(lines + _dossier(run, lang)) + "\n"
+    lines = (front + _service(run, card, cfg, lang, template_name, state_dir)
+             + ["", "---", "", sent.strip(), "", "---", ""])
+    return "\n".join(lines + _dossier(run, lang, state_dir)) + "\n"
 
 
 def review_path(root: Path, person_id: str, run_id: str) -> Path:
@@ -500,7 +539,7 @@ def write_review(root: Path, judge_path, person_id: str, run_id: str | None = No
         )
     template_name = tpl.name if template is not None else (card.get("feedback") or {}).get("template") or "default"
     status = status_for(cfg)
-    text = build_file(run, card, cfg, sent, lang, template_name)
+    text = build_file(run, card, cfg, sent, lang, template_name, ws_paths(root)["state_dir"])
     tracker.update_run(root, rid, now=now, feedback_draft=sent, review_status=status)
     path = review_path(root, person_id, rid)
     _write_text_atomic(path, text)

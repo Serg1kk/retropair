@@ -299,6 +299,15 @@ class Samples(unittest.TestCase):
         self.assertEqual(validate(self.collector, "collector"), [])
         self.assertEqual(validate(self.judge, "judge"), [])
 
+    def test_collector_status_message_null_accepted(self) -> None:
+        # m11: коллектор вернул status.message: null — пачка не должна уходить на перезапуск
+        ok = copy.deepcopy(self.collector)
+        ok["status"]["message"] = None
+        self.assertEqual(validate(ok, "collector"), [])
+        bad = copy.deepcopy(self.collector)
+        bad["status"]["message"] = 5
+        self.assertTrue(validate(bad, "collector"), "число в status.message должно ловиться")
+
     def test_collector_extra_key_rejected(self) -> None:
         bad = copy.deepcopy(self.collector)
         bad["batch"]["extra"] = 1

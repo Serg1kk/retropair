@@ -296,9 +296,9 @@ template: default
 |---|---|
 | `cleanup_period_days` | сколько дней Claude Code хранит логи сессий; «не задан» — 30 по умолчанию |
 | `improvements_pending` | сколько ваших предложений авторам плагина записано и ещё не отправлено — см. [feedback.md](feedback.md) |
-| `sources_found` | у скольких локальных источников (`claude-jsonl`, `specstory`, `dir`) есть папка и каких нет; источники `git` не проверяются. Папки нет, пока не было первой сессии или выгрузки, — это не ошибка |
+| `sources_found` | у скольких локальных источников (`claude-jsonl`, `specstory`, `dir`) из конфига и карточек `people/<id>.yaml` есть папка и каких нет; источники `git` не проверяются, только считаются. Папки нет, пока не было первой сессии или выгрузки, — это не ошибка |
 | `project_agents` | проектные агенты: `3/3 совпадают с config.models` — всё хорошо; `нет` — файлов нет, работают агенты плагина; `расходятся: judge` — сверьте командой `agents check` ([customize.md](customize.md)) |
-| `gitignore` | все ли три строки sessionretro есть в `.gitignore` проекта |
+| `gitignore` | все ли строки sessionretro есть в `.gitignore` проекта: `да` — все; иначе `нет — добавьте: sr.py setup-apply с {"gitignore": true}` |
 | `show_scores` | показываются ли баллы в личных отчётах |
 | `period_mode` | как делятся периоды: `run`, `dates` или `labels` |
 | `template` | какой шаблон текста выбран при настройке |

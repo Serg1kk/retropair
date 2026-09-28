@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Retro on how you work with a coding agent: eight behaviour axes from your session logs, personal next steps, progress over time.",
-    "version": "0.1.6"
+    "version": "0.1.7"
   },
   "plugins": [
     {
       "name": "sessionretro",
       "source": "./",
       "description": "Retro on how you work with a coding agent: eight behaviour axes from your session logs, personal next steps, progress over time.",
-      "version": "0.1.6",
+      "version": "0.1.7",
       "author": {
         "name": "ProdfeatAI"
       }

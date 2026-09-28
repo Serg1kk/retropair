@@ -308,6 +308,8 @@
       "sources_per_person": {"ru": "в режиме {mode} источники логов задаются на каждого человека (people[].sources); общие источники шаблона без владельца не добавлены", "en": "in {mode} mode log sources are set per person (people[].sources); the template sources without an owner were not added"},
       "ownerless_source": {"ru": "источник без владельца {src}: при двух и больше карточках collect потребует поле person — задайте его через people[].sources", "en": "source without an owner {src}: with two or more cards collect needs the person field; set it via people[].sources"},
       "cleanup_kept": {"ru": "cleanupPeriodDays в ~/.claude/settings.json оставлено {current} (больше запрошенного {value}): понижение удалило бы логи", "en": "cleanupPeriodDays in ~/.claude/settings.json kept at {current} (more than the requested {value}): lowering it would delete logs"},
+      "gitignore_no": {"ru": "нет — добавьте: sr.py setup-apply с {\"gitignore\": true}", "en": "no — add it: sr.py setup-apply with {\"gitignore\": true}"},
+      "gitignore_skipped": {"ru": "строки sessionretro в .gitignore не дописаны — добавьте: sr.py setup-apply с {\"gitignore\": true}", "en": "sessionretro lines were not added to .gitignore — add them: sr.py setup-apply with {\"gitignore\": true}"},
       "template_own": {"ru": "у карточек свой feedback.template, новый шаблон их не касается: {ids} — поправьте в people/<id>.yaml, если нужно", "en": "these cards set their own feedback.template, the new template does not apply to them: {ids} — edit people/<id>.yaml if needed"}
     }
   }

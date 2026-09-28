@@ -521,6 +521,78 @@ class WriteReviewTest(TrackerCase):
         text = self.write_review().read_text(encoding="utf-8")
         self.assertNotIn(str(self.root), text)
 
+    def set_session_paths(self, mapping: dict) -> None:
+        """Пути сессий прогона как их пишет судья: `{относительный путь: новый путь}`."""
+        doc = self.tracker_doc()
+        for s in doc["runs"][0]["sessions_reviewed"]:
+            s["path"] = mapping.get(s["path"], s["path"])
+        self.save_doc(doc)
+
+    def abs_snapshot(self, rel: str) -> str:
+        return str(self.paths["state_dir"] / rel)
+
+    SESSIONS = ("logs/alex/2026-09-02_09-00-00Z-login-form.md",
+                "logs/alex/2026-09-01_11-30-00Z-refactor-api.md",
+                "logs/alex/2026-09-04_16-00-00Z-quick-question.md")
+
+    def test_abs_snapshot_paths_inside_workspace_shown_relative(self):
+        self.set_session_paths({rel: self.abs_snapshot(rel) for rel in self.SESSIONS})
+        text = self.write_review().read_text(encoding="utf-8")
+        self.assertNotIn(str(self.root), text)
+        self.assertNotIn(str(self.root.resolve()), text)
+        self.assertNotIn(str(self.home), text)
+        doc = parse_review(text)
+        # «Что не вошло»: сессия со статусом не reviewed — путь от .sessionretro/
+        self.assertIn(f"`{self.SESSIONS[2]}`", doc["service"])
+        # таблица досье
+        for rel in self.SESSIONS:
+            self.assertIn(f"| `{rel}` |", doc["dossier"])
+        # строки normalize — путь, который сработает из корня проекта
+        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[0]}`", doc["dossier"])
+        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[1]} --from-turn 10`", doc["dossier"])
+        # трекер не переписан: там по-прежнему абсолютные пути
+        run = tracker.find_run(tracker.load(self.root), RUN_P1)
+        self.assertEqual([s["path"] for s in run["sessions_reviewed"]],
+                         [self.abs_snapshot(rel) for rel in self.SESSIONS])
+
+    def test_abs_snapshot_path_via_symlinked_root_shown_relative(self):
+        resolved = self.paths["state_dir"].resolve()
+        self.set_session_paths({rel: str(resolved / rel) for rel in self.SESSIONS})
+        text = self.write_review().read_text(encoding="utf-8")
+        self.assertNotIn(str(resolved), text)
+        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[0]}`", text)
+
+    def test_abs_path_outside_workspace_shown_as_file_name(self):
+        outside = {rel: str(self.home / "elsewhere" / "logs" / Path(rel).name) for rel in self.SESSIONS}
+        self.set_session_paths(outside)
+        text = self.write_review().read_text(encoding="utf-8")
+        self.assertNotIn(str(self.home), text)
+        self.assertNotIn("elsewhere", text)
+        doc = parse_review(text)
+        names = [Path(rel).name for rel in self.SESSIONS]
+        self.assertIn(f"`{names[2]}`", doc["service"])
+        for name in names:
+            self.assertIn(f"| `{name}` |", doc["dossier"])
+        self.assertIn(f"`sr.py normalize {names[0]}`", doc["dossier"])
+        # дата сессии в таблице берётся из имени файла и не теряется
+        self.assertIn("| 2026-09-02 | `", doc["dossier"])
+
+    def test_relative_paths_kept_as_is(self):
+        doc = parse_review(self.write_review().read_text(encoding="utf-8"))
+        self.assertIn(f"`{self.SESSIONS[2]}`", doc["service"])
+        for rel in self.SESSIONS:
+            self.assertIn(f"| `{rel}` |", doc["dossier"])
+        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[0]}`", doc["dossier"])
+
+    def test_shown_path_rules(self):
+        state = self.paths["state_dir"]
+        shown = render_review.shown_path
+        self.assertEqual(shown(str(state / "logs" / "alex" / "a.md"), state), "logs/alex/a.md")
+        self.assertEqual(shown(str(self.home / "x" / "a.md"), state), "a.md")
+        self.assertEqual(shown("logs/alex/a.md", state), "logs/alex/a.md")
+        self.assertEqual(shown("", state), "")
+        self.assertEqual(shown(str(state / "logs" / "alex" / "a.md"), None), "a.md")
+
     def test_cli_render_review(self):
         code, out, err = self.cli("render-review", str(self.judge), "--person", "alex",
                                   "--template", str(TEMPLATE_RU))

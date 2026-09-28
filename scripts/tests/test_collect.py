@@ -22,7 +22,7 @@ from unittest import mock
 
 from _util import FIXTURES, SCRIPTS, TempHome, copy_fixture, run_sr
 
-from lib import cmd_collect, inventory, lock, normalize, registry, sanitize
+from lib import cc_jsonl, cmd_collect, inventory, lock, normalize, registry, sanitize
 from lib.workspace import SrError
 
 LOGS = FIXTURES / "logs"
@@ -51,10 +51,6 @@ def secret_log() -> str:
     )
 
 
-NEW_TURN_2 = (
-    "\n\n---\n\n_**User (2026-09-01 10:20:00Z)**_\n\nТеперь деление.\n\n---\n\n"
-    "_**Agent (claude-opus-5 2026-09-01 10:20:05Z)**_\n\nДеление добавлено.\n"
-)
 OTHER_ASK = "Совсем другая просьба: сделай парсер"
 
 
@@ -626,57 +622,240 @@ class SkipUnchangedTest(CollectBase):
         self.assertFalse(self.flag().exists())
 
 
-class CollisionTest(CollectBase):
-    """I2: разные сессии под одним ключом не затирают друг друга."""
+MD_KEY = "mdex-1091a4941937"          # ключ по содержимому у md-headings.md (шапка + три хода)
+MD_OTHER_ASK = "Добавь тест на отрицательные числа."
+MD_NEW_TURN = "\n\n## User\n\nТеперь деление.\n\n## Assistant\n\nДеление добавлено.\n"
 
-    def spec_snapshots(self) -> list[Path]:
-        return [p for p in self.snapshots() if p.name.startswith(SPECSTORY_SESSION)]
+
+def md_other_session() -> str:
+    """Другая сессия с тем же ключом по содержимому, что md-headings.md: те же первые три хода,
+    дальше другое (ни одна не продолжение другой)."""
+    text = (LOGS / "md-headings.md").read_text(encoding="utf-8")
+    return text.replace("Добавь тест на пустой ввод.", MD_OTHER_ASK, 1)
+
+
+class CollisionTest(CollectBase):
+    """I2: разные сессии под одним ключом по содержимому не затирают друг друга (A10: только
+    хэш-ключи; одинаковый настоящий `session_id` — всегда та же сессия)."""
+
+    def md_snapshots(self) -> list[Path]:
+        return [p for p in self.snapshots() if p.name.startswith(MD_KEY)]
 
     def test_other_session_after_source_gone_does_not_overwrite(self):
         self.collect()
-        snap = self.me / f"{SPECSTORY_SESSION}.md"
+        snap = self.me / f"{MD_KEY}.md"
         before = snap.read_bytes()
-        (self.src / "specstory-claude.md").unlink()
-        (self.src / "other.md").write_text(other_session_log(), encoding="utf-8")
+        (self.src / "md-headings.md").unlink()
+        (self.src / "other.md").write_text(md_other_session(), encoding="utf-8")
         out = self.collect(LATER)
         self.assertEqual(snap.read_bytes(), before)
-        extra = [p for p in self.spec_snapshots() if p != snap]
+        extra = [p for p in self.md_snapshots() if p != snap]
         self.assertEqual(len(extra), 1, self.snapshots())
-        self.assertRegex(extra[0].name, rf"^{SPECSTORY_SESSION}_[0-9a-f]{{8}}\.md$")
-        self.assertIn(OTHER_ASK, extra[0].read_text(encoding="utf-8"))
+        self.assertRegex(extra[0].name, rf"^{MD_KEY}_[0-9a-f]{{8}}\.md$")
+        self.assertIn(MD_OTHER_ASK, extra[0].read_text(encoding="utf-8"))
         self.assertTrue(any("другая сессия" in w and extra[0].name in w for w in out["warnings"]),
                         out["warnings"])
-        keys = {r["key"] for r in self.index()["logs"] if r["session_id"] == SPECSTORY_SESSION}
+        keys = {r["key"] for r in self.index()["logs"] if r["session_id"] == MD_KEY}
         self.assertEqual(len(keys), 2, keys)
-        self.assertIn(SPECSTORY_SESSION, keys)
+        self.assertIn(MD_KEY, keys)
         self.assertEqual(out["counts"]["gone"], 0)
 
     def test_two_present_sources_different_sessions_both_kept(self):
-        (self.src / "other.md").write_text(other_session_log(), encoding="utf-8")
+        (self.src / "other.md").write_text(md_other_session(), encoding="utf-8")
         out = self.collect()
-        snaps = self.spec_snapshots()
+        snaps = self.md_snapshots()
         self.assertEqual(len(snaps), 2, self.snapshots())
         texts = [p.read_text(encoding="utf-8") for p in snaps]
-        self.assertEqual(sum(OTHER_ASK in t for t in texts), 1)
-        self.assertEqual(sum("Добавь функцию сложения" in t for t in texts), 1)
-        self.assertFalse(any(w.startswith(f"дубль ключа {SPECSTORY_SESSION}") for w in out["warnings"]),
+        self.assertEqual(sum(MD_OTHER_ASK in t for t in texts), 1)
+        self.assertEqual(sum("Добавь тест на пустой ввод." in t for t in texts), 1)
+        self.assertFalse(any(w.startswith(f"дубль ключа {MD_KEY}") for w in out["warnings"]),
                          out["warnings"])
         self.assertTrue(any("другая сессия" in w for w in out["warnings"]), out["warnings"])
 
     def test_suffixed_snapshot_stable_and_grows_in_place(self):
-        (self.src / "other.md").write_text(other_session_log(), encoding="utf-8")
+        (self.src / "other.md").write_text(md_other_session(), encoding="utf-8")
         self.collect()
         before = self.mtimes()
         self.collect(LATER)
         self.assertEqual(self.mtimes(), before)
         with open(self.src / "other.md", "a", encoding="utf-8") as fh:
-            fh.write(NEW_TURN_2)
+            fh.write(MD_NEW_TURN)
         self.collect("2026-09-27T12:00:00Z")
-        snaps = self.spec_snapshots()
+        snaps = self.md_snapshots()
         self.assertEqual(len(snaps), 2, self.snapshots())
         grown = [p for p in snaps if "Теперь деление" in p.read_text(encoding="utf-8")]
         self.assertEqual(len(grown), 1)
-        self.assertIn(OTHER_ASK, grown[0].read_text(encoding="utf-8"))
+        self.assertIn(MD_OTHER_ASK, grown[0].read_text(encoding="utf-8"))
+
+    def test_real_session_id_other_content_is_same_session(self):
+        # A10: у SpecStory настоящий session_id из шапки — суффикса нет, берётся более полная копия
+        self.collect()
+        snap = self.me / f"{SPECSTORY_SESSION}.md"
+        (self.src / "specstory-claude.md").unlink()
+        (self.src / "other.md").write_text(other_session_log(), encoding="utf-8")
+        out = self.collect(LATER)
+        spec = [p for p in self.snapshots() if p.name.startswith(SPECSTORY_SESSION)]
+        self.assertEqual(spec, [snap])
+        self.assertIn(OTHER_ASK, snap.read_text(encoding="utf-8"))
+        self.assertFalse(any("другая сессия" in w for w in out["warnings"]), out["warnings"])
+        self.assertTrue(any(w.startswith(f"дубль ключа {SPECSTORY_SESSION}") for w in out["warnings"]),
+                        out["warnings"])
+
+
+A10_TAIL = [
+    # реплика человека в основной ветке после работы сабагента: ходы сабагента встают перед ней
+    {"parentUuid": "00000000-0000-4000-8000-000000000033", "isSidechain": False, "type": "user",
+     "sessionId": JSONL_SESSION, "uuid": "00000000-0000-4000-8000-000000000101",
+     "timestamp": "2026-09-20T10:02:00.123Z",
+     "message": {"role": "user", "content": "Проверь ещё раз тесты"}},
+    {"parentUuid": "00000000-0000-4000-8000-000000000101", "isSidechain": False, "type": "assistant",
+     "sessionId": JSONL_SESSION, "uuid": "00000000-0000-4000-8000-000000000102",
+     "timestamp": "2026-09-20T10:02:05.123Z",
+     "message": {"id": "msg_101", "type": "message", "role": "assistant", "model": "claude-opus-5",
+                 "content": [{"type": "text", "text": "Тесты зелёные."}], "stop_reason": "end_turn"}},
+]
+A10_GROW = [
+    {"parentUuid": "00000000-0000-4000-8000-000000000102", "isSidechain": False, "type": "user",
+     "sessionId": JSONL_SESSION, "uuid": "00000000-0000-4000-8000-000000000103",
+     "timestamp": "2026-09-20T10:03:00.123Z",
+     "message": {"role": "user", "content": "Добавь деление"}},
+    {"parentUuid": "00000000-0000-4000-8000-000000000103", "isSidechain": False, "type": "assistant",
+     "sessionId": JSONL_SESSION, "uuid": "00000000-0000-4000-8000-000000000104",
+     "timestamp": "2026-09-20T10:03:05.123Z",
+     "message": {"id": "msg_103", "type": "message", "role": "assistant", "model": "claude-opus-5",
+                 "content": [{"type": "text", "text": "Деление добавлено."}], "stop_reason": "end_turn"}},
+]
+
+
+def _append_jsonl(path: Path, records: list[dict]) -> None:
+    text = path.read_text(encoding="utf-8")
+    if not text.endswith("\n"):
+        text += "\n"
+    text += "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
+    path.write_text(text, encoding="utf-8")
+
+
+class SameSessionOtherSourceTest(CollectBase):
+    """A10: та же сессия Claude Code сначала из `dir` (копия главного jsonl без сабагентов), потом
+    из `claude-jsonl` (с сабагентами) — одна запись под UUID, без суффикса и повторной оценки."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _append_jsonl(self.cc / "claude-main.jsonl", A10_TAIL)
+        self.dir_src = self.tmp / "dir-src"
+        self.dir_src.mkdir()
+        shutil.copy(self.cc / "claude-main.jsonl", self.dir_src / "claude-main.jsonl")
+        self.dir_only = {"type": "dir", "path": str(self.dir_src), "person": "me"}
+        self.cc_source = {"type": "claude-jsonl", "project": str(self.cc), "person": "me"}
+        cfg = dict(self.cfg)
+        cfg["sources"] = [self.dir_only]
+        self.write_cfg(cfg)
+        self.snap = self.me / f"{JSONL_SESSION}.jsonl"
+
+    def add_cc_source(self) -> None:
+        cfg = dict(self.cfg)
+        cfg["sources"] = [self.dir_only, self.cc_source]
+        self.write_cfg(cfg)
+
+    def session_recs(self) -> list[dict]:
+        return [r for r in self.index()["logs"] if r["session_id"] == JSONL_SESSION]
+
+    def suffixed(self) -> list[str]:
+        return [p.name for p in self.snapshots() if re.search(r"_[0-9a-f]{8}\.jsonl$", p.name)]
+
+    def reviewed_then_cc(self) -> dict:
+        self.collect()
+        self.assertNotIn('"a1"', self.snap.read_text(encoding="utf-8"))
+        self.mark_all_reviewed()
+        self.add_cc_source()
+        return self.collect(LATER)
+
+    def test_fixture_is_not_prefix(self):
+        # ходы сабагента слиты по времени перед репликой человека: копия без них — не префикс
+        short = normalize.parse_file(self.dir_src / "claude-main.jsonl")["turns"]
+        full = normalize.parse_file(self.cc / "claude-main.jsonl")["turns"]
+        pairs = lambda ts: [(t["role"], t["text"]) for t in ts]   # noqa: E731
+        self.assertNotEqual(pairs(full)[:len(short)], pairs(short))
+
+    def test_richer_source_replaces_copy_unchanged(self):                 # (а)
+        out = self.reviewed_then_cc()
+        recs = self.session_recs()
+        self.assertEqual(len(recs), 1, recs)
+        self.assertEqual(recs[0]["key"], JSONL_SESSION)
+        self.assertEqual(recs[0]["state"], "unchanged")
+        self.assertEqual(out["counts"]["new"], 0, out)
+        self.assertIn('"a1"', self.snap.read_text(encoding="utf-8"))      # снапшот богаче
+        self.assertEqual(self.suffixed(), [])
+        self.assertTrue(any(w.startswith(f"дубль ключа {JSONL_SESSION}") for w in out["warnings"]),
+                        out["warnings"])
+        self.assertFalse(any("другая сессия" in w for w in out["warnings"]), out["warnings"])
+        meta = inventory.load_meta(self.me)[self.snap.name]
+        self.assertEqual(meta["key"], JSONL_SESSION)
+        self.assertIn("claude-main.jsonl", meta["source_path"])
+        self.assertNotIn("dir-src", meta["source_path"])
+        # повтор стабилен: копия из dir не затирает богатую, запись не новая
+        out = self.collect("2026-09-27T12:00:00Z")
+        self.assertIn('"a1"', self.snap.read_text(encoding="utf-8"))
+        self.assertEqual([r["state"] for r in self.session_recs()], ["unchanged"])
+        self.assertEqual(self.suffixed(), [])
+
+    def test_main_branch_growth_is_grown_from_new_reply(self):             # (б)
+        self.reviewed_then_cc()
+        reviewed_main = self.session_recs()[0]["reviewed_turns_total"]
+        _append_jsonl(self.cc / "claude-main.jsonl", A10_GROW)
+        self.collect("2026-09-27T12:00:00Z")
+        rec = self.session_recs()[0]
+        self.assertEqual(rec["state"], "grown")
+        turns = normalize.parse_file(self.snap)["turns"]
+        self.assertEqual(turns[rec["review_from_turn"]]["text"], "Добавь деление")
+        main = [t for t in turns if not t["sidechain"]]
+        self.assertEqual(main[reviewed_main]["text"], "Добавь деление")
+
+    def test_new_subagent_only_is_unchanged(self):                          # (в)
+        self.reviewed_then_cc()
+        self.mark_all_reviewed()
+        subs = self.cc / "claude-main" / "subagents"
+        text = (subs / "agent-a1.jsonl").read_text(encoding="utf-8")
+        text = text.replace('"a1"', '"b2"').replace("-8000-0000000000", "-8000-0000000001")
+        (subs / "agent-b2.jsonl").write_text(text, encoding="utf-8")
+        before = self.session_recs()[0]["turns_total"]
+        self.collect("2026-09-27T12:00:00Z")
+        rec = self.session_recs()[0]
+        self.assertGreater(rec["turns_total"], before)
+        self.assertEqual(rec["state"], "unchanged")
+        self.assertNotIn("review_from_turn", rec)
+
+    def test_broken_workspace_suffixed_copy_glued(self):                    # (г)
+        self.collect()
+        self.mark_all_reviewed()
+        # состояние 0.1.2: богатая копия лежит рядом с суффиксом, в индексе — вторая запись `new`
+        cc_main = self.cc / "claude-main.jsonl"
+        text, _hits, _sha = cc_jsonl.compact_snapshot(cc_main, lambda o: (o, {}))
+        dup_key = f"{JSONL_SESSION}#deadbeef"
+        dup_name = f"{JSONL_SESSION}_deadbeef.jsonl"
+        (self.me / dup_name).write_text(text, encoding="utf-8")
+        meta = inventory.load_meta(self.me)
+        meta[dup_name] = {"source": {"type": "claude-jsonl", "id": "config#2"},
+                          "source_path": str(cc_main), "source_sha256": "0" * 64,
+                          "key": dup_key, "session_id": JSONL_SESSION}
+        inventory.save_meta(self.me, meta)
+        idx = self.index()
+        base = next(r for r in idx["logs"] if r["key"] == JSONL_SESSION)
+        dup = inventory.merge(None, [dict(base, key=dup_key, path=f"logs/me/{dup_name}")],
+                              "ws", NOW)["logs"][0]
+        idx["logs"].append(dup)
+        inventory.save_index(self.root, idx)
+        self.add_cc_source()
+        out = self.collect(LATER)
+        self.assertFalse((self.me / dup_name).exists())
+        self.assertNotIn(dup_name, inventory.load_meta(self.me))
+        self.assertIn('"a1"', self.snap.read_text(encoding="utf-8"))
+        self.assertTrue(any(f"склеена копия той же сессии: {dup_name}" in w for w in out["warnings"]),
+                        out["warnings"])
+        recs = self.session_recs()
+        self.assertEqual([(r["key"], r["state"]) for r in recs], [(JSONL_SESSION, "unchanged")])
+        self.assertTrue(recs[0]["reviewed"])
+        self.assertEqual(out["counts"]["new"], 0, out)
 
 
 class ReplaceTest(CollectBase):

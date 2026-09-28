@@ -26,11 +26,22 @@
   а если исходника уже нет, то сам снапшот (санитайзер идемпотентен на метках);
 - новый снапшот с меньшим числом ходов, чем лежащий из того же исходника, не пишется: строка в
   `warnings` с рецептом `--replace <имя>` (флаг снимает защиту для одного снапшота);
-- под одним ключом другая сессия (лежащий снапшот не префикс нового по ходам и взят из другого
-  исходника) — снапшот не перезаписывается, новый получает ключ `<key>#<sha8 пути исходника>`,
-  строка в `warnings`. Разные исходники одного ключа за прогон разводятся так же; копии одной
-  сессии (одна — префикс другой) — побеждает больше ходов, больше байтов, путь; строка
-  «дубль ключа …».
+- ключ — настоящий идентификатор сессии (UUID Claude Code, шапка SpecStory;
+  не `inventory.is_content_key`): одинаковый ключ — всегда та же сессия, из каких бы исходников она
+  ни пришла. Остаётся более полная копия: больше ходов основной ветки, затем больше ходов всего
+  (у `claude-jsonl` ходы сабагентов слиты с основной веткой по времени, поэтому копия без
+  сабагентов не префикс копии с ними); снапшот перезаписывается на месте, проигравший исходник —
+  строка «дубль ключа …». Суффикса нет;
+- ключ по содержимому (`mdex-`, `ccsb-`, `curex-`, `mdbold-`, `jex-`, `ts:`, `path:`) и под ним
+  другая сессия (лежащий снапшот не префикс нового по ходам и взят из другого исходника) —
+  снапшот не перезаписывается, новый получает ключ `<key>#<sha8 пути исходника>`, строка
+  «другая сессия» в `warnings`. Разные исходники одного ключа за прогон разводятся так же; копии
+  одной сессии (одна — префикс другой) — побеждает больше ходов, больше байтов, путь; строка
+  «дубль ключа …»;
+- склейка до разбора исходников: снапшот `<id>_<sha8>` с ключом `<id>#<sha8>` и `session_id ==
+  <id>` (настоящий идентификатор) — копия той же сессии, разведённая сбором 0.1.2–0.1.4. Под
+  именем `<id>` остаётся более полная из двух, файл-дубль удаляется (это производная копия,
+  исходник на месте), строка «склеена копия той же сессии: <имя>».
 
 Пути в `.meta.json`, `logs-index.json` и сводке санитайзера — переносимые (`workspace.portable_path`):
 внутри проекта относительные, внутри HOME `~/…`.
@@ -123,6 +134,12 @@ def _suffix(c: dict) -> None:
     c["name"] = inventory.snapshot_name(c["key"], c["doc"]["format"])
 
 
+def _richness(doc: dict) -> tuple[int, int]:
+    """Полнота копии: ходы основной ветки (без сабагентов), затем ходы всего."""
+    total = doc["turns_total"]
+    return total - doc.get("sidechain_turns", 0), total
+
+
 def _pairs(turns: list[dict]) -> list[tuple]:
     return [(t.get("role"), t.get("text")) for t in turns]
 
@@ -210,7 +227,9 @@ class Run:
     # ── ключи и победители ────────────────────────────────────────────────────
 
     def sticky(self, c: dict) -> None:
-        """Исходник, которому раньше выдан суффиксный ключ, получает его снова."""
+        """Исходник, которому раньше выдан суффиксный ключ по содержимому, получает его снова."""
+        if not inventory.is_content_key(c["base_key"]):
+            return                          # настоящий идентификатор: суффиксов не бывает
         name = self.metas.by_source(c["src"].person_id, c["portable"], str(c["src"].path))
         if name is None:
             return
@@ -228,6 +247,17 @@ class Run:
             groups.setdefault((c["src"].person_id, c["name"]), []).append(c)
         winners = []
         for (person, name), items in groups.items():
+            if not inventory.is_content_key(items[0]["base_key"]):
+                # настоящий идентификатор — одна сессия: берётся более полная копия
+                items.sort(key=lambda c: (*(-n for n in _richness(c["doc"])),
+                                          inventory.FORMAT_PRIORITY.get(c["doc"]["format"], 1),
+                                          -c["doc"]["bytes"], str(c["src"].path)))
+                if len(items) > 1:
+                    self.warnings.append(f"дубль ключа {items[0]['key']}: "
+                                         + ", ".join(str(c["src"].path) for c in items)
+                                         + f" — взят {items[0]['src'].path}")
+                winners.append(items[0])
+                continue
             items.sort(key=lambda c: (-c["doc"]["turns_total"], -c["doc"]["bytes"], str(c["src"].path)))
             clusters: list[list[dict]] = []
             for c in items:
@@ -280,14 +310,26 @@ class Run:
         if target.is_file() and not replace:
             old_text = target.read_text(encoding="utf-8", errors="replace")
             same_src = bool(old) and old.get("source_path") in (c["portable"], str(c["src"].path))
-            new_t, old_t = _pairs(normalize.parse(text)["turns"]), _pairs(normalize.parse(old_text)["turns"])
+            new_doc, old_doc = normalize.parse(text), normalize.parse(old_text)
+            new_t, old_t = _pairs(new_doc["turns"]), _pairs(old_doc["turns"])
             if same_src and len(new_t) < len(old_t):
                 self.warnings.append(
                     f"снапшот logs/{person}/{c['name']} не перезаписан: в новом {len(new_t)} ходов, "
                     f"меньше, чем в лежащем ({len(old_t)}); исходник {c['src'].path}. Если исходник "
                     f"укоротили намеренно (чистка), повторите: {SR_CMD} --replace {c['name']}")
                 return
-            if not same_src:
+            if not same_src and not inventory.is_content_key(c["base_key"]):
+                src = old.get("source_path") if old else "неизвестен"
+                if _richness(new_doc) > _richness(old_doc):
+                    self.warnings.append(
+                        f"дубль ключа {c['key']}: {src} — копия той же сессии, что {c['src'].path}; "
+                        f"logs/{person}/{c['name']} перезаписан более полной копией")
+                else:
+                    self.warnings.append(
+                        f"дубль ключа {c['key']}: {c['src'].path} — копия той же сессии, что "
+                        f"logs/{person}/{c['name']} (исходник {src}); оставлен лежащий")
+                    return
+            elif not same_src:
                 if len(new_t) > len(old_t) and _is_prefix(old_t, new_t):
                     pass                        # та же сессия, новый исходник полнее — берём его
                 elif _is_prefix(new_t, old_t):
@@ -319,6 +361,52 @@ class Run:
         rep = sanitize.report(c["portable"], hits)
         if rep["rules_hit"] or rep["renamed"]:
             self.sanitized.append(rep)
+
+    # ── склейка копий одной сессии (A10) ──────────────────────────────────────
+
+    def glue_copies(self) -> None:
+        """Снапшот `<id>_<sha8>` с ключом `<id>#<sha8>` и `session_id == <id>` (настоящий
+        идентификатор) — та же сессия, что `<id>`: под базовым именем остаётся более полная копия,
+        файл-дубль удаляется (производная копия, исходник на месте). Сайдкар пишется сразу."""
+        if not self.metas.logs.is_dir():
+            return
+        for person_dir in sorted(p for p in self.metas.logs.iterdir() if p.is_dir()):
+            person = person_dir.name
+            meta = self.metas.of(person)
+            changed = False
+            for name in sorted(meta):
+                entry = meta.get(name)
+                if not isinstance(entry, dict):
+                    continue
+                base = inventory.suffix_base(entry.get("key"))
+                dup = person_dir / name
+                if base is None or entry.get("session_id") != base or not dup.is_file():
+                    continue
+                base_name = inventory.SAFE_RE.sub("_", base) + dup.suffix
+                target = person_dir / base_name
+                take_dup = True
+                if target.is_file():
+                    try:
+                        take_dup = (_richness(normalize.parse_file(dup))
+                                    > _richness(normalize.parse_file(target)))
+                    except Exception as err:  # noqa: BLE001 — битая копия не роняет сбор, но видна
+                        self.warnings.append(
+                            f"копия той же сессии не склеена: logs/{person}/{name} и "
+                            f"logs/{person}/{base_name}: {type(err).__name__}: {err}")
+                        continue
+                if take_dup:
+                    dup.replace(target)
+                    meta[base_name] = dict(entry, key=base)
+                else:
+                    dup.unlink()
+                meta.pop(name)
+                changed = True
+                kept = "из копии-дубля" if take_dup else "лежащая"
+                self.warnings.append(
+                    f"склеена копия той же сессии: {name} → logs/{person}/{base_name} "
+                    f"(оставлена более полная — {kept}; файл-дубль удалён)")
+            if changed:
+                inventory.save_meta(person_dir, meta)
 
     # ── перечистка по отпечатку (I1) ──────────────────────────────────────────
 
@@ -406,6 +494,7 @@ def _pass(root: Path, providers: list[str] | None, now: str | None = None,
     people = list_people(root)
     denied = sources.no_consent(people)
     run = Run(root, _sanitizer(cfg, people), replace or [])
+    run.glue_copies()
     sync_lines: list[str] = []
     paths = ws_paths(root)
     if _has_specstory(cfg, people, denied):

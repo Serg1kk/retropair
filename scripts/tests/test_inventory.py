@@ -342,6 +342,68 @@ class MarkTest(unittest.TestCase):
         with self.assertRaises(SrError):
             inventory.mark(entry(), "excluded", "r1", NOW, reason="x", why="y")
 
+    def test_mark_writes_reviewed_main_turns(self):                     # A10 (е)
+        e = inventory.mark(entry(turns_total=20, metrics={"sidechain_turns": 6}), "reviewed", "r1", NOW)
+        self.assertEqual(e["reviewed_turns_total"], 20)
+        self.assertEqual(e["reviewed_main_turns"], 14)
+        e = inventory.mark(entry(turns_total=20, main_turns=15), "reviewed", "r1", NOW)
+        self.assertEqual(e["reviewed_main_turns"], 15)
+        e = inventory.mark(entry(turns_total=9), "reviewed", "r1", NOW)       # без сабагентов
+        self.assertEqual(e["reviewed_main_turns"], 9)
+        x = inventory.mark(e, "excluded", "r2", NOW, reason="x")
+        self.assertIsNone(x["reviewed_main_turns"])
+        self.assertEqual(x["excluded_main_turns"], 9)
+
+    def test_old_record_without_main_field_uses_turns_total(self):      # A10 (е)
+        prev = idx(entry(key="k", reviewed=True, reviewed_turns_total=10, reviewed_bytes=1000))
+        out = inventory.merge(prev, [entry(key="k", turns_total=14, metrics={"sidechain_turns": 4})],
+                              "ws", NOW)
+        self.assertEqual(out["logs"][0]["state"], "unchanged")          # добавились только сабагенты
+        out = inventory.merge(prev, [entry(key="k", turns_total=15, metrics={"sidechain_turns": 4})],
+                              "ws", NOW)
+        self.assertEqual(out["logs"][0]["state"], "grown")
+
+    def test_growth_counted_by_main_branch(self):                       # A10
+        prev = idx(entry(key="k", reviewed=True, reviewed_turns_total=12, reviewed_main_turns=10,
+                         reviewed_bytes=1000))
+        # 16 ходов: основная ветка 0..9, сабагент 10..13, новая реплика 14, ответ 15
+        main_index = [*range(10), 14, 15]
+        out = inventory.merge(prev, [entry(key="k", turns_total=16, main_turns=12,
+                                           metrics={"sidechain_turns": 4}, _main_index=main_index)],
+                              "ws", NOW)
+        rec = out["logs"][0]
+        self.assertEqual(rec["state"], "grown")
+        self.assertEqual(rec["review_from_turn"], 14)
+        self.assertNotIn("_main_index", rec)
+        out = inventory.merge(prev, [entry(key="k", turns_total=16, main_turns=10,
+                                           metrics={"sidechain_turns": 6})], "ws", NOW)
+        self.assertEqual(out["logs"][0]["state"], "unchanged")
+
+    def test_excluded_grows_only_by_main_branch(self):                  # A10
+        prev = idx(entry(key="k", excluded=True, excluded_in_run="r1", excluded_at="2026-09-02",
+                         excluded_reason="short", excluded_turns_total=11, excluded_bytes=100))
+        out = inventory.merge(prev, [entry(key="k", turns_total=14, metrics={"sidechain_turns": 3})],
+                              "ws", NOW)
+        self.assertEqual(out["logs"][0]["state"], "excluded")
+
+    def test_glued_suffix_record_dropped(self):                         # A10 (г)
+        uid = "aaaaaaaa-0000-0000-0000-000000000001"
+        prev = idx(entry(key=uid, session_id=uid, reviewed=True, reviewed_turns_total=10,
+                         reviewed_bytes=1000),
+                   entry(key=f"{uid}#deadbeef", session_id=uid, state="new", reviewed=False))
+        out = inventory.merge(prev, [entry(key=uid, session_id=uid)], "ws", NOW)
+        self.assertEqual([(r["key"], r["state"]) for r in out["logs"]], [(uid, "unchanged")])
+        # у ключа по содержимому суффиксная запись — другая сессия, она остаётся (gone)
+        prev = idx(entry(key="mdex-1", reviewed=False), entry(key="mdex-1#deadbeef", reviewed=False))
+        out = inventory.merge(prev, [entry(key="mdex-1")], "ws", NOW)
+        self.assertEqual(sorted(r["state"] for r in out["logs"]), ["gone", "new"])
+
+    def test_content_key(self):
+        for key in ("mdex-1", "ccsb-1", "curex-1", "mdbold-1", "jex-1", "ts:2026", "path:a.md"):
+            self.assertTrue(inventory.is_content_key(key), key)
+        for key in ("aaaaaaaa-0000-0000-0000-000000000001", "11111111-2222-3333-4444-555555555555"):
+            self.assertFalse(inventory.is_content_key(key), key)
+
     def test_mark_then_merge(self):
         rec = inventory.merge(None, [entry(key="k", turns_total=10)], "ws", NOW)["logs"][0]
         marked = inventory.mark(rec, "reviewed", "r1", NOW)
@@ -498,6 +560,18 @@ class ScanTest(TempHome, unittest.TestCase):
                       "collector", "models", "period_guess", "period_guess_source", "metrics",
                       "sanitize"):
             self.assertIn(field, js)
+
+    def test_scan_suffixed_copy_of_real_id_folds_to_base_key(self):    # A10 (г), без collect
+        doc = normalize.parse_file(LOGS / "claude-main.jsonl")
+        uid = doc["session_id"]
+        shutil.copy(LOGS / "claude-main.jsonl", self.me / f"{uid}.jsonl")
+        shutil.copy(LOGS / "claude-main.jsonl", self.me / f"{uid}_deadbeef.jsonl")
+        inventory.save_meta(self.me, {f"{uid}_deadbeef.jsonl": {"key": f"{uid}#deadbeef",
+                                                               "session_id": uid}})
+        entries, _ = inventory.scan(self.root, CFG)
+        self.assertEqual({e["key"] for e in entries}, {uid})
+        self.assertEqual({e["main_turns"] for e in entries},
+                         {doc["turns_total"] - doc["sidechain_turns"]})
 
     def test_scan_period_from_sidecar_start(self):
         shutil.copy(LOGS / "specstory-claude.md", self.me / "a.md")

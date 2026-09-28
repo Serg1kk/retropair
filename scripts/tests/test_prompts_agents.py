@@ -263,6 +263,18 @@ class AgentsReal(unittest.TestCase):
     def test_collector_agent(self) -> None:
         self.check_agent("log-collector")
 
+    def test_collector_status_message_rule(self) -> None:
+        # m11: message — всегда строка, null не ставится
+        text = body((PLUGIN / "agents" / "log-collector.md").read_text(encoding="utf-8"))
+        self.assertIn("`status.message`", text)
+        self.assertIn("пустая строка", text)
+
+    def test_collector_resume_prompt_rule(self) -> None:
+        # m10: промпт возобновления в SpecStory стоит как реплика user — не цитировать
+        text = body((PLUGIN / "agents" / "log-collector.md").read_text(encoding="utf-8"))
+        self.assertIn("This session is being continued", text)
+        self.assertIn("SpecStory", text)
+
     def test_critic_agent(self) -> None:
         self.check_agent("feedback-critic")
 

@@ -16,13 +16,17 @@ from unittest import mock
 from _util import PLUGIN, TempHome, copy_fixture, run_sr
 
 import test_doctor
-from lib import agents, cmd_setup_apply, setup
+from lib import agents, cmd_setup_apply, i18n, setup
 from lib.config import default_config, load_config, save_config
+from lib.people import card_path
 from lib.workspace import SrError
 
 SELF = {"mode": "self", "title": "Pet", "lang": "ru", "hook": True, "gitignore": True,
         "models": {"collector": {"model": "haiku", "effort": "low"}}}
 JUDGE_REL = ".claude/agents/sessionretro-log-judge.md"
+GITIGNORE_NO_RU = 'нет — добавьте: sr.py setup-apply с {"gitignore": true}'
+GITIGNORE_SKIPPED_RU = ('строки sessionretro в .gitignore не дописаны — добавьте: '
+                        'sr.py setup-apply с {"gitignore": true}')
 
 
 def split_frontmatter(text: str) -> tuple[list[str], str]:
@@ -400,7 +404,7 @@ class DoctorLines(TempHome, unittest.TestCase):
 
     def test_project_agents_states(self):
         setup.apply({"mode": "team", "title": "T"}, self.proj, self.home)
-        self.assertIs(self.lines()["gitignore"], False)
+        self.assertEqual(self.lines()["gitignore"], GITIGNORE_NO_RU)
         cfg = load_config(self.proj)
         cfg["models"]["judge"]["model"] = "haiku"
         save_config(self.proj, cfg)
@@ -410,6 +414,73 @@ class DoctorLines(TempHome, unittest.TestCase):
         for role in agents.ROLES:
             agents.target(self.proj, role).unlink()
         self.assertEqual(self.lines()["project_agents"], "нет")
+
+    def write_card(self, pid: str, sources: str) -> None:
+        text = f'id: {pid}\nname: "Person {pid}"\ngroup: default\nsources:\n{sources}'
+        card_path(self.proj, pid).write_text(text, encoding="utf-8")
+
+    def test_sources_found_counts_card_sources(self):
+        """m2: источники из `people/<id>.yaml` входят в `sources_found` наравне с конфигом."""
+        setup.apply({"mode": "team", "title": "T"}, self.proj, self.home)
+        self.assertEqual(load_config(self.proj)["sources"], [])
+        self.assertEqual(self.lines()["sources_found"], "0/0 папок найдено")
+        (self.proj / "logs" / "p06").mkdir(parents=True)
+        self.write_card("p06", "  - type: dir\n    path: logs/p06\n")
+        self.write_card("p07", "  - type: dir\n    path: logs/p07\n"
+                               "  - type: git\n    url: https://example.com/p07.git\n")
+        self.assertEqual(self.lines()["sources_found"],
+                         "1/2 папок найдено; нет: logs/p07; не проверяются (git и прочие): 1")
+
+    def test_sources_found_config_and_card_together(self):
+        setup.apply(copy.deepcopy(SELF), self.proj, self.home)
+        self.assertTrue(self.lines()["sources_found"].startswith("0/2"))
+        (self.proj / "mine").mkdir()
+        self.write_card("me", "  - type: dir\n    path: mine\n")
+        self.assertTrue(self.lines()["sources_found"].startswith("1/3"),
+                        self.lines()["sources_found"])
+
+    def test_gitignore_missing_hint(self):
+        """m3: неполный `.gitignore` — строка doctor с подсказкой, как исправить; полный — True."""
+        setup.apply({"mode": "team", "title": "T"}, self.proj, self.home)
+        self.assertEqual(self.lines()["gitignore"], GITIGNORE_NO_RU)
+        self.assertIn('sr.py setup-apply', GITIGNORE_NO_RU)
+        self.assertIn('{"gitignore": true}', GITIGNORE_NO_RU)
+        setup.apply({"gitignore": True}, self.proj, self.home)
+        self.assertIs(self.lines()["gitignore"], True)
+
+    def test_gitignore_missing_hint_en(self):
+        setup.apply({"mode": "team", "title": "T", "lang": "en"}, self.proj, self.home)
+        self.assertEqual(self.lines()["gitignore"],
+                         i18n.t(("cli", "setup"), "gitignore_no", "en"))
+        self.assertIn('{"gitignore": true}', self.lines()["gitignore"])
+
+    def test_setup_apply_advises_gitignore(self):
+        """m3: новый workspace без ключа gitignore — совет в отчёте, запись не меняется."""
+        report = setup.apply({"mode": "team", "title": "T"}, self.proj, self.home)
+        self.assertIn(GITIGNORE_SKIPPED_RU, report["advice"])
+        self.assertFalse((self.proj / ".gitignore").exists())
+
+    def test_setup_apply_no_gitignore_advice_when_answered(self):
+        for answers in ({"mode": "team", "title": "T", "gitignore": True},
+                        {"mode": "team", "title": "T", "gitignore": False}):
+            with self.subTest(gitignore=answers["gitignore"]):
+                proj = Path(self._tmp.name).resolve() / f"p-{answers['gitignore']}"
+                proj.mkdir()
+                report = setup.apply(copy.deepcopy(answers), proj, self.home)
+                self.assertNotIn(GITIGNORE_SKIPPED_RU, report["advice"])
+        report = setup.apply({"mode": "team", "title": "T"}, self.proj, self.home)
+        self.assertIn(GITIGNORE_SKIPPED_RU, report["advice"])
+        rerun = setup.apply({"title": "T2"}, self.proj, self.home)
+        self.assertNotIn(GITIGNORE_SKIPPED_RU, rerun["advice"])
+
+    def test_setup_apply_cli_prints_gitignore_advice(self):
+        path = Path(self._tmp.name) / "answers.json"
+        path.write_text(json.dumps({"mode": "team", "title": "T"}), encoding="utf-8")
+        res = run_sr("setup-apply", "--answers", str(path), home=self.home, cwd=self.proj)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn(GITIGNORE_SKIPPED_RU, res.stdout)
+        res = run_sr("doctor", home=self.home, cwd=self.proj)
+        self.assertIn(f"gitignore: {GITIGNORE_NO_RU}", res.stdout)
 
     def test_doctor_cli_json(self):
         answers = json.dumps(SELF)

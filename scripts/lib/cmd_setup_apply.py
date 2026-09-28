@@ -13,6 +13,7 @@ from pathlib import Path
 from lib import agents, setup
 from lib.config import load_config
 from lib.i18n import t
+from lib.people import list_people
 from lib.sources import claude_project_dir
 from lib.workspace import STATE_DIR, SrError, portable_path
 
@@ -91,15 +92,24 @@ def _source_dir(root: Path, src: dict) -> Path:
     return path if path.is_absolute() else root / path
 
 
+def _all_sources(root: Path, cfg: dict) -> list[dict]:
+    """Источники конфига и карточек `people/<id>.yaml` — те же, что читает сбор логов."""
+    found = list(cfg["sources"])
+    for card in list_people(root):
+        found += card.get("sources") or []
+    return found
+
+
 def _sources_found(root: Path, cfg: dict) -> str:
-    """Локальные источники конфига, чьи папки есть: `N/M папок найдено; нет: …; git: K`."""
-    local = [src for src in cfg["sources"] if src["type"] in LOCAL_SOURCES]
+    """Локальные источники конфига и карточек, чьи папки есть: `N/M папок найдено; нет: …; git: K`."""
+    items = _all_sources(root, cfg)
+    local = [src for src in items if src.get("type") in LOCAL_SOURCES]
     missing = [portable_path(_source_dir(root, src), root) for src in local
                if not _source_dir(root, src).is_dir()]
     text = f"{len(local) - len(missing)}/{len(local)} папок найдено"
     if missing:
         text += f"; нет: {', '.join(missing)}"
-    remote = sum(1 for src in cfg["sources"] if src["type"] not in LOCAL_SOURCES)
+    remote = sum(1 for src in items if src.get("type") not in LOCAL_SOURCES)
     if remote:
         text += f"; не проверяются (git и прочие): {remote}"
     return text
@@ -117,6 +127,13 @@ def _project_agents(root: Path, cfg: dict) -> str:
     return AGENTS_OK.format(n=len(items))
 
 
+def _gitignore(root: Path, cfg: dict) -> bool | str:
+    """Все строки на месте — True; иначе «нет» с подсказкой, как дописать."""
+    if setup.gitignore_complete(root):
+        return True
+    return t(I18N, "gitignore_no", cfg["lang"])
+
+
 def doctor_lines(root: Path | None) -> list[tuple[str, object]]:
     """Пункты онбординга для `doctor`; вне workspace — ничего."""
     if root is None:
@@ -125,7 +142,7 @@ def doctor_lines(root: Path | None) -> list[tuple[str, object]]:
     return [
         ("sources_found", _sources_found(root, cfg)),
         ("project_agents", _project_agents(root, cfg)),
-        ("gitignore", setup.gitignore_complete(root)),
+        ("gitignore", _gitignore(root, cfg)),
         ("show_scores", cfg["show_scores"]),
         ("period_mode", cfg["period"]["mode"]),
         ("template", cfg["template"]),

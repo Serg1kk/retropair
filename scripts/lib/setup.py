@@ -622,6 +622,9 @@ def apply(answers: dict, cwd: Path, home: Path) -> dict:
 
     if gitignore is not None:
         _apply_gitignore(root, gitignore, report)
+    elif fresh and "gitignore" not in answers and not gitignore_complete(root):
+        # строки пишутся только по согласию; без ответа — подсказка, как дописать
+        report["advice"].append(t(I18N, "gitignore_skipped", lang))
 
     if cleanup is not None:
         _apply_cleanup(cleanup, settings_path, settings, lang, report)

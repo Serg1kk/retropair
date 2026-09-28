@@ -5,10 +5,14 @@
 
 Состояния записи: `new | grown | unchanged | duplicate | gone | excluded`.
 
-- Рост считается только по ходам: `turns_total > reviewed_turns_total` (у исключённой —
-  `> excluded_turns_total`). Байты не смотрятся: перевыгрузка или другая редакция санитайзера
-  меняет байты, но не даёт нового материала.
-- `review_from_turn` есть только у `grown`: с этого хода оценивается хвост.
+- Рост считается только по ходам основной ветки (не сабагентов): `main_turns = turns_total -
+  sidechain_turns`, `grown` ⇔ `main_turns > reviewed_main_turns` (у исключённой — `>
+  excluded_main_turns`); в записи, помеченной до появления этих полей, вместо них
+  `reviewed_turns_total`/`excluded_turns_total`. Добавились только ходы сабагентов — `unchanged`.
+  Байты не смотрятся: перевыгрузка или другая редакция санитайзера меняет байты, но не даёт
+  нового материала.
+- `review_from_turn` есть только у `grown`: `index` хода основной ветки с порядковым номером
+  `reviewed_main_turns` (ходы сабагентов после него — в хвосте как контекст).
 - `reviewed` и `excluded` взаимоисключающие. Ставятся только через `mark()`; если прежний индекс
   несёт оба — побеждает более поздний по `*_at`, в `warnings` строка.
 - Согласие отозвано (`no_consent` у merge/rebuild): записи человека — `excluded` с
@@ -17,6 +21,10 @@
   Снапшоты не удаляются: строка в `warnings` с их числом.
 - Дубли одного ключа: побеждает `claude-jsonl` (таймстемпы, usage, компакты, сабагенты), затем
   больше ходов, больше байтов, путь по алфавиту. Проигравший — `key#dup:<path>`, `duplicate_of`.
+- Ключ — настоящий идентификатор сессии (не `is_content_key`): снапшот `<id>_<sha8>` с ключом
+  `<id>#<sha8>` в сайдкаре (копия той же сессии, которую сбор 0.1.2–0.1.4 ошибочно развёл)
+  сканируется под ключом `<id>`, а прежняя запись `<id>#<sha8>` при наличии `<id>` из индекса
+  убирается. У ключей по содержимому суффикс — другая сессия, это не трогается.
 
 Сайдкар `logs/<person>/.meta.json` (пишет collect) хранит поля разбора **исходника**: они
 приоритетнее разбора снапшота (`key`, `session_id`, `log_*`, `started_at_source`,
@@ -48,9 +56,11 @@ STATE_LABELS = (
 )
 PERIOD_MODES = ("run", "dates", "labels")
 
-REVIEWED_FIELDS = ("reviewed_in_run", "reviewed_at", "reviewed_turns_total", "reviewed_bytes")
+REVIEWED_FIELDS = ("reviewed_in_run", "reviewed_at", "reviewed_turns_total", "reviewed_bytes",
+                   "reviewed_main_turns")
 EXCLUDED_FIELDS = ("excluded", "excluded_in_run", "excluded_at", "excluded_reason",
-                   "excluded_note", "excluded_turns_total", "excluded_bytes", "excluded_by")
+                   "excluded_note", "excluded_turns_total", "excluded_bytes", "excluded_by",
+                   "excluded_main_turns")
 # исключение по отзыву согласия (`consent.logs: false`): ставит merge, снимает merge при возврате
 CONSENT = "consent"
 # приоритет формата в дубле: меньше — выше (q-04)
@@ -60,6 +70,12 @@ META_DOC_FIELDS = ("key", "session_id", "log_started_at", "log_ended_at", "start
 META_METRIC_FIELDS = ("unparsed_lines", "unknown_types")
 
 SAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
+# ключи по содержимому (форматы без идентификатора в файле, время старта, путь): одинаковый ключ
+# ещё не значит одну сессию. Всё остальное — настоящий идентификатор (UUID Claude Code, шапка SpecStory)
+CONTENT_KEY_PREFIXES = ("mdex-", "ccsb-", "curex-", "mdbold-", "jex-", "ts:", "path:")
+SUFFIX_RE = re.compile(r"^(?P<base>.+)#(?P<sha8>[0-9a-f]{8})$")
+# внутреннее поле записи скана: `index` ходов основной ветки; в индекс не пишется
+MAIN_INDEX = "_main_index"
 
 
 def now_iso() -> str:
@@ -79,6 +95,35 @@ def session_key(doc: dict, rel: str) -> str:
     if doc.get("started_at"):
         return f"ts:{doc['started_at']}"
     return f"path:{rel}"
+
+
+def is_content_key(key: str) -> bool:
+    """Ключ посчитан по содержимому (или по времени/пути), а не взят из идентификатора сессии."""
+    return str(key).startswith(CONTENT_KEY_PREFIXES)
+
+
+def suffix_base(key: str) -> str | None:
+    """`<id>#<sha8>` с настоящим `<id>` → `<id>`; иначе None (суффикс хэш-ключа — другая сессия)."""
+    m = SUFFIX_RE.match(str(key or ""))
+    if m is None or is_content_key(m.group("base")):
+        return None
+    return m.group("base")
+
+
+def main_turns(rec: dict) -> int:
+    """Ходы основной ветки: `main_turns` записи, иначе `turns_total - metrics.sidechain_turns`."""
+    value = rec.get("main_turns")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    side = (rec.get("metrics") or {}).get("sidechain_turns") or 0
+    return (rec.get("turns_total") or 0) - side
+
+
+def _baseline(rec: dict, main_field: str, total_field: str) -> int:
+    value = rec.get(main_field)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return rec.get(total_field) or 0
 
 
 def snapshot_name(key: str, fmt: str) -> str:
@@ -198,6 +243,7 @@ def _entry(root: Path, person: str, path: Path, meta: dict, cfg: dict) -> dict:
         "sha": hashlib.sha256(raw).hexdigest(),
         "bytes": doc["bytes"],
         "turns_total": doc["turns_total"],
+        "main_turns": doc["turns_total"] - doc.get("sidechain_turns", 0),
         "user_turns": doc["user_turns"],
         "log_started_at": doc.get("started_at"),
         "log_ended_at": doc.get("ended_at"),
@@ -215,6 +261,10 @@ def _entry(root: Path, person: str, path: Path, meta: dict, cfg: dict) -> dict:
     for field in META_METRIC_FIELDS:
         if field in meta:
             rec["metrics"][field] = meta[field]
+    base = suffix_base(rec["key"])
+    if base is not None and rec.get("session_id") == base:
+        rec["key"] = base               # копия той же сессии под суффиксом (0.1.2–0.1.4)
+    rec[MAIN_INDEX] = [t["index"] for t in doc["turns"] if not t.get("sidechain")]
     rec["period_guess"], rec["period_guess_source"] = period_guess(cfg, rec["log_started_at"])
     return rec
 
@@ -317,7 +367,7 @@ def _exclude_for_consent(rec: dict, since: str | None, now: str) -> None:
     rec.update({"excluded": True, "excluded_in_run": None, "excluded_at": since or now,
                 "excluded_reason": CONSENT, "excluded_note": None,
                 "excluded_turns_total": rec.get("turns_total"), "excluded_bytes": rec.get("bytes"),
-                "excluded_by": CONSENT, "state": "excluded"})
+                "excluded_main_turns": main_turns(rec), "excluded_by": CONSENT, "state": "excluded"})
 
 
 def consent_warning(person_id: str, count: int) -> str:
@@ -337,6 +387,7 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str,
     out = []
     for e in fresh:
         rec = dict(e)
+        main_index = rec.pop(MAIN_INDEX, None)
         rec.pop("review_from_turn", None)
         if e.get("duplicate_of"):
             _clear_excluded(rec)
@@ -365,18 +416,19 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str,
         if rec.get("excluded_by") == CONSENT:
             consent_since = rec.get("excluded_at")
             _clear_excluded(rec)     # исключение по согласию пересчитывается на каждом прогоне
-        turns = rec.get("turns_total") or 0
+        main = main_turns(rec)
         if rec.get("excluded"):
-            if turns > (rec.get("excluded_turns_total") or 0):
+            if main > _baseline(rec, "excluded_main_turns", "excluded_turns_total"):
                 _clear_excluded(rec)     # вырос после отброса — снова материал
                 rec["state"] = "new"
             else:
                 rec["state"] = "excluded"
         elif not rec["reviewed"]:
             rec["state"] = "new"
-        elif turns > (rec.get("reviewed_turns_total") or 0):
+        elif main > (done := _baseline(rec, "reviewed_main_turns", "reviewed_turns_total")):
             rec["state"] = "grown"
-            rec["review_from_turn"] = rec.get("reviewed_turns_total")
+            # запись без списка ходов (собрана не сканом) — номера ходов совпадают с порядковыми
+            rec["review_from_turn"] = main_index[done] if main_index else done
         else:
             rec["state"] = "unchanged"
         if denied:
@@ -390,6 +442,9 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str,
     for k, before in old.items():
         if k in fresh_keys:
             continue
+        base = suffix_base(k[1])
+        if base is not None and (k[0], base) in fresh_keys:
+            continue                     # копия той же сессии склеена в запись `<id>`
         rec = dict(before)
         rec.pop("review_from_turn", None)
         _resolve_both(rec, warnings)
@@ -403,10 +458,12 @@ def merge(prev: dict | None, entries: list[dict], workspace_id: str, now: str,
 def mark(entry: dict, flag: str, run_id: str, at: str, **extra) -> dict:
     """Единственный способ поставить `reviewed`/`excluded`; снимает противоположный флаг.
 
-    `reviewed`: `reviewed=True, reviewed_in_run, reviewed_at, reviewed_turns_total, reviewed_bytes`
-    (из текущих `turns_total`/`bytes`), `excluded*` и `review_from_turn` удаляются.
+    `reviewed`: `reviewed=True, reviewed_in_run, reviewed_at, reviewed_turns_total, reviewed_bytes,
+    reviewed_main_turns` (из текущих `turns_total`/`bytes`/`main_turns`), `excluded*` и
+    `review_from_turn` удаляются.
     `excluded` (обязателен `reason`, `note` необязателен): `excluded=True, excluded_in_run,
-    excluded_at, excluded_reason, excluded_note, excluded_turns_total, excluded_bytes`,
+    excluded_at, excluded_reason, excluded_note, excluded_turns_total, excluded_bytes,
+    excluded_main_turns`,
     `reviewed=False`, `reviewed_*=None`, `review_from_turn` удаляется. `state` не меняется —
     его пересчитает следующий merge. Возвращает новый словарь.
     """
@@ -426,7 +483,8 @@ def mark(entry: dict, flag: str, run_id: str, at: str, **extra) -> dict:
     if flag == "reviewed":
         _clear_excluded(rec)
         rec.update({"reviewed": True, "reviewed_in_run": run_id, "reviewed_at": at,
-                    "reviewed_turns_total": entry["turns_total"], "reviewed_bytes": entry["bytes"]})
+                    "reviewed_turns_total": entry["turns_total"], "reviewed_bytes": entry["bytes"],
+                    "reviewed_main_turns": main_turns(entry)})
         return rec
     reason = extra.get("reason")
     if not isinstance(reason, str) or not reason.strip():
@@ -435,7 +493,8 @@ def mark(entry: dict, flag: str, run_id: str, at: str, **extra) -> dict:
     rec.pop("excluded_by", None)     # исключение оценкой не снимается возвратом согласия
     rec.update({"excluded": True, "excluded_in_run": run_id, "excluded_at": at,
                 "excluded_reason": reason, "excluded_note": extra.get("note"),
-                "excluded_turns_total": entry["turns_total"], "excluded_bytes": entry["bytes"]})
+                "excluded_turns_total": entry["turns_total"], "excluded_bytes": entry["bytes"],
+                "excluded_main_turns": main_turns(entry)})
     return rec
 
 
