@@ -257,7 +257,8 @@ class TestPayload(_Base):
                 self.assertIn("score", pt["axes"]["verification"])
         meta = payload["meta"]
         self.assertEqual((meta["mode"], meta["title"], meta["reviews_unbound"]), ("group", "Команда", 1))
-        self.assertEqual(meta["date_from"], "2026-01-18")
+        # дата логов (period.from первого периода), не дата запуска оценки
+        self.assertEqual(meta["date_from"], "2026-01-05")
 
     def test_reviewer_carries_everything(self) -> None:
         payload = rd.build_payload(self.model, mode="reviewer")
@@ -536,6 +537,123 @@ class TestTypes(_Base):
 
 
 OVERRIDE_FIELD = rd.OVERRIDE_KEY
+
+
+def _logs_in_august(doc: dict) -> None:
+    """Логи периода Pn — август (from в двух форматах, как пишет оценка), оценка — сентябрь."""
+    for run in doc["runs"]:
+        p = int(run["period"]["label"][1:])
+        day = 10 + 7 * (p - 1)
+        run["period"]["from"] = f"2026-08-{day:02d} 13:47:16"
+        run["period"]["to"] = f"2026-08-{day + 2:02d} 09:20:31Z"
+        run["reviewed_at"] = f"2026-09-{20 + p:02d}T{run['reviewed_at'][11:]}"
+
+
+class TestLogDates(_Base):
+    """Даты отчёта — даты логов периода (`period.from/to`), а не дата запуска оценки."""
+
+    def logs_model(self, mutate=_logs_in_august) -> dict:
+        root = self.fresh()
+        doc = _tracker(root)
+        mutate(doc)
+        _write_tracker(root, doc)
+        return rd.collect(root, lambda _m: None)
+
+    def test_point_date_and_meta_range_are_log_dates(self) -> None:
+        model = self.logs_model()
+        for person in model["people"]:
+            self.assertEqual([pt["period"] for pt in person["points"]][0], "P1")
+            for pt in person["points"]:
+                self.assertTrue(pt["date"].startswith("2026-08-"), pt)
+                self.assertEqual(pt["date_source"], "logs")
+        anna = {p["id"]: p for p in model["people"]}["anna"]
+        self.assertEqual([pt["date"] for pt in anna["points"]],
+                         ["2026-08-10", "2026-08-17", "2026-08-24"])
+        for mode in ("group", "reviewer"):
+            with self.subTest(mode=mode):
+                meta = rd.build_payload(model, mode=mode)["meta"]
+                self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
+                                 ("2026-08-10", "2026-08-26", "logs"))
+                pts = rd.build_payload(model, mode=mode)["people"][0]["points"]
+                self.assertTrue(all(pt["date"].startswith("2026-08-") for pt in pts))
+
+    def test_run_dates_only_in_reviewer_meta(self) -> None:
+        model = self.logs_model()
+        reviewer = rd.build_payload(model, mode="reviewer")["meta"]
+        self.assertEqual((reviewer["run_from"], reviewer["run_to"]), ("2026-09-21", "2026-09-23"))
+        for mode, kw in (("group", {}), ("personal", {"person": "anna"})):
+            with self.subTest(mode=mode):
+                meta = rd.build_payload(model, mode=mode, **kw)["meta"]
+                self.assertNotIn("run_from", meta)
+                self.assertNotIn("run_to", meta)
+
+    def test_personal_range_only_over_approved_log_dates(self) -> None:
+        payload = rd.build_payload(self.logs_model(), mode="personal", person="anna")
+        meta = payload["meta"]
+        self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
+                         ("2026-08-10", "2026-08-19", "logs"))
+        self.assertEqual([pt["date"] for pt in payload["people"][0]["points"]],
+                         ["2026-08-10", "2026-08-17"])
+
+    def test_points_ordered_by_log_start_not_by_run(self) -> None:
+        def mutate(doc):
+            _logs_in_august(doc)
+            for run in doc["runs"]:
+                p = int(run["period"]["label"][1:])
+                run["reviewed_at"] = f"2026-09-{28 - p:02d}T{run['reviewed_at'][11:]}"
+        anna = {p["id"]: p for p in self.logs_model(mutate)["people"]}["anna"]
+        self.assertEqual([pt["period"] for pt in anna["points"]], ["P1", "P2", "P3"])
+
+    def test_only_to_gives_date(self) -> None:
+        def mutate(doc):
+            _logs_in_august(doc)
+            for run in doc["runs"]:
+                run["period"]["from"] = None
+        anna = {p["id"]: p for p in self.logs_model(mutate)["people"]}["anna"]
+        self.assertEqual(anna["points"][0]["date"], "2026-08-12")
+        self.assertEqual(anna["points"][0]["date_source"], "logs")
+
+    def test_point_without_log_dates_uses_run_date(self) -> None:
+        def mutate(doc):
+            _logs_in_august(doc)
+            for run in doc["runs"]:
+                if run["person_id"] == "anna" and run["period"]["label"] == "P1":
+                    run["period"]["from"] = run["period"]["to"] = None
+        model = self.logs_model(mutate)
+        anna = {p["id"]: p for p in model["people"]}["anna"]
+        first = [pt for pt in anna["points"] if pt["period"] == "P1"][0]
+        self.assertEqual((first["date"], first["date_source"]), ("2026-09-21", "run"))
+        meta = rd.build_payload(model, mode="group")["meta"]
+        self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
+                         ("2026-08-10", "2026-08-26", "logs"))
+
+    def test_no_log_dates_at_all_is_run_mode(self) -> None:
+        def mutate(doc):
+            _logs_in_august(doc)
+            for run in doc["runs"]:
+                run["period"]["from"] = run["period"]["to"] = None
+        model = self.logs_model(mutate)
+        for mode in ("group", "reviewer"):
+            with self.subTest(mode=mode):
+                meta = rd.build_payload(model, mode=mode)["meta"]
+                self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
+                                 ("2026-09-21", "2026-09-23", "run"))
+
+    def test_broken_log_date_is_an_error(self) -> None:
+        for field, bad in (("from", "13.08.2026 13:47"), ("to", "2026-8-14"), ("from", 20260813),
+                           ("from", "2026-13-40 10:00:00")):
+            with self.subTest(field=field, bad=bad):
+                root = self.fresh()
+                doc = _tracker(root)
+                run = _run_of(doc, "anna", "P2")
+                run["period"][field] = bad
+                _write_tracker(root, doc)
+                with self.assertRaises(SrError) as ctx:
+                    rd.collect(root, lambda _m: None)
+                self.assertEqual(ctx.exception.code, 1)
+                self.assertIn(run["run_id"], ctx.exception.message)
+                self.assertIn(f"period.{field}", ctx.exception.message)
+                self.assertIn(repr(bad), ctx.exception.message)
 
 
 class TestPersonalKeys(_Base):

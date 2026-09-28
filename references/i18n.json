@@ -263,7 +263,10 @@
     "reason_short_log": {"ru": "лог слишком короткий для вывода", "en": "log too short to conclude"},
     "reason_other": {"ru": "другая причина", "en": "another reason"},
     "run_trimmed": {"ru": "старший период: цитаты, антипаттерны и черновик фидбэка в отчёт не встроены, они в файле ревью", "en": "older period: quotes, anti-patterns and the feedback draft are not embedded, they are in the review file"},
-    "filters": {"ru": "Фильтры", "en": "Filters"}
+    "filters": {"ru": "Фильтры", "en": "Filters"},
+    "logs_range": {"ru": "Логи", "en": "Logs"},
+    "tile_period_logs": {"ru": "период логов", "en": "log dates"},
+    "run_range": {"ru": "оценка", "en": "assessed"}
   },
   "cli": {
     "assess": {

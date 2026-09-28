@@ -101,6 +101,19 @@ class RenderHtmlTest(_Base):
                 self.assertIn("--s4:", html_text)  # CSS встроен
                 self.assertIn("sessionretro-ui", html_text)  # JS встроен
 
+    def test_header_dates_are_log_dates_with_log_wording(self):
+        for mode in rd.MODES:
+            with self.subTest(mode=mode):
+                data = _data(render.render_html(self.payload(mode), self.i18n))
+                self.assertEqual(data["meta"]["date_source"], "logs")
+                self.assertEqual(data["meta"]["date_from"], "2026-01-05")
+                self.assertEqual(data["meta"]["date_from"], data["people"][0]["points"][0]["date"])
+                self.assertEqual("run_from" in data["meta"], mode == "reviewer")
+                report = data["i18n"]["report"]
+                self.assertEqual(report["logs_range"]["ru"], "Логи")
+                self.assertEqual(report["tile_period_logs"]["ru"], "период логов")
+                self.assertEqual(report["run_range"]["ru"], "оценка")
+
     def test_no_network_resources(self):
         html_text = render.render_html(self.payload("reviewer"), self.i18n)
         for pat in NETWORK:
@@ -273,6 +286,35 @@ class ReportJsBehaviourTest(unittest.TestCase):
             + f"\nprocess.stdout.write(JSON.stringify(asPersonModel({json.dumps(person)}).points));"
         )
         return _run_node(script)
+
+    def _date_labels(self, meta: dict) -> dict:
+        script = (
+            "const t = k => k; const fmtDate = s => 'D' + s;\n"
+            + _js_function(self.js, "rangeText") + "\n"
+            + _js_function(self.js, "dateLabels")
+            + f"\nprocess.stdout.write(JSON.stringify(dateLabels({json.dumps(meta)})));"
+        )
+        return _run_node(script)
+
+    def test_date_labels_say_logs_when_dates_are_log_dates(self):
+        got = self._date_labels({"date_source": "logs", "date_from": "2026-08-10",
+                                 "date_to": "2026-09-06", "run_from": "2026-09-27",
+                                 "run_to": "2026-09-28"})
+        self.assertEqual(got, {"range": "logs_range", "tile": "tile_period_logs",
+                               "dates": "D2026-08-10 – D2026-09-06",
+                               "run": "D2026-09-27 – D2026-09-28"})
+
+    def test_date_labels_fall_back_to_run_wording_without_log_dates(self):
+        got = self._date_labels({"date_source": "run", "date_from": "2026-09-27",
+                                 "date_to": "2026-09-27", "run_from": "2026-09-27",
+                                 "run_to": "2026-09-27"})
+        self.assertEqual(got, {"range": "period_range", "tile": "tile_period",
+                               "dates": "D2026-09-27", "run": ""})
+
+    def test_topbar_and_tile_use_date_labels(self):
+        self.assertIn("dateLabels(", _js_function(self.js, "topbar"))
+        self.assertIn("t('run_range')", _js_function(self.js, "topbar"))
+        self.assertIn("dateLabels(", _js_function(self.js, "overview"))
 
     def test_as_person_drops_unapproved_points_and_recs(self):
         def point(period, score, approved):

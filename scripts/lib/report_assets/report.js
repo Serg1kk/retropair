@@ -158,6 +158,21 @@ function modeLabel() {
   const labels = { group: t('mode_group'), reviewer: t('mode_reviewer'), personal: t('mode_personal') };
   return labels[MODE] || MODE;
 }
+function rangeText(from, to) {
+  return from ? fmtDate(from) + (to && to !== from ? ' – ' + fmtDate(to) : '') : '';
+}
+// Даты шапки: при date_source 'logs' это даты логов периода, подписи про логи, а даты запуска
+// оценки (run_from/run_to есть только в отчёте ревьюера) идут мелкой припиской; без дат логов —
+// даты запусков и прежние подписи.
+function dateLabels(m) {
+  const logs = m.date_source === 'logs';
+  return {
+    range: logs ? t('logs_range') : t('period_range'),
+    tile: logs ? t('tile_period_logs') : t('tile_period'),
+    dates: rangeText(m.date_from, m.date_to),
+    run: logs && m.run_from ? rangeText(m.run_from, m.run_to) : '',
+  };
+}
 function topbar() {
   const m = META;
   const box = el('header', 'topbar');
@@ -168,9 +183,10 @@ function topbar() {
     const dup = String(m.title || '').indexOf(m.workspace_title) >= 0;
     brand.appendChild(el('div', 'sub' + (dup ? ' dup' : ''), esc(m.workspace_title)));
   }
-  const range = m.date_from ? fmtDate(m.date_from) + (m.date_to && m.date_to !== m.date_from ? ' – ' + fmtDate(m.date_to) : '') : '';
+  const dl = dateLabels(m);
   const bits = [`<span class="chip">${esc(modeLabel())}</span>`];
-  if (range) bits.push(`${esc(t('period_range'))}: <span class="tnum">${esc(range)}</span>`);
+  if (dl.dates) bits.push(`${esc(dl.range)}: <span class="tnum">${esc(dl.dates)}</span>`);
+  if (dl.run) bits.push(`<span class="muted small">${esc(t('run_range'))}: <span class="tnum">${esc(dl.run)}</span></span>`);
   if (m.generated_at) bits.push(`${esc(t('generated'))} <span class="tnum">${esc(fmtDate(m.generated_at))}</span>`);
   brand.appendChild(el('div', 'meta', bits.join(' · ')));
   const flags = el('div', 'chips');
@@ -235,7 +251,8 @@ function overview() {
   tiles.appendChild(tile(t('tile_people'), DATA.people.length));
   tiles.appendChild(tile(t('tile_runs'), allPts.length));
   if (REVIEWER) tiles.appendChild(tile(t('tile_sessions'), sum(allPts, x => x.sessions)));
-  tiles.appendChild(tile(t('tile_period'), META.date_from ? fmtDate(META.date_from) + ' – ' + fmtDate(META.date_to) : '—', true));
+  const dl = dateLabels(META);
+  tiles.appendChild(tile(dl.tile, META.date_from ? fmtDate(META.date_from) + ' – ' + fmtDate(META.date_to) : '—', true));
   if (REVIEWER) tiles.appendChild(tile(t('tile_open_recs'), sum(DATA.people, p => p.recs.filter(r => r.open && !r.pending_approval).length)));
   frag.appendChild(tiles);
 

@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import copy
 import json
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -50,6 +52,7 @@ PERSONAL_FORBIDDEN_KEYS = frozenset({
     "path",
 })
 SCORE_KEYS = frozenset({"score", "level"})
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 _I18N_SKIP_SECTIONS = ("cli",)
 _I18N_PATH = Path(__file__).resolve().parents[2] / "references" / "i18n.json"
@@ -118,9 +121,37 @@ def _period_label(run: dict) -> str:
     return _period(run).get("label") or (run.get("reviewed_at") or "")[:10]
 
 
-def _sort_key(run: dict) -> tuple[str, str]:
+def _log_date(run: dict, field: str, tracker_path: Path | None = None) -> str | None:
+    """Дата `YYYY-MM-DD` из начала `period.<field>` (время логов периода); пусто → None.
+
+    Строка не начинается с корректной даты или значение не строка → `SrError(1)` с run_id.
+    """
+    value = _period(run).get(field)
+    if value is None or value == "":
+        return None
+    head = value[:10] if isinstance(value, str) else None
+    try:
+        if head is None or not _ISO_DATE.fullmatch(head):
+            raise ValueError(head)
+        datetime.strptime(head, "%Y-%m-%d")
+    except ValueError as err:
+        where = f" ({tracker_path})" if tracker_path else ""
+        raise SrError(f"прогон {run['run_id']}: period.{field} должно начинаться с даты "
+                      f"YYYY-MM-DD, получено {value!r}{where}", 1) from err
+    return head
+
+
+def _log_range(run: dict) -> tuple[str | None, str | None]:
+    """Даты логов периода: (from или to, to или from); у периода без дат — (None, None)."""
+    start, end = _log_date(run, "from"), _log_date(run, "to")
+    return (start or end, end or start)
+
+
+def _sort_key(run: dict) -> tuple[str, str, str]:
     reviewed = run.get("reviewed_at") or ""
-    return (_period(run).get("from") or reviewed[:10], reviewed)
+    start = _log_range(run)[0]
+    raw = _period(run).get("from") if start else None
+    return (start or reviewed[:10], (raw or "").replace(" ", "T"), reviewed)
 
 
 def _level(run: dict, warn: Callable[[str], None]) -> str | None:
@@ -232,12 +263,17 @@ def _review_view(review: dict) -> dict:
 def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str], None],
            reasons: frozenset[str], gated: bool) -> dict:
     reviewed = run.get("reviewed_at") or ""
+    logs_from, logs_to = _log_range(run)
     return {
         "run_id": run["run_id"],
         "approved": run_approved(run, gated),
         "period_key": _period_key(run),
         "period": _period_label(run),
-        "date": reviewed[:10],
+        # дата точки — дата логов периода; период без дат — дата запуска оценки
+        "date": logs_from or reviewed[:10],
+        "date_source": "logs" if logs_from else "run",
+        "logs_from": logs_from,
+        "logs_to": logs_to,
         "reviewed_at": reviewed,
         "sessions": len(run.get("sessions_reviewed") or []),
         "level": _level(run, warn),
@@ -333,6 +369,8 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
         if not run.get("run_id"):
             raise SrError(f"прогон без run_id в трекере ({tracker_path})", 1)
         _check_run_types(run, tracker_path)
+        for field in ("from", "to"):
+            _log_date(run, field, tracker_path)
         pid = run.get("person_id")
         if pid not in cards:
             raise SrError(f"прогон {run['run_id']}: нет карточки человека {pid!r} "
@@ -563,23 +601,42 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
     else:
         people = [_reviewer_person(p, axes, quote_periods) for p in model["people"]]
         dated = [pt for p in model["people"] for pt in p["points"]]
-    dates = sorted(pt["date"] for pt in dated if pt["date"])
-    return {
-        "meta": {
-            "title": title,
-            "mode": mode,
-            "lang": lang,
-            "show_scores": bool(show_scores),
-            "generated_at": generated_at,
-            "workspace_title": model["workspace"]["title"],
-            "date_from": dates[0] if dates else None,
-            "date_to": dates[-1] if dates else None,
-            "reviews_unbound": 0 if mode == "personal" else len(model["unbound_reviews"]),
-            "quote_periods": quote_periods,
-        },
-        "axes": axes,
-        "people": people,
+    meta = {
+        "title": title,
+        "mode": mode,
+        "lang": lang,
+        "show_scores": bool(show_scores),
+        "generated_at": generated_at,
+        "workspace_title": model["workspace"]["title"],
+        **_date_meta(dated, with_runs=mode == "reviewer"),
+        "reviews_unbound": 0 if mode == "personal" else len(model["unbound_reviews"]),
+        "quote_periods": quote_periods,
     }
+    return {"meta": meta, "axes": axes, "people": people}
+
+
+def _date_meta(points: list[dict], *, with_runs: bool) -> dict:
+    """Диапазон дат шапки по точкам отчёта.
+
+    `date_source: logs` — есть точки с датами логов: `date_from/date_to` — от самой ранней
+    до самой поздней даты логов этих точек (точки без дат логов в диапазон не входят).
+    `date_source: run` — дат логов нет ни у одной точки: диапазон по датам запуска оценки.
+    `with_runs` (reviewer) добавляет `run_from/run_to` — даты запусков оценки тех же точек.
+    """
+    logged = [pt for pt in points if pt.get("logs_from")]
+    if logged:
+        starts = sorted(pt["logs_from"] for pt in logged)
+        ends = sorted(pt["logs_to"] or pt["logs_from"] for pt in logged)
+        out = {"date_source": "logs", "date_from": starts[0], "date_to": ends[-1]}
+    else:
+        dates = sorted(pt["date"] for pt in points if pt["date"])
+        out = {"date_source": "run", "date_from": dates[0] if dates else None,
+               "date_to": dates[-1] if dates else None}
+    if with_runs:
+        runs = sorted(pt["reviewed_at"][:10] for pt in points if pt.get("reviewed_at"))
+        out["run_from"] = runs[0] if runs else None
+        out["run_to"] = runs[-1] if runs else None
+    return out
 
 
 def _attach(value) -> None:
