@@ -9,6 +9,7 @@
 - i=0: в P1 двойник с `retracted` и более поздним `reviewed_at` (у него есть ревью —
   оно станет непривязанным); в последнем периоде ось `reversibility` без данных
   (`insufficient_evidence`, `short_log`); в одной цитате `<img src=x onerror=alert(1)>`;
+  в P2 к оценённым сессиям добавлены две отсеянные (`transcript_too_short`, `excluded_other`);
 - i=1: в P1 живой дубль `revision: 2` с более поздним `reviewed_at` (ревью только у него);
   в P2 `operator_override {axes: {verification: 4}}` и `gating_triggered`;
 - i=2: пропущен P2; в P1 `level_computed: null`, есть только `level_judge`;
@@ -250,6 +251,16 @@ class _Builder:
             })
         return out
 
+    @staticmethod
+    def _skipped_sessions(pid: str, p: int, start: datetime) -> list[dict]:
+        """Сессии, отсеянные до оценки: короткий лог и исключённая вручную."""
+        day = start.strftime("%Y-%m-%d")
+        return [{"session_id": f"s-{pid}-{p}-{kind}",
+                 "path": f"/home/user/proj/{pid}/.specstory/history/{day}_{kind}.md",
+                 "turns_total": turns, "state": "new", "status": status}
+                for kind, turns, status in (("short", 2, "transcript_too_short"),
+                                            ("manual", 30, "excluded_other"))]
+
     def _axes(self, pid: str, i: int, p: int, sessions: list[dict], ie_axis: str | None,
               xss: bool) -> list[dict]:
         per_axis = 3 if self.realistic else 1
@@ -361,6 +372,9 @@ class _Builder:
                         "session_id": run["sessions_reviewed"][0]["session_id"],
                         "turn_index": 7, "quote": "rm -rf /home/user/proj/build",
                     }]
+                if i == 0 and p == 2:
+                    run["sessions_reviewed"] += self._skipped_sessions(pid, p, start)
+                    run["sessions_total"] = len(run["sessions_reviewed"])
                 if i == 2 and p == 1:
                     run["level_computed"] = None
                     run["overall_level"] = None

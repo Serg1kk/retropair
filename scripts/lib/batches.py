@@ -117,17 +117,8 @@ def _close(sessions: list, truncated: bool) -> dict:
     }
 
 
-def plan(entries, cfg_batches: dict, measure: Callable[[dict], int], period_label: str | None = None,
-         *, measure_name: str = "human") -> dict:
-    """Пачки из записей индекса одного человека.
-
-    Выход: `{person_id, measure, batches: [{index, total, sessions[], bytes, user_turns, date_from,
-    date_to, batch_truncated}], short[], skipped[]}`. `period_guess: null` (период не угадан)
-    не считается чужим периодом: сессия идёт в нарезку.
-    """
-    entries = list(entries)
-    person_id = _check_people(entries)
-    max_bytes, max_turns, min_turns = cfg_batches["max_bytes"], cfg_batches["max_user_turns"], cfg_batches["min_turns"]
+def _split(entries: list, min_turns: int, period_label: str | None) -> tuple[list, list, list]:
+    """(кандидаты в пачки по времени начала, короткие, чужой период) из записей одного человека."""
     short, skipped, candidates = [], [], []
     for entry in entries:
         if not _taken(entry):
@@ -144,6 +135,31 @@ def plan(entries, cfg_batches: dict, measure: Callable[[dict], int], period_labe
             continue
         candidates.append(entry)
     candidates.sort(key=lambda e: (e.get("log_started_at") is None, e.get("log_started_at") or "", _ref(e)))
+    return candidates, short, skipped
+
+
+def period_candidates(entries, cfg_batches: dict, period_label: str | None = None) -> list[dict]:
+    """Записи индекса, которые `plan` разложит по пачкам (без замера): годные, своего периода, не короткие.
+
+    По ним `open-recs` решает, есть ли в периоде сессии после выдачи рекомендации (`evaluable`).
+    """
+    entries = list(entries)
+    _check_people(entries)
+    return _split(entries, cfg_batches["min_turns"], period_label)[0]
+
+
+def plan(entries, cfg_batches: dict, measure: Callable[[dict], int], period_label: str | None = None,
+         *, measure_name: str = "human") -> dict:
+    """Пачки из записей индекса одного человека.
+
+    Выход: `{person_id, measure, batches: [{index, total, sessions[], bytes, user_turns, date_from,
+    date_to, batch_truncated}], short[], skipped[]}`. `period_guess: null` (период не угадан)
+    не считается чужим периодом: сессия идёт в нарезку.
+    """
+    entries = list(entries)
+    person_id = _check_people(entries)
+    max_bytes, max_turns = cfg_batches["max_bytes"], cfg_batches["max_user_turns"]
+    candidates, short, skipped = _split(entries, cfg_batches["min_turns"], period_label)
 
     batches: list[dict] = []
     current: list[dict] = []

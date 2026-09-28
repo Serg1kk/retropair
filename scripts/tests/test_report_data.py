@@ -140,10 +140,24 @@ class TestCollect(_Base):
         self.assertFalse(rec("vera")["open"])
         self.assertEqual(rec("anna")["given_in"], "P1")
 
-    def test_unbound_review_of_retracted_run(self) -> None:
+    def test_review_of_retracted_run_is_counted_not_warned(self) -> None:
+        # отзыв — штатное действие: ревью отозванного прогона не шумит на каждой сборке
         twin = [r for r in self.runs_of("anna") if r.get("retracted")][0]
-        self.assertEqual(self.model["unbound_reviews"], [twin["run_id"]])
-        self.assertTrue(any(twin["run_id"] in w for w in self.warnings), self.warnings)
+        self.assertEqual(self.model["unbound_reviews"], [])
+        self.assertEqual(self.model["retracted_reviews"], [twin["run_id"]])
+        self.assertFalse(any(twin["run_id"] in w for w in self.warnings), self.warnings)
+        self.assertFalse(any("отозван" in w for w in self.warnings), self.warnings)
+
+    def test_sessions_count_only_reviewed(self) -> None:
+        run = _run_of(self.tracker, "anna", "P2")
+        statuses = [s["status"] for s in run["sessions_reviewed"]]
+        self.assertIn("reviewed", statuses)
+        self.assertEqual(len(statuses) - statuses.count("reviewed"), 2, statuses)
+        pt = [p for p in self.person["anna"]["points"] if p["period_key"] == "P2"][0]
+        self.assertEqual(pt["sessions"], statuses.count("reviewed"))
+        self.assertEqual(pt["sessions_skipped"], 2)
+        p1 = self.person["anna"]["points"][0]
+        self.assertEqual(p1["sessions_skipped"], 0)
 
     def test_reviews_bound_to_points(self) -> None:
         pts = self.person["anna"]["points"]
@@ -256,7 +270,9 @@ class TestPayload(_Base):
                 self.assertIsNone(pt["review"])
                 self.assertIn("score", pt["axes"]["verification"])
         meta = payload["meta"]
-        self.assertEqual((meta["mode"], meta["title"], meta["reviews_unbound"]), ("group", "Команда", 1))
+        self.assertEqual((meta["mode"], meta["title"], meta["reviews_unbound"]), ("group", "Команда", 0))
+        self.assertNotIn("reviews_of_retracted", meta)
+        self.assertNotIn("sessions_skipped", _keys(payload))
         # дата логов (period.from первого периода), не дата запуска оценки
         self.assertEqual(meta["date_from"], "2026-01-05")
 
@@ -270,6 +286,13 @@ class TestPayload(_Base):
                                              "path", "recognized", "warning"})
         self.assertIn("verdicts", anna["recs"][0])
         self.assertTrue(pt["axes"]["verification"]["evidence"])
+        self.assertEqual([p["sessions_skipped"] for p in anna["points"]], [0, 2, 0])
+
+    def test_reviewer_meta_counts_reviews_of_retracted_runs_apart(self) -> None:
+        meta = rd.build_payload(self.model, mode="reviewer")["meta"]
+        self.assertEqual((meta["reviews_unbound"], meta["reviews_of_retracted"]), (0, 1))
+        personal = rd.build_payload(self.model, mode="personal", person="anna")["meta"]
+        self.assertNotIn("reviews_of_retracted", personal)
 
     def test_reviewer_quotes_only_in_last_periods(self) -> None:
         model = rd.collect(self.fresh(people=1, periods=6), lambda _m: None)
@@ -403,7 +426,7 @@ class TestReviewBinding(_Base):
         self.assertIn(run_id, model["unbound_reviews"])
         self.assertTrue(any(run_id in w and "reviews/boris/" in w for w in warnings), warnings)
 
-    def test_unbound_messages_distinguish_retracted_and_superseded(self) -> None:
+    def test_superseded_review_warns_retracted_does_not(self) -> None:
         root = self.fresh()
         doc = _tracker(root)
         old = [r for r in doc["runs"] if r["person_id"] == "boris" and r["period"]["label"] == "P1"
@@ -412,12 +435,22 @@ class TestReviewBinding(_Base):
         (src.parent / f"{old['run_id']}.md").write_text(
             src.read_text(encoding="utf-8").replace(src.stem, old["run_id"]), encoding="utf-8")
         model, warnings = _collect(root)
-        self.assertIn(old["run_id"], model["unbound_reviews"])
+        self.assertEqual(model["unbound_reviews"], [old["run_id"]])
         superseded = [w for w in warnings if old["run_id"] in w]
         self.assertTrue(any("заменён ревизией 2" in w for w in superseded), superseded)
         twin = [r for r in doc["runs"] if r.get("retracted")][0]
-        retracted = [w for w in warnings if twin["run_id"] in w]
-        self.assertTrue(any("отозван" in w for w in retracted), retracted)
+        self.assertEqual(model["retracted_reviews"], [twin["run_id"]])
+        self.assertEqual([w for w in warnings if twin["run_id"] in w], [])
+
+    def test_review_without_run_in_tracker_warns(self) -> None:
+        root = self.fresh()
+        src = _review_file(root, "anna", "P2")
+        ghost = "demo-team_anna_P9_20990101T000000Z"
+        (src.parent / f"{ghost}.md").write_text(
+            src.read_text(encoding="utf-8").replace(src.stem, ghost), encoding="utf-8")
+        model, warnings = _collect(root)
+        self.assertEqual(model["unbound_reviews"], [ghost])
+        self.assertTrue(any(ghost in w and "нет в трекере" in w for w in warnings), warnings)
 
 
 class TestFreeTextEnums(_Base):

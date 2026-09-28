@@ -4,7 +4,8 @@
 файлы ревью и собирает модель:
 
     model = {workspace:{id,title,mode,lang,show_scores}, axes:[id], unbound_reviews:[run_id],
-             warnings:[str], people:[{id, name, group, show_dynamics, points:[P], recs:[R]}]}
+             retracted_reviews:[run_id], warnings:[str],
+             people:[{id, name, group, show_dynamics, points:[P], recs:[R]}]}
 
 У точки `approved`, у рекомендации `pending_approval`, у вердикта `approved`: при гейте
 ревьюера (`tracker.reviewer_gated`) прогон без `review_status: approved` человек не получал.
@@ -14,7 +15,10 @@
 Поля, которые показываются как коды (`reason`, `axis` рекомендации), сверяются со словарём:
 неизвестная причина → `other`, рекомендация с чужой осью пропускается — свободный текст
 оценщика в эти поля адресату не попадает. Ревью привязывается к прогону, только если лежит
-в `reviews/<id>/` владельца и `person_id` во frontmatter совпадает.
+в `reviews/<id>/` владельца и `person_id` во frontmatter совпадает. Ревью отозванного
+прогона не привязывается молча: отзыв — штатное действие, такие ревью только считаются
+(`retracted_reviews`); прочие непривязанные предупреждают. `sessions` точки — только
+оценённые сессии (`status: reviewed`), отсеянные до оценки — в `sessions_skipped`.
 
 `build_payload(model, mode=…)` строит из модели данные одного HTML-файла **белым списком**
 полей для режима: `personal` (один человек, только то, что можно показать адресату),
@@ -49,9 +53,11 @@ PERSONAL_FORBIDDEN_KEYS = frozenset({
     "gate", "summary", "antipatterns", "flags", "evidence", "note", "feedback_draft",
     "warnings", "reviewer", "service_md", "service_html", "dossier_md", "dossier_html",
     "run_id", "agent_stack", "gating_evidence", "period_key", "reviewed_at", "dossier_ref",
-    "path",
+    "path", "sessions_skipped", "reviews_of_retracted",
 })
 SCORE_KEYS = frozenset({"score", "level"})
+# Статус сессии прогона, вошедшей в оценку; остальные статусы — причины отсева.
+REVIEWED_SESSION = "reviewed"
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 _I18N_SKIP_SECTIONS = ("cli",)
@@ -260,10 +266,19 @@ def _review_view(review: dict) -> dict:
             ("status", "service_md", "sent_md", "dossier_md", "path", "recognized", "warning")}
 
 
+def _session_counts(run: dict) -> tuple[int, int]:
+    """(оценено, отсеяно) по `sessions_reviewed`: без `status` сессия считается оценённой."""
+    statuses = [s.get("status") or REVIEWED_SESSION
+                for s in run.get("sessions_reviewed") or [] if isinstance(s, dict)]
+    reviewed = statuses.count(REVIEWED_SESSION)
+    return reviewed, len(statuses) - reviewed
+
+
 def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str], None],
            reasons: frozenset[str], gated: bool) -> dict:
     reviewed = run.get("reviewed_at") or ""
     logs_from, logs_to = _log_range(run)
+    sessions, skipped = _session_counts(run)
     return {
         "run_id": run["run_id"],
         "approved": run_approved(run, gated),
@@ -275,7 +290,8 @@ def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str]
         "logs_from": logs_from,
         "logs_to": logs_to,
         "reviewed_at": reviewed,
-        "sessions": len(run.get("sessions_reviewed") or []),
+        "sessions": sessions,
+        "sessions_skipped": skipped,
         "level": _level(run, warn),
         "gate": bool(run.get("gating_triggered")),
         "agent_stack": list(run.get("agent_stack") or []),
@@ -388,12 +404,13 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
     retracted_ids = {r.get("run_id") for r in runs if r.get("retracted")}
     replaced_by = {run["run_id"]: latest[(run.get("person_id"), _period_key(run))]
                    for run in live if run["run_id"] not in chosen_ids}
-    unbound = [rid for rid in reviews if rid not in chosen_ids]
+    # ревью отозванного прогона: отзыв штатный (retract с причиной), только счётчик
+    of_retracted = sorted(rid for rid in reviews
+                          if rid not in chosen_ids and rid in retracted_ids)
+    unbound = [rid for rid in reviews if rid not in chosen_ids and rid not in retracted_ids]
     for rid in sorted(unbound):
         where = f"{reviews[rid]['path']} (run_id {rid})"
-        if rid in retracted_ids:
-            note(f"ревью не привязано, прогон отозван: {where}")
-        elif rid in replaced_by:
+        if rid in replaced_by:
             newer = replaced_by[rid]
             by = (f"ревизией {newer['revision']}" if newer.get("revision") is not None
                   else "более поздним прогоном")
@@ -431,6 +448,7 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
         "axes": axes,
         "people": people,
         "unbound_reviews": sorted(unbound),
+        "retracted_reviews": of_retracted,
         "warnings": warnings,
     }
 
@@ -612,6 +630,8 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
         "reviews_unbound": 0 if mode == "personal" else len(model["unbound_reviews"]),
         "quote_periods": quote_periods,
     }
+    if mode == "reviewer":
+        meta["reviews_of_retracted"] = len(model.get("retracted_reviews") or [])
     return {"meta": meta, "axes": axes, "people": people}
 
 

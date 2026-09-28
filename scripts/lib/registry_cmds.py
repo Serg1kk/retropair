@@ -15,6 +15,8 @@
   которые `doctor` добавит в свой вывод (`root` — корень workspace или None). Исключение
   внутри превращается в строку `<файл>: ошибка <текст>` и код 1 у `doctor`.
 - Имя команды (и alias) уникально: дубль → `RuntimeError` с именами обоих файлов.
+- Перед handler `dispatch` сдвигает отметки `plugin-state.json` на версию плагина
+  (`lib/plugin_state.py`); сбой — строка предупреждения в stderr, команда продолжается.
 """
 
 from __future__ import annotations
@@ -23,10 +25,13 @@ import argparse
 import hashlib
 import importlib
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
+from lib import plugin_state, registry
 from lib.version import __version__
+from lib.workspace import STATE_DIR, SrError, find_workspace
 
 LIB_DIR = Path(__file__).resolve().parent
 
@@ -107,13 +112,43 @@ def build_parser(modules=None) -> argparse.ArgumentParser:
     return parser
 
 
+def _stamp_warning(path: Path, reason: str) -> None:
+    print(f"sessionretro: предупреждение: plugin-state.json {path}: {reason}, не изменён",
+          file=sys.stderr)
+
+
+def _sync_one(path: Path, store_kind: str) -> None:
+    try:
+        status = plugin_state.sync_stamp(path, store_kind)
+    except (OSError, SrError) as err:
+        text = err.message if isinstance(err, SrError) else str(err)
+        _stamp_warning(path, f"ошибка {type(err).__name__}: {text}")
+        return
+    if status == "corrupt":
+        _stamp_warning(path, "битый")
+    elif status == "newer":
+        _stamp_warning(path, f"новее плагина ({plugin_state.read_version(path)})")
+
+
+def sync_plugin_stamps(args: argparse.Namespace) -> None:
+    """Сдвигает отметки `plugin-state.json` (глобальную и workspace, если он найден) на
+    текущую версию плагина. Сбой — одна строка предупреждения в stderr, команда идёт дальше."""
+    _sync_one(registry.sr_home() / "plugin-state.json", "global")
+    try:
+        root = find_workspace(Path.cwd(), getattr(args, "workspace", None))
+    except (SrError, OSError):
+        return  # команда без workspace — не ошибка; нужен — handler сам сообщит
+    _sync_one(root / STATE_DIR / "plugin-state.json", "workspace")
+
+
 def dispatch(args: argparse.Namespace) -> int:
-    """Вызывает handler команды; результат не `int` → `RuntimeError`."""
+    """Сдвигает отметки `plugin-state.json`, вызывает handler; результат не `int` → `RuntimeError`."""
     func = getattr(args, "func", None)
     if func is None:
         raise RuntimeError(
             f"команда '{args.command}' не задала handler через set_defaults(func=…)"
         )
+    sync_plugin_stamps(args)
     rc = func(args)
     if not isinstance(rc, int) or isinstance(rc, bool):
         raise RuntimeError(

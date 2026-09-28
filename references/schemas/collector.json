@@ -423,7 +423,7 @@
     },
     "rec_signals": {
       "type": "array",
-      "description": "Материал по открытым рекомендациям прошлых периодов. Вердикт (followed / partial / ignored / not_observable) ставит судья: на одной пачке видно только эпизод, а вердикт стоит на всём периоде.",
+      "description": "Материал по открытым рекомендациям прошлых периодов. Вердикт (followed / partial / ignored / not_observable / not_applicable_yet) ставит судья: на одной пачке видно только эпизод, а вердикт стоит на всём периоде. По рекомендации с evaluable: false сигналы не собираются.",
       "items": {
         "type": "object",
         "required": [

@@ -69,8 +69,11 @@ def make_state(root: Path) -> Path:
     return state
 
 
-class CollectorCase(unittest.TestCase):
+class CollectorCase(_util.TempHome, unittest.TestCase):
+    """HOME временный: `sr.main` сдвигает глобальную отметку `plugin-state.json`."""
+
     def setUp(self) -> None:
+        super().setUp()
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-collector-")
         self.addCleanup(self._tmp.cleanup)
         self.dir = Path(self._tmp.name)

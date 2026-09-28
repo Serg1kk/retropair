@@ -92,7 +92,7 @@ class RecStatusTest(OpsCase):
         self.assertEqual(first["run_id"], RUN_P1)
         self.assertTrue(first["text"])
         self.assertEqual(result["open"][1]["period"], "p2")
-        self.assertEqual(set(first), {"id", "axis", "text", "period", "run_id"})
+        self.assertEqual(set(first), {"id", "axis", "text", "period", "run_id", "issued_at"})
 
     def test_retracted_run_recs_leave_open_list_but_keep_numbers(self):
         self.append_p1()
@@ -167,7 +167,7 @@ class ReviewerGateRecsTest(OpsCase):
         self.assertEqual(result["open"], [])
         self.assertEqual([r["id"] for r in result["pending_approval"]], P1_RECS)
         first = result["pending_approval"][0]
-        self.assertEqual(set(first), {"id", "axis", "text", "period", "run_id"})
+        self.assertEqual(set(first), {"id", "axis", "text", "period", "run_id", "issued_at"})
         self.assertEqual(first["period"], "p1")
         self.assertEqual(first["run_id"], RUN_P1)
         # номер не переиспользуется: черновые REC заняты
@@ -932,6 +932,221 @@ class LevelAndUpdateTest(OpsCase):
         self.raises(1, tracker.update_run, self.root, "nope", review_status="approved")
         tracker.retract(self.root, RUN_P1, "ошибка", now=LATER)
         self.raises(1, tracker.update_run, self.root, RUN_P1, review_status="approved")
+
+
+ISSUE_T = "2026-09-10T12:00:00Z"  # reviewed_at прогона p1 (NOW)
+LATE = "c3d4e5f6-0718-4a2b-9c3d-4e5f60718293"
+LATE_KEY = "2026-09-20_10-00-00Z-late-session"
+EARLY_NOTE = "логи периода старше выдачи"
+
+
+class RecIssuedAtTest(OpsCase):
+    """A16: вердикт по прошлой рекомендации — только по логам, законченным после её выдачи.
+
+    Первый разбор накопленной истории периодами подряд: рекомендации периода 1 выданы в момент
+    прогона (self) или `approve` (team/course с гейтом), а логи периода 2 записаны раньше. Судья
+    получает `evaluable: false` и ставит `not_applicable_yet`; `append` детерминированно заменяет
+    любой другой вердикт по такой рекомендации и пишет строку в warnings.
+    """
+
+    def set_config(self, **fields) -> None:
+        cfg = load_config(self.root)
+        cfg.update(fields)
+        save_config(self.root, cfg)
+
+    def set_dates(self, session_id: str, start, end) -> None:
+        index = self.index()
+        entry = _entry(index, session_id)
+        entry["log_started_at"], entry["log_ended_at"] = start, end
+        self.paths["logs_index"].write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def add_late_session(self) -> None:
+        """Сессия периода p3, законченная 20.09 — после выдачи рекомендаций p1 и p2."""
+        index = self.index()
+        entry = json.loads(json.dumps(_entry(index, FIX_ALEX)))
+        entry.update(session_id=LATE, key=LATE_KEY, path=f"logs/alex/{LATE_KEY}.md",
+                     source_path=f"/home/user/demo/.specstory/history/{LATE_KEY}.md",
+                     log_started_at="2026-09-20T10:00:00Z", log_ended_at="2026-09-20T11:00:00Z",
+                     period_guess="p3", state="new", reviewed=False, reviewed_in_run=None, reviewed_at=None)
+        index["logs"].append(entry)
+        self.paths["logs_index"].write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def verdicts(self, *pairs) -> list:
+        return [{"id": rid, "verdict": v, "evidence": None, "note": None} for rid, v in pairs]
+
+    def p3(self, prev) -> dict:
+        obj = self.p2(prev_recommendations=prev)
+        obj["data"]["session_scope"]["sessions"] = [{
+            "session_id": LATE, "path": f"logs/alex/{LATE_KEY}.md", "turns_total": 12,
+            "reviewed_from_turn": None, "state": "new", "status": "reviewed", "status_note": None}]
+        for rec in obj["data"]["recommendations"]:
+            rec["id"] = "REC-alex-004"
+        return obj
+
+    def cli_recs(self, *extra: str) -> dict:
+        code, out, err = self.cli("open-recs", "alex", "--json", *extra)
+        self.assertEqual(code, 0, err)
+        return json.loads(out)
+
+    def run_by_label(self, label: str) -> dict:
+        return next(r for r in self.tracker_doc()["runs"] if r["period"]["label"] == label)
+
+    # --- self: момент выдачи = время прогона ------------------------------------------
+
+    def test_self_issued_at_is_run_time(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        result = tracker.open_recs(self.tracker_doc(), "alex", gated=False)
+        self.assertEqual({r["issued_at"] for r in result["open"]}, {ISSUE_T})
+
+    def test_self_period_logs_older_than_issue_not_evaluable(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        self.set_dates(FIX_ALEX, "2026-09-08T14:00:00Z", "2026-09-08T15:05:00Z")
+        result = self.cli_recs("--period-label", "p2")
+        self.assertEqual([(r["id"], r["evaluable"]) for r in result["open"]],
+                         [("REC-alex-001", False), ("REC-alex-002", False)])
+        self.assertEqual(result["open"][0]["issued_at"], ISSUE_T)
+
+    def test_append_replaces_verdict_on_logs_older_than_issue(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        self.set_dates(FIX_ALEX, "2026-09-08T14:00:00Z", "2026-09-08T15:05:00Z")
+        obj = self.p2(prev_recommendations=self.verdicts(("REC-alex-001", "ignored"),
+                                                         ("REC-alex-002", "not_observable")))
+        code, out, err = self.cli("append", str(self.write(obj)), "--person", "alex", "--period-label", "p2")
+        self.assertEqual(code, 0, err)
+        result = json.loads(out)
+        for rid in ("REC-alex-001", "REC-alex-002"):
+            with self.subTest(rid=rid):
+                line = next(w for w in result["warnings"] if w.startswith(f"вердикт {rid} заменён"))
+                self.assertIn(EARLY_NOTE, line)
+                self.assertIn(line, err)
+        run = self.run_by_label("p2")
+        self.assertEqual([v["verdict"] for v in run["prev_recommendations"]], ["not_applicable_yet"] * 2)
+        self.assertTrue(any(w.startswith("вердикт REC-alex-001 заменён") for w in run["warnings"]))
+        statuses = tracker.rec_statuses(self.tracker_doc(), "alex")
+        self.assertEqual(statuses["REC-alex-001"], "open")
+        self.assertEqual(statuses["REC-alex-002"], "open")
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_period3_after_issue_evaluable_and_ignored_closes(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        self.set_dates(FIX_ALEX, "2026-09-08T14:00:00Z", "2026-09-08T15:05:00Z")
+        self.append(self.p2(prev_recommendations=self.verdicts(("REC-alex-001", "ignored"))),
+                    now=LATER, period_label="p2")
+        self.assertEqual(tracker.rec_statuses(self.tracker_doc(), "alex")["REC-alex-001"], "open")
+        self.add_late_session()
+        result = self.cli_recs("--period-label", "p3")
+        self.assertEqual([(r["id"], r["evaluable"]) for r in result["open"]],
+                         [("REC-alex-001", True), ("REC-alex-002", True), ("REC-alex-003", True)])
+        done = self.append(self.p3(self.verdicts(("REC-alex-001", "ignored"))), now=LATEST, period_label="p3")
+        self.assertFalse([w for w in done["warnings"] if "заменён" in w], done["warnings"])
+        self.assertEqual(self.run_by_label("p3")["prev_recommendations"][0]["verdict"], "ignored")
+        self.assertEqual(tracker.rec_statuses(self.tracker_doc(), "alex")["REC-alex-001"], "ignored")
+
+    def test_not_applicable_yet_from_judge_passes_and_keeps_open(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        self.set_dates(FIX_ALEX, "2026-09-08T14:00:00Z", "2026-09-08T15:05:00Z")
+        done = self.append(self.p2(prev_recommendations=self.verdicts(("REC-alex-001", "not_applicable_yet"))),
+                           now=LATER, period_label="p2")
+        self.assertFalse([w for w in done["warnings"] if "заменён" in w], done["warnings"])
+        result = tracker.open_recs(self.tracker_doc(), "alex", gated=False)
+        self.assertIn("REC-alex-001", [r["id"] for r in result["open"]])
+        self.assertEqual(result["next_number"], 4)
+
+    def test_session_without_dates_not_evaluable_with_warning(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        self.set_dates(FIX_ALEX, None, None)
+        result = self.cli_recs("--period-label", "p2")
+        self.assertFalse(any(r["evaluable"] for r in result["open"]))
+        self.assertTrue(any(FIX_ALEX in w and "нет дат" in w for w in result["warnings"]), result["warnings"])
+        done = self.append(self.p2(prev_recommendations=self.verdicts(("REC-alex-001", "followed"))),
+                           now=LATER, period_label="p2")
+        self.assertTrue(any(w.startswith("вердикт REC-alex-001 заменён") for w in done["warnings"]))
+        self.assertTrue(any(FIX_ALEX in w and "нет дат" in w for w in done["warnings"]), done["warnings"])
+
+    def test_long_session_started_before_ended_after_issue_is_evaluable(self):
+        self.set_config(mode="self")
+        self.append_p1()
+        self.set_dates(FIX_ALEX, "2026-09-09T14:00:00Z", "2026-09-11T15:05:00Z")
+        result = self.cli_recs("--period-label", "p2")
+        self.assertTrue(all(r["evaluable"] for r in result["open"]))
+        done = self.append(self.p2(prev_recommendations=self.verdicts(("REC-alex-001", "followed"))),
+                           now=LATER, period_label="p2")
+        self.assertEqual(tracker.rec_statuses(self.tracker_doc(), "alex")["REC-alex-001"], "followed")
+        self.assertFalse([w for w in done["warnings"] if "заменён" in w])
+
+    def test_recorded_early_verdict_does_not_redden_validate(self):
+        """Вердикт, записанный до исправления (логи старше выдачи), `validate` не краснит: страж только в append."""
+        self.set_config(mode="self")
+        self.append_p1()
+        self.append(self.p2(), now=LATER, period_label="p2")
+        self.set_dates(FIX_ALEX, "2026-09-08T14:00:00Z", "2026-09-08T15:05:00Z")
+        self.assertEqual(tracker.validate_file(self.root), [])
+        self.assertEqual(self.run_by_label("p2")["prev_recommendations"][0]["verdict"], "followed")
+
+    # --- team/course с гейтом: момент выдачи = approve ----------------------------------
+
+    def test_gated_issued_at_is_approve_time(self):
+        judge = self.write(payload(), name="judge-p1.json")
+        tracker.append(self.root, judge, "alex", now=NOW, period_label="p1")
+        render_review.write_review(self.root, judge, "alex", RUN_P1, now=NOW)
+        approved = NOW + timedelta(days=3)  # 13.09, после сессии p2 (11.09)
+        render_review.approve(self.root, "alex", RUN_P1, now=approved)
+        self.assertEqual(self.tracker_doc()["runs"][0]["approved_at"], "2026-09-13T12:00:00Z")
+        result = self.cli_recs("--period-label", "p2")
+        self.assertEqual({r["issued_at"] for r in result["open"]}, {"2026-09-13T12:00:00Z"})
+        self.assertFalse(any(r["evaluable"] for r in result["open"]))
+        done = self.append(self.p2(), now=LATER, period_label="p2")
+        replaced = [w for w in done["warnings"] if "заменён" in w]
+        self.assertEqual(len(replaced), 2, done["warnings"])
+        self.assertEqual({v["verdict"] for v in self.run_by_label("p2")["prev_recommendations"]},
+                         {"not_applicable_yet"})
+        self.assertEqual(tracker.rec_statuses(self.tracker_doc(), "alex")["REC-alex-001"], "open")
+
+    def test_gated_approved_without_approved_at_falls_back_with_warning(self):
+        self.append_p1()
+        self.approve_live()  # старый трекер: review_status approved без approved_at
+        self.assertNotIn("approved_at", self.tracker_doc()["runs"][0])
+        result = self.cli_recs("--period-label", "p2")
+        self.assertEqual({r["issued_at"] for r in result["open"]}, {ISSUE_T})
+        self.assertTrue(all(r["evaluable"] for r in result["open"]))
+        self.assertTrue(any(RUN_P1 in w and "approved_at" in w for w in result["warnings"]), result["warnings"])
+        done = self.append(self.p2(), now=LATER, period_label="p2")
+        self.assertTrue(any(RUN_P1 in w and "approved_at" in w for w in done["warnings"]), done["warnings"])
+
+    def test_draft_recs_not_touched_by_guard(self):
+        """Черновые REC (`pending_approval`) судье не идут, а `issued_at` у них нет."""
+        judge = self.write(payload(), name="judge-p1.json")
+        tracker.append(self.root, judge, "alex", now=NOW, period_label="p1")
+        result = self.cli_recs("--period-label", "p2")
+        self.assertEqual(result["open"], [])
+        self.assertEqual({r["issued_at"] for r in result["pending_approval"]}, {None})
+        self.assertEqual(result["next_number"], 3)
+
+    # --- схемы, i18n, отчёт -------------------------------------------------------------
+
+    def test_new_verdict_in_schemas_i18n_and_report(self):
+        from lib import i18n, schema
+        judge = schema.load_schema("judge")
+        prev = judge["properties"]["data"]["properties"]["prev_recommendations"]["items"]
+        self.assertIn("not_applicable_yet", prev["properties"]["verdict"]["enum"])
+        full = schema.load_schema("tracker")
+        run = full["properties"]["runs"]["items"]
+        self.assertIn("not_applicable_yet",
+                      run["properties"]["prev_recommendations"]["items"]["properties"]["verdict"]["enum"])
+        self.assertIn("approved_at", run["properties"])
+        self.assertIn("not_applicable_yet", i18n.keys("rec_verdicts"))
+        js = (tracker.Path(__file__).resolve().parents[1] / "lib" / "report_assets" / "report.js").read_text(
+            encoding="utf-8")
+        for const in ("CHIP_CLASS", "CHIP_GLYPH"):
+            with self.subTest(const=const):
+                line = next(ln for ln in js.splitlines() if ln.startswith(f"const {const}"))
+                self.assertIn("not_applicable_yet", line)
 
 
 if __name__ == "__main__":

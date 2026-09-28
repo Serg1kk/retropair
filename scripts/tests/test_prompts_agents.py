@@ -22,17 +22,17 @@ TOOLS = {
     "feedback-critic": "Read, Write, Edit",
 }
 BODY_VERSIONS = {
-    "log-collector": "collector_version: v4",
-    "log-judge": "prompt_version: v14",
+    "log-collector": "collector_version: v5",
+    "log-judge": "prompt_version: v15",
     "feedback-critic": "critic_version: v1",
 }
 FILE_VERSIONS = {
     "references/axes.md": "axes_version: v3",
     "references/antipatterns.md": "antipatterns_version: v4",
     "references/best-practices.md": "best_practices_version: v2",
-    "references/output-contract.md": "output_contract_version: v4",
+    "references/output-contract.md": "output_contract_version: v5",
     "references/feedback-examples.md": "feedback_examples_version: v4",
-    "skills/review/references/judge-input.md": "judge_input_version: v1",
+    "skills/review/references/judge-input.md": "judge_input_version: v2",
 }
 FRONTMATTER_KEYS = {"name", "description", "tools", "model", "effort"}
 LITERAL_NOTE = "Если в пути виден литерал `${CLAUDE_PLUGIN_ROOT}`, подставь `plugin_root` из входа."

@@ -345,7 +345,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/alex/judge-p1.json",
         "sha256": "b560dcd39c4e999edd5d885b9b6040e74600303dda5968b63806711d2666b5fb"
-      }
+      },
+      "approved_at": "2026-09-07T19:30:00Z"
     },
     {
       "run_id": "demo-team_sam_p1_20260907T181000Z",
@@ -652,7 +653,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/sam/judge-p1.json",
         "sha256": "944d1390b3b6a1f12e6619968049760aa4c3a4758368b265f5080084b056f979"
-      }
+      },
+      "approved_at": "2026-09-07T19:40:00Z"
     },
     {
       "run_id": "demo-team_kim_p1_20260907T182000Z",
@@ -882,7 +884,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/kim/judge-p1.json",
         "sha256": "a9889869f20945e7c1cfcdb00192c1d8830426990975a5e8ee53df6c95786258"
-      }
+      },
+      "approved_at": "2026-09-07T19:50:00Z"
     },
     {
       "run_id": "demo-team_alex_p2_20260914T180000Z",
@@ -1198,7 +1201,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/alex/judge-p2.json",
         "sha256": "7fc035fad99d07c5a286d479978abd0d7d6e3382ec2fb79e15a4dff4da056625"
-      }
+      },
+      "approved_at": "2026-09-14T20:00:00Z"
     },
     {
       "run_id": "demo-team_sam_p2_20260914T181000Z",
@@ -1479,7 +1483,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/sam/judge-p2.json",
         "sha256": "597b7863d3e379f75a6951a236a16bb12d19bf57a85495dcb07ed6944c9f2b92"
-      }
+      },
+      "approved_at": "2026-09-14T19:40:00Z"
     },
     {
       "run_id": "demo-team_kim_p2_20260914T182000Z",
@@ -2124,7 +2129,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/kim/judge-p2.json",
         "sha256": "64bfc703f9dc03a8069f7944eac50b6393d9d94fd57eee75a2f7591a2df7c4b0"
-      }
+      },
+      "approved_at": "2026-09-14T21:50:00Z"
     },
     {
       "run_id": "demo-team_alex_p3_20260921T180000Z",
@@ -2451,7 +2457,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/alex/judge-p3.json",
         "sha256": "8a5db7822fd0b498225e7783a9a7e84c14bf44814fefec0433c5fef51c224f47"
-      }
+      },
+      "approved_at": "2026-09-21T20:00:00Z"
     },
     {
       "run_id": "demo-team_sam_p3_20260921T181000Z",
@@ -3089,7 +3096,8 @@
       "source": {
         "path": ".sessionretro/runs/pending/kim/judge-p3.json",
         "sha256": "e3408fd09915f7fdb8e9278d16f44c0f725c360d94c8d252e93c4282cfca1753"
-      }
+      },
+      "approved_at": "2026-09-21T20:20:00Z"
     }
   ]
 }

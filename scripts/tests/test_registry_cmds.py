@@ -7,7 +7,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-import _util  # noqa: F401  (кладёт plugin/scripts в sys.path)
+import _util  # кладёт plugin/scripts в sys.path
 
 from lib import registry_cmds
 
@@ -25,13 +25,17 @@ def register(subparsers):
 """
 
 
-class DiscoverTest(unittest.TestCase):
+class DiscoverTest(_util.TempHome, unittest.TestCase):
+    """HOME временный: `dispatch` сдвигает глобальную отметку `plugin-state.json`."""
+
     def setUp(self) -> None:
+        super().setUp()
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-cmds-")
         self.dir = Path(self._tmp.name)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
+        super().tearDown()
 
     def test_discover_finds_real_commands(self):
         stems = [registry_cmds.module_file(m) for m in registry_cmds.discover()]

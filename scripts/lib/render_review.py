@@ -40,7 +40,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from lib import i18n, people, text_rules, tracker
+from lib import i18n, marks, people, text_rules, tracker
 from lib.config import load_config
 from lib.version import plugin_root
 from lib.workspace import SrError, ws_paths
@@ -559,7 +559,7 @@ def _frontmatter_status(lines: list[str], path: Path) -> int:
 
 
 def approve(root: Path, person_id: str, run_id: str | None = None, now: datetime | None = None) -> dict:
-    """Черновик → одобрено: `status` во frontmatter и `review_status` прогона.
+    """Черновик → одобрено: `status` во frontmatter, `review_status` и `approved_at` прогона.
 
     Без `run_id` — последний живой прогон человека. Нет карточки → 2; нет прогона, файла,
     frontmatter → 1; уже одобрено и там и там → `changed: False`, ничего не пишется.
@@ -578,7 +578,8 @@ def approve(root: Path, person_id: str, run_id: str | None = None, now: datetime
         raise SrError(f"статус {current!r} во frontmatter не из draft|approved ({path})", 1)
     if current == "approved" and run.get("review_status") == "approved":
         return {"run_id": rid, "status": "approved", "changed": False}
-    tracker.update_run(root, rid, now=now, review_status="approved")
+    # approved_at — момент выдачи рекомендаций прогона при гейте ревьюера (open-recs, страж append)
+    tracker.update_run(root, rid, now=now, review_status="approved", approved_at=marks.iso_utc(now))
     if current != "approved":
         lines[idx] = "status: approved"
         _write_text_atomic(path, "\n".join(lines))

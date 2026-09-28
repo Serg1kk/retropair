@@ -167,7 +167,7 @@ table.hm td.none { color: var(--muted); font-style: italic; text-align: left; fo
 .chart.dim { opacity: .6; }
 .chart h4 { font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
 .chart .plot { width: 100%; min-height: 150px; }
-.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart svg { display: block; width: 100%; height: auto; overflow: hidden; }
 .chart .note { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .chart .note.open { display: block; }
 .chart .note-btn { background: none; border: 0; padding: 0; color: var(--accent-ink); font-size: 12px; margin-top: 2px; }

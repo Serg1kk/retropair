@@ -335,6 +335,83 @@ class RepeatTest(CollectBase):
         self.assertEqual(self.mtimes(), before)
 
 
+class KnownDuplicateTest(CollectBase):
+    """A14: строка «дубль ключа» — один раз; известный неизменный дубль дальше только счётчик
+    `known_duplicates` и не разбирается повторно; вырос — снова строка; исчез — забыт молча."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.src2 = self.tmp / "src2"
+        self.src2.mkdir()
+        self.copy = self.src2 / "copy.md"
+        shutil.copy(LOGS / "specstory-claude.md", self.copy)
+        cfg = dict(self.cfg)
+        cfg["sources"] = [*cfg["sources"], {"type": "dir", "path": str(self.src2), "person": "me"}]
+        self.write_cfg(cfg)
+        self.name = f"{SPECSTORY_SESSION}.md"
+
+    def dup_lines(self, out: dict) -> list[str]:
+        return [w for w in out["warnings"] if w.startswith("дубль ключа")]
+
+    def entry(self) -> dict:
+        return inventory.load_meta(self.me)[self.name]
+
+    def test_line_once_then_counter_without_parsing(self):
+        out = self.collect()
+        self.assertEqual(len(self.dup_lines(out)), 1, out["warnings"])
+        self.assertEqual(out["known_duplicates"], 0)
+        self.assertEqual(self.entry()["duplicate_sources"],
+                         {str(self.copy): cmd_collect.source_sha256(self.copy)})
+        with mock.patch.object(normalize, "parse_file", wraps=normalize.parse_file) as pf:
+            out = self.collect(LATER)
+        self.assertEqual(self.dup_lines(out), [], out["warnings"])
+        self.assertEqual(out["known_duplicates"], 1)
+        self.assertNotIn(str(self.copy), {str(c.args[0]) for c in pf.call_args_list})
+        self.assertIn("известных дублей источников: 1 (без изменений)", cmd_collect.format_text(out))
+
+    def test_grown_dup_not_richer_warns_again_once(self):
+        self.collect()
+        with open(self.copy, "a", encoding="utf-8") as fh:
+            fh.write("\n\n\n")                   # sha другой, ходов столько же
+        out = self.collect(LATER)
+        lines = self.dup_lines(out)
+        self.assertEqual(len(lines), 1, out["warnings"])
+        self.assertIn("оставлен лежащий", lines[0])
+        self.assertEqual(out["known_duplicates"], 0)
+        self.assertEqual(self.entry()["duplicate_sources"][str(self.copy)],
+                         cmd_collect.source_sha256(self.copy))
+        self.assertEqual(self.entry()["source_path"], str(self.src / "specstory-claude.md"))
+        out = self.collect("2026-09-27T12:00:00Z")
+        self.assertEqual(self.dup_lines(out), [], out["warnings"])
+        self.assertEqual(out["known_duplicates"], 1)
+
+    def test_richer_dup_replaces_copy(self):
+        self.collect()
+        with open(self.copy, "a", encoding="utf-8") as fh:
+            fh.write(NEW_TURN)
+        out = self.collect(LATER)
+        lines = self.dup_lines(out)
+        self.assertEqual(len(lines), 1, out["warnings"])
+        self.assertIn("перезаписан более полной копией", lines[0])
+        self.assertIn("умножение", (self.me / self.name).read_text(encoding="utf-8"))
+        entry = self.entry()
+        self.assertEqual(entry["source_path"], str(self.copy))
+        old_src = self.src / "specstory-claude.md"
+        # прежний держатель — теперь известный дубль: следующий сбор молчит
+        self.assertEqual(entry["duplicate_sources"], {str(old_src): cmd_collect.source_sha256(old_src)})
+        out = self.collect("2026-09-27T12:00:00Z")
+        self.assertEqual(self.dup_lines(out), [], out["warnings"])
+        self.assertEqual(out["known_duplicates"], 1)
+
+    def test_removed_dup_forgotten_silently(self):
+        self.collect()
+        self.copy.unlink()
+        out = self.collect(LATER)
+        self.assertEqual(self.dup_lines(out), [], out["warnings"])
+        self.assertEqual(out["known_duplicates"], 0)
+        self.assertNotIn("duplicate_sources", self.entry())
+
+
 class SanitizerChangeTest(CollectBase):
     """I1: смена правил санитайзера доходит до готовых снапшотов, даже если исходника уже нет."""
 
@@ -798,6 +875,9 @@ class SameSessionOtherSourceTest(CollectBase):
         self.assertIn('"a1"', self.snap.read_text(encoding="utf-8"))
         self.assertEqual([r["state"] for r in self.session_recs()], ["unchanged"])
         self.assertEqual(self.suffixed(), [])
+        # A14: копия из dir — известный дубль, строка «дубль ключа» не повторяется
+        self.assertFalse(any(w.startswith("дубль ключа") for w in out["warnings"]), out["warnings"])
+        self.assertEqual(out["known_duplicates"], 1)
 
     def test_main_branch_growth_is_grown_from_new_reply(self):             # (б)
         self.reviewed_then_cc()

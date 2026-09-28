@@ -92,6 +92,11 @@ tracker. Next period the judge looks for it in the new logs: "followed", "partly
 or "not visible in the logs". "Not visible" does not mean "ignored": the recommendation stays open.
 "Partly" also keeps it open; only "followed" and "not followed" close it.
 
+A recommendation is judged only on logs recorded after the person received it (in self mode that
+is the run time; in team and course with reviewer approval, the approval time). If every log of
+the period ended earlier, for example when a backlog of history is reviewed period after period,
+the only verdict is "too early to judge": the recommendation stays open for the next period.
+
 ## What the person sees
 
 The text: an opening, the "try differently" items and a walk through all eight axes by their

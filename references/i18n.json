@@ -30,7 +30,8 @@
     "followed": {"ru": "Выполнена", "en": "Followed"},
     "partial": {"ru": "Частично", "en": "Partly followed"},
     "ignored": {"ru": "Не выполнена", "en": "Not followed"},
-    "not_observable": {"ru": "Не видно в логах", "en": "Not visible in the logs"}
+    "not_observable": {"ru": "Не видно в логах", "en": "Not visible in the logs"},
+    "not_applicable_yet": {"ru": "Рано судить", "en": "Too early to judge"}
   },
   "rec_statuses": {
     "open": {"ru": "Открыта", "en": "Open"},
@@ -159,7 +160,9 @@
     "not_for_distribution": {"ru": "не для рассылки: данные всех участников", "en": "not for distribution: data of all participants"},
     "reviewer_banner": {"ru": "только для ревьюера: черновики, досье и доказательства всех участников", "en": "reviewer only: drafts, dossiers and evidence of all participants"},
     "unbound_reviews": {"ru": "ревью без прогона", "en": "reviews without a run"},
-    "unbound_reviews_tip": {"ru": "файлы ревью, для которых нет живого прогона (например, прогон отозван); в отчёт не попали", "en": "review files with no live run (for example, the run was retracted); left out of the report"},
+    "unbound_reviews_tip": {"ru": "файлы ревью, которые не привязались к прогону: прогон заменён ревизией, его нет в трекере или файл лежит не у своего человека; в отчёт не попали", "en": "review files not bound to a run: the run was superseded by a revision, is missing from the tracker, or the file sits under another person; left out of the report"},
+    "retracted_reviews": {"ru": "ревью отозванных прогонов", "en": "reviews of retracted runs"},
+    "retracted_reviews_tip": {"ru": "прогон отозван штатно, с причиной; файл ревью остаётся для истории и в отчёт не попадает", "en": "the run was retracted on purpose, with a reason; the review file stays for history and is left out of the report"},
     "lang": {"ru": "Язык", "en": "Language"},
     "theme": {"ru": "Тема", "en": "Theme"},
     "theme_auto": {"ru": "авто", "en": "auto"},
@@ -167,7 +170,9 @@
     "theme_dark": {"ru": "тёмная", "en": "dark"},
     "tile_people": {"ru": "людей", "en": "people"},
     "tile_runs": {"ru": "прогонов", "en": "runs"},
-    "tile_sessions": {"ru": "сессий", "en": "sessions"},
+    "sessions_assessed": {"ru": "сессий оценено", "en": "sessions reviewed"},
+    "sessions_skipped": {"ru": "отсеяно", "en": "skipped"},
+    "sessions_skipped_tip": {"ru": "сессии, отсеянные до оценки: пустой или слишком короткий лог, лог субагента, дубль, другой период, исключённые", "en": "sessions left out before review: empty or too short log, subagent log, duplicate, other period, excluded"},
     "tile_period": {"ru": "период прогонов", "en": "run dates"},
     "tile_open_recs": {"ru": "открытых рекомендаций", "en": "open recommendations"},
     "search": {"ru": "Поиск", "en": "Search"},

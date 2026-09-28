@@ -91,6 +91,14 @@ class TargetsTest(_Base):
             self.assertEqual(Path(m.group(1)), path)
         self.assertIn("людей без прогонов: 1", res.stderr)
 
+    def test_retracted_run_review_is_silent_and_counted_for_reviewer(self):
+        # в фикстуре у отозванного прогона anna есть файл ревью: отзыв штатный, шума нет
+        res = self.ok()
+        self.assertNotIn("отозван", res.stderr)
+        self.assertNotIn("не привязано", res.stderr)
+        meta = _data((self.reports / "reviewer.html").read_text(encoding="utf-8"))["meta"]
+        self.assertEqual((meta["reviews_unbound"], meta["reviews_of_retracted"]), (0, 1))
+
     def test_modes_of_files(self):
         self.ok()
         for name, mode in (("group.html", "group"), ("reviewer.html", "reviewer"),

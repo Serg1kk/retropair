@@ -95,8 +95,8 @@ function recStatus(r) {
   (r.verdicts || []).forEach(v => { if (v.verdict === 'followed' || v.verdict === 'ignored') st = v.verdict; });
   return st;
 }
-const CHIP_CLASS = { followed: 'good', partial: 'warn', ignored: 'bad', not_observable: 'neutral', open: 'open', retired: 'neutral' };
-const CHIP_GLYPH = { followed: '✓', partial: '◐', ignored: '✕', not_observable: '○', open: '●', retired: '·' };
+const CHIP_CLASS = { followed: 'good', partial: 'warn', ignored: 'bad', not_observable: 'neutral', not_applicable_yet: 'neutral', open: 'open', retired: 'neutral' };
+const CHIP_GLYPH = { followed: '✓', partial: '◐', ignored: '✕', not_observable: '○', not_applicable_yet: '◌', open: '●', retired: '·' };
 
 // --- тултип: мышь, фокус с клавиатуры ---
 const tip = document.getElementById('tip');
@@ -196,6 +196,11 @@ function topbar() {
     const u = el('span', 'chip warn', `${esc(t('unbound_reviews'))}: <b class="tnum">${esc(m.reviews_unbound)}</b>`);
     u.setAttribute('data-tip', t('unbound_reviews_tip')); u.tabIndex = 0; flags.appendChild(u);
   }
+  if (REVIEWER && m.reviews_of_retracted) {
+    // Отзыв прогона штатный: только мелкая справка, без жёлтого чипа.
+    const r = el('span', 'muted small', `${esc(t('retracted_reviews'))}: <span class="tnum">${esc(m.reviews_of_retracted)}</span>`);
+    r.setAttribute('data-tip', t('retracted_reviews_tip')); r.tabIndex = 0; flags.appendChild(r);
+  }
   if (flags.childNodes.length) brand.appendChild(flags);
   box.appendChild(brand);
 
@@ -250,7 +255,7 @@ function overview() {
   };
   tiles.appendChild(tile(t('tile_people'), DATA.people.length));
   tiles.appendChild(tile(t('tile_runs'), allPts.length));
-  if (REVIEWER) tiles.appendChild(tile(t('tile_sessions'), sum(allPts, x => x.sessions)));
+  if (REVIEWER) tiles.appendChild(tile(t('sessions_assessed'), sum(allPts, x => x.sessions)));
   const dl = dateLabels(META);
   tiles.appendChild(tile(dl.tile, META.date_from ? fmtDate(META.date_from) + ' – ' + fmtDate(META.date_to) : '—', true));
   if (REVIEWER) tiles.appendChild(tile(t('tile_open_recs'), sum(DATA.people, p => p.recs.filter(r => r.open && !r.pending_approval).length)));
@@ -391,9 +396,23 @@ function drawCharts() {
     host.innerHTML = lineSVG(CHARTS.pts, host.getAttribute('data-axis'), w, CHARTS.selected);
   });
 }
+// Подпись периода под осью X: метка вида run-ГГГГММДД[-N] → «№<номер точки>» (в метке дата
+// запуска, а строкой ниже — дата логов; две даты путают), прочие длиннее 8 знаков — 7 знаков и «…».
+// Полная метка — в <title> подписи и в подсказке точки.
+function periodTick(label, i) {
+  const MAX = 8;
+  const s = String(label == null ? '' : label);
+  if (/^run-\d{8}(-\d+)?$/.test(s)) return `№${i + 1}`;
+  return s.length > MAX ? s.slice(0, MAX - 1) + '…' : s;
+}
+// Крайние подписи прижаты внутрь карточки: левая — от точки вправо, правая — влево.
+function tickAnchor(i, n) {
+  if (n < 2) return 'middle';
+  return i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
+}
 function lineSVG(pts, a, W, selected) {
   const n = pts.length;
-  const padL = 26, padR = 14, padT = 18, plotH = 100, ndY = padT + plotH + 18, H = ndY + 46;
+  const padL = 26, padR = 14, padT = 20, plotH = 100, ndY = padT + plotH + 18, H = ndY + 46;
   const step = n > 1 ? (W - padL - padR) / (n - 1) : 0;
   const X = i => (n > 1 ? padL + i * step : padL + (W - padL - padR) / 2);
   const Y = v => padT + plotH - (v / 4) * plotH;
@@ -429,8 +448,9 @@ function lineSVG(pts, a, W, selected) {
       s += `<circle cx="${x}" cy="${y}" r="5" style="fill:var(--series);stroke:var(--surface)" stroke-width="2"/>`;
       s += `<text x="${x}" y="${y - 11}" text-anchor="middle" font-size="11.5" font-weight="600" style="fill:var(--ink)">${esc(c.score)}</text></g>`;
     }
-    s += `<text x="${x}" y="${H - 22}" text-anchor="middle" font-size="11.5" style="fill:var(--ink-2)">${esc(pt.period)}</text>`;
-    s += `<text x="${x}" y="${H - 8}" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">${esc(fmtShort(pt.date))}</text>`;
+    const anchor = tickAnchor(i, n);
+    s += `<text class="tick-period" x="${x}" y="${H - 22}" text-anchor="${anchor}" font-size="11.5" style="fill:var(--ink-2)"><title>${esc(pt.period)}</title>${esc(periodTick(pt.period, i))}</text>`;
+    s += `<text class="tick-date" x="${x}" y="${H - 8}" text-anchor="${anchor}" font-size="10.5" style="fill:var(--muted)">${esc(fmtShort(pt.date))}</text>`;
   });
   return s + '</svg>';
 }
@@ -701,7 +721,14 @@ function personView() {
   const facts = el('div', 'facts');
   if (last && last.level) facts.appendChild(el('span', 'chip lvl', esc(t('level_last') + ': ' + lvlName(last.level)) + (last.gate ? ` · ${esc(t('gate'))}` : '')));
   facts.appendChild(el('span', null, `${esc(t('tile_runs'))}: <b class="tnum">${p.points.length}</b>`));
-  if (REVIEWER) facts.appendChild(el('span', null, `${esc(t('tile_sessions'))}: <b class="tnum">${sum(p.points, x => x.sessions)}</b>`));
+  if (REVIEWER) {
+    facts.appendChild(el('span', null, `${esc(t('sessions_assessed'))}: <b class="tnum">${sum(p.points, x => x.sessions)}</b>`));
+    const skipped = sum(p.points, x => x.sessions_skipped);
+    if (skipped) {
+      const sk = el('span', 'muted small', `${esc(t('sessions_skipped'))}: <span class="tnum">${skipped}</span>`);
+      sk.setAttribute('data-tip', t('sessions_skipped_tip')); sk.tabIndex = 0; facts.appendChild(sk);
+    }
+  }
   who.appendChild(facts);
   if (REVIEWER) { const st = stackChips(p.points); if (st) who.appendChild(st); }
   hd.appendChild(who);
@@ -738,7 +765,7 @@ function personalView(pp, frag) {
   const facts = el('div', 'facts');
   if (scores && last && last.level) facts.appendChild(el('span', 'chip lvl', esc(t('level_last') + ': ' + lvlName(last.level))));
   facts.appendChild(el('span', null, `${esc(t('tile_runs'))}: <b class="tnum">${pts.length}</b>`));
-  facts.appendChild(el('span', null, `${esc(t('tile_sessions'))}: <b class="tnum">${sum(pts, x => x.sessions)}</b>`));
+  facts.appendChild(el('span', null, `${esc(t('sessions_assessed'))}: <b class="tnum">${sum(pts, x => x.sessions)}</b>`));
   who.appendChild(facts);
   who.appendChild(el('p', 'intro', esc(t('personal_intro'))));
   hd.appendChild(who);

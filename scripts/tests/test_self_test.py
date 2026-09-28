@@ -82,7 +82,9 @@ class RunTest(unittest.TestCase):
             "test_collector_check", "test_render_review", "test_approve"])
 
 
-class SelfTestCliTest(unittest.TestCase):
+class SelfTestCliTest(_util.TempHome, unittest.TestCase):
+    """HOME временный: `sr.main` сдвигает глобальную отметку `plugin-state.json`."""
+
     def cli(self) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         before = sys.dont_write_bytecode

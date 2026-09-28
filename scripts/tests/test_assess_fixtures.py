@@ -33,8 +33,10 @@ RUN_KEYS = [
     "warnings", "turns_total", "axes", "antipatterns", "flags", "gating_triggered",
     "gating_evidence", "task_solved", "summary", "recommendations", "prev_recommendations",
     "feedback_draft", "feedback_parts", "revision", "operator_override", "logs_index_marks",
-    "retracted", "level_judge", "level_computed", "review_status", "artifact", "source",
+    "retracted", "level_judge", "level_computed", "review_status", "approved_at", "artifact", "source",
 ]
+# необязательные поля прогона: отзыв и время approve (A16: момент выдачи рекомендаций при гейте)
+OPTIONAL_RUN_KEYS = {"retracted", "approved_at"}
 AXIS_FIELDS = {"id", "score", "insufficient_evidence", "insufficient_evidence_reason", "evidence",
                "subcriteria", "note"}
 
@@ -271,7 +273,7 @@ class TrackerSchemaTest(unittest.TestCase):
 
     def test_run_keys_and_required(self) -> None:
         self.assertEqual(list(self.run_schema["properties"]), RUN_KEYS)
-        self.assertEqual(set(self.run_schema["required"]), set(RUN_KEYS) - {"retracted"})
+        self.assertEqual(set(self.run_schema["required"]), set(RUN_KEYS) - OPTIONAL_RUN_KEYS)
         self.assertIs(self.run_schema["additionalProperties"], False)
 
     def test_closed_nested_objects(self) -> None:

@@ -741,6 +741,87 @@ class ReplaceTest(TrackerCase):
         self.assertIn(kim_run, self.rejected(payload(), now=LATER, replace=kim_run))
 
 
+class GrownTailTest(TrackerCase):
+    """У выросшей сессии `turns_total` и начало периода считаются по хвосту, а не по всей сессии.
+
+    p1 оценивает сессию S (10 ходов) целиком; к p2 S выросла до 25 (`grown`, `review_from_turn: 10`),
+    плюс новая сессия T (7 ходов). p2 прочитал 15 + 7 ходов, а период p2 не заходит в период p1.
+    """
+
+    S_PATH = "logs/alex/2026-09-01_11-30-00Z-refactor-api.md"
+    T_PATH = "logs/alex/2026-09-08_14-00-00Z-fix-tests.md"
+
+    def edit_index(self, session_id: str, **fields) -> None:
+        index = self.index()
+        _entry(index, session_id).update(fields)
+        self.paths["logs_index"].write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.edit_index(GROWN, turns_total=10, state="new", reviewed=False, reviewed_in_run=None,
+                        reviewed_at=None, reviewed_turns_total=None, reviewed_bytes=None,
+                        review_from_turn=None)
+        p1 = payload()
+        p1["data"]["session_scope"]["sessions"][1].update(
+            turns_total=10, reviewed_from_turn=None, state="new")
+        self.append(p1, period_label="p1")
+        self.approve_live()
+        self.edit_index(GROWN, turns_total=25, state="grown", review_from_turn=10,
+                        log_ended_at="2026-09-09T10:00:00Z")
+        self.edit_index(FIX_ALEX, turns_total=7)
+
+    def p2_grown(self, turns_analyzed: int = 22, extra=()) -> dict:
+        obj = self.p2()
+        obj["metadata"]["turns_analyzed"] = turns_analyzed
+        obj["data"]["session_scope"]["sessions"] = [
+            {"session_id": GROWN, "path": self.S_PATH, "turns_total": 25, "reviewed_from_turn": 10,
+             "state": "grown", "status": "reviewed", "status_note": None},
+            {"session_id": FIX_ALEX, "path": self.T_PATH, "turns_total": 7, "reviewed_from_turn": None,
+             "state": "new", "status": "reviewed", "status_note": None},
+            *extra,
+        ]
+        return obj
+
+    def p2_run(self) -> dict:
+        return self.tracker_doc()["runs"][-1]
+
+    def test_turns_total_counts_only_tail_of_grown_session(self):
+        result = self.append(self.p2_grown(), now=LATER, period_label="p2")
+        self.assertEqual(self.p2_run()["turns_total"], 15 + 7)
+        self.assertFalse([w for w in result["warnings"] if "ходов" in w], result["warnings"])
+
+    def test_period_from_not_before_previous_run_to(self):
+        self.append(self.p2_grown(), now=LATER, period_label="p2")
+        p1, p2 = self.tracker_doc()["runs"]
+        self.assertEqual(p1["period"]["to"], "2026-09-03T12:40:00Z")
+        self.assertGreaterEqual(p2["period"]["from"], p1["period"]["to"])
+        self.assertEqual(p2["period"]["from"], "2026-09-03T12:40:00Z")
+        # конец периода — самая поздняя сессия p2: T в фикстуре перенесена на 11.09 (A16)
+        self.assertEqual(p2["period"]["to"], "2026-09-11T15:05:00Z")
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_judge_turns_mismatch_is_warning_with_both_numbers(self):
+        result = self.append(self.p2_grown(turns_analyzed=32), now=LATER, period_label="p2")
+        self.assertEqual(self.p2_run()["turns_total"], 22)
+        hits = [w for w in result["warnings"] if "судья указал 32" in w and "по индексу 22" in w]
+        self.assertEqual(len(hits), 1, result["warnings"])
+
+    def test_session_outside_index_takes_judge_turns_with_warning(self):
+        ghost = {"session_id": "0a0b0c0d-1111-4222-8333-944445555666", "path": "logs/alex/ghost.md",
+                 "turns_total": 5, "reviewed_from_turn": None, "state": "new", "status": "reviewed",
+                 "status_note": None}
+        result = self.append(self.p2_grown(turns_analyzed=27, extra=[ghost]), now=LATER, period_label="p2")
+        self.assertEqual(self.p2_run()["turns_total"], 27)
+        self.assertEqual(result["logs_unmatched"], 1)
+        hits = [w for w in result["warnings"] if "turns_analyzed" in w and ghost["session_id"] in w]
+        self.assertEqual(len(hits), 1, result["warnings"])
+
+    def test_first_run_period_unchanged_without_previous_run(self):
+        p1 = self.tracker_doc()["runs"][0]
+        self.assertEqual(p1["period"]["from"], "2026-09-01T11:30:00Z")
+        self.assertEqual(p1["turns_total"], 24 + 10)
+
+
 class RecRenumberTest(TrackerCase):
     """A07: `append` перенумеровывает новые рекомендации с `next_rec_number`, в том числе после `retract`."""
 

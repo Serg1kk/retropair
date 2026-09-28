@@ -578,12 +578,13 @@
                 },
                 "verdict": {
                   "type": "string",
-                  "description": "not_observable оставляет рекомендацию открытой.",
+                  "description": "not_observable и not_applicable_yet оставляют рекомендацию открытой; not_applicable_yet — логи периода закончились до выдачи рекомендации, судить рано.",
                   "enum": [
                     "followed",
                     "partial",
                     "ignored",
-                    "not_observable"
+                    "not_observable",
+                    "not_applicable_yet"
                   ]
                 },
                 "evidence": {
@@ -748,6 +749,13 @@
               "draft",
               "approved"
             ]
+          },
+          "approved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Время approve (UTC, YYYY-MM-DDTHH:MM:SSZ): с него рекомендации прогона выданы человеку при гейте ревьюера (team/course). Необязательное: прогоны, одобренные до появления поля, берут reviewed_at с предупреждением."
           },
           "artifact": {
             "type": "null"

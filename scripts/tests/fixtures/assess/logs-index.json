@@ -80,8 +80,8 @@
       "bytes": 11200,
       "turns_total": 16,
       "user_turns": 6,
-      "log_started_at": "2026-09-08T14:00:00Z",
-      "log_ended_at": "2026-09-08T15:05:00Z",
+      "log_started_at": "2026-09-11T14:00:00Z",
+      "log_ended_at": "2026-09-11T15:05:00Z",
       "started_at_source": "log_header",
       "collector": "claude-code",
       "models": [

@@ -10,8 +10,9 @@
 «трекер → индекс» (`lock.file_lock(<трекер>)`, затем `marks.index_lock`).
 
 Статус рекомендации не хранится, а считается на лету по `prev_recommendations` живых прогонов:
-`followed`/`ignored` закрывают, `partial` оставляет открытой, `not_observable` не меняет ничего
-(поведения не было видно, спрашивать про него надо снова). Отозванный прогон (`retracted`) не
+`followed`/`ignored` закрывают, `partial` оставляет открытой, `not_observable` и
+`not_applicable_yet` не меняют ничего (поведения не было видно или логи периода закончились до
+выдачи рекомендации — спрашивать про него надо снова). Отозванный прогон (`retracted`) не
 участвует ни в статусах, ни в проверках, но его номера рекомендаций заняты навсегда.
 """
 
@@ -23,7 +24,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lib import i18n, level, marks, people, registry, schema, text_rules
+from lib import batches, i18n, level, marks, people, registry, schema, text_rules
 from lib.config import load_config
 from lib.lock import file_lock
 from lib.workspace import SrError, read_json, write_json_atomic, ws_paths
@@ -36,6 +37,9 @@ SHORT_MAX_ACTIONS = 2
 LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 PLACE_VERDICTS = {"first_place_above": 1, "second_place_above": 2, "third_place_above": 3}
 CLOSING_VERDICTS = ("followed", "ignored")
+# Вердикты «по логам»: страж append заменяет их на TOO_EARLY_VERDICT, если логи старше выдачи.
+EVALUATED_VERDICTS = ("followed", "partial", "ignored", "not_observable")
+TOO_EARLY_VERDICT = "not_applicable_yet"
 REVIEWED_STATUS = "reviewed"
 APPROVED_STATUS = "approved"
 GATED_MODES = ("team", "course")
@@ -186,8 +190,8 @@ def issued_recs(runs: list, person_id: str) -> dict[str, dict]:
     """Выданные рекомендации человека со статусом на лету: `id → {rec, status, run_id}`.
 
     Считается по живым прогонам в порядке списка: `recommendations` выдают, `prev_recommendations`
-    меняют статус (`followed`/`ignored` закрывают, `partial` → `open`, `not_observable` — без
-    изменений). Вердикт по неизвестному id пропускается (его ловит `validate_run`).
+    меняют статус (`followed`/`ignored` закрывают, `partial` → `open`, `not_observable` и
+    `not_applicable_yet` — без изменений). Вердикт по неизвестному id пропускается (его ловит `validate_run`).
     """
     issued: dict[str, dict] = {}
     for run in runs:
@@ -814,6 +818,68 @@ def _period_dates(run: dict, entries: list[dict]) -> tuple[str | None, str | Non
     return (min(dates), max(dates)) if dates else (None, None)
 
 
+def _tail_turns(entry: dict) -> int | None:
+    """Ходы сессии, прочитанные прогоном: у выросшей (`review_from_turn`) — хвост, иначе все.
+
+    Берётся до пометки: `mark_reviewed` снимает `review_from_turn`. `None` — по записи не посчитать.
+    """
+    total = entry.get("turns_total")
+    if not isinstance(total, int) or isinstance(total, bool):
+        return None
+    start = entry.get("review_from_turn")
+    if start is None:
+        return total
+    if not isinstance(start, int) or isinstance(start, bool) or not 0 <= start <= total:
+        return None
+    return total - start
+
+
+def _run_turns(judge_turns, tails: list[int], unknown: list[str]) -> tuple[int | None, list[str]]:
+    """`turns_total` прогона по индексу (сумма `_tail_turns` оценённых сессий); вернуть (ходы, предупреждения).
+
+    Хоть одну сессию по индексу не посчитать → `metadata.turns_analyzed` судьи целиком и строка.
+    Расхождение с судьёй — строка, не ошибка: судья суммирует пачки, индекс знает хвосты.
+    """
+    if unknown:
+        return judge_turns, [
+            f"turns_total прогона взят из metadata.turns_analyzed судьи ({judge_turns}): "
+            f"по индексу логов не посчитать ходы сессий {', '.join(unknown)}"
+        ]
+    counted = sum(tails)
+    if judge_turns is None:
+        return counted, [f"в metadata судьи нет turns_analyzed: turns_total = {counted} по индексу логов"]
+    if judge_turns != counted:
+        return counted, [
+            f"судья указал {judge_turns} ходов, по индексу {counted}: turns_total прогона = {counted} "
+            f"(у выросших сессий — только хвост)"
+        ]
+    return counted, []
+
+
+def _clamp_from(run: dict, runs: list, frm, to) -> tuple[str | None, list[str]]:
+    """Начало периода не раньше `period.to` предыдущего живого прогона человека (выросшая сессия).
+
+    Предыдущий — ближайший живой прогон того же человека с `period.to`, стоящий в `runs` до `run`.
+    `to` не трогается; если `to` раньше конца предыдущего — сдвиг дал бы `from > to`: `from` остаётся,
+    в предупреждение строка. Нет предыдущего — `from` как есть.
+    """
+    if not isinstance(frm, str):
+        return frm, []
+    pos = next((i for i, r in enumerate(runs) if r is run), len(runs))
+    for prev in reversed(runs[:pos]):
+        prev_to = (prev.get("period") or {}).get("to") if isinstance(prev, dict) else None
+        if is_live(prev) and prev.get("person_id") == run.get("person_id") and isinstance(prev_to, str):
+            break
+    else:
+        return frm, []
+    if frm >= prev_to:
+        return frm, []
+    if isinstance(to, str) and to < prev_to:
+        return frm, [f"период прогона ({frm} — {to}) заходит в период {prev.get('run_id')} "
+                     f"(до {prev_to}), а сдвиг начала дал бы начало позже конца: начало не сдвинуто"]
+    return prev_to, []
+
+
 def _touch_registry(root: Path, reviewed_at: str) -> list[str]:
     """`last_run_at` = `reviewed_at` в реестре workspaces; вернуть предупреждения итога.
 
@@ -845,7 +911,8 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
     выдаёт `run_mode_label` (уникальна у человека); явная метка живого прогона того же человека
     без `--replace` → `SrError(1)`. Итоговая метка — в `period_label` результата. Сессии со статусом из `marks.OPEN_STATUSES`
     (`other_period`) в индексе не закрываются (`logs_left_open`); запись со штампом более нового
-    прогона не перетирается (`logs_kept_newer`).
+    прогона не перетирается (`logs_kept_newer`). `turns_total` — по индексу (`_run_turns`: у выросшей
+    сессии только хвост), начало периода не раньше конца предыдущего живого прогона (`_clamp_from`).
     """
     root = Path(root)
     now = now or datetime.now(timezone.utc)
@@ -910,14 +977,23 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
         warnings: list[str] = list(renumbered)
         with marks.index_lock(root):
             index = marks.load_index(root)
+            # A16: вердикт по рекомендации, выданной после всех логов прогона, — not_applicable_yet
+            cfg = load_config(root)
+            guard = early_verdict_guard(run, work["runs"], index, reviewer_gated(cfg), cfg.get("lang") or "ru")
+            run["warnings"] = list(run["warnings"]) + guard
+            warnings += guard
             unmatched: list[str] = []
             entries: list[dict] = []
             kept: list[str] = []
+            tails: list[int] = []
+            untold: list[str] = []  # оценённые сессии, чьи ходы по индексу не посчитать
             left_open = [_session_ref(s) for s in run["sessions_reviewed"]
                          if s.get("status") in marks.OPEN_STATUSES]
             to_mark = [s for s in run["sessions_reviewed"] if s.get("status") not in marks.OPEN_STATUSES]
             if index is None:
                 unmatched = [_session_ref(s) for s in to_mark]
+                untold = [_session_ref(s) for s in to_mark
+                          if (s.get("status") or REVIEWED_STATUS) == REVIEWED_STATUS]
                 warnings.append(
                     f"индекса логов нет ({ws_paths(root)['logs_index']}): пометки не поставлены, "
                     f"следующий прогон увидит эти сессии как новые"
@@ -934,10 +1010,14 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
                             old_by_key[mark.get("key")] = mark
                 for session in to_mark:
                     entry = _lookup(index, person_id, session)
+                    status = session.get("status") or REVIEWED_STATUS
+                    tail = _tail_turns(entry) if entry is not None else None  # до пометки
+                    if status == REVIEWED_STATUS:
+                        (tails if tail is not None else untold).append(
+                            tail if tail is not None else _session_ref(session))
                     if entry is None:
                         unmatched.append(_session_ref(session))
                         continue
-                    status = session.get("status") or REVIEWED_STATUS
                     mark, newer = _place_mark(entry, run, work["runs"], status, session.get("status_note"),
                                               now_iso, old_by_key)
                     if newer is not None:
@@ -949,7 +1029,10 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
                     warnings.append(
                         "в индексе логов не нашлись сессии, они останутся новыми: " + ", ".join(unmatched)
                     )
-            run["period"]["from"], run["period"]["to"] = _period_dates(run, entries)
+            frm, run["period"]["to"] = _period_dates(run, entries)
+            run["period"]["from"], clamp_warn = _clamp_from(run, work["runs"], frm, run["period"]["to"])
+            run["turns_total"], turns_warn = _run_turns(run["turns_total"], tails, untold)
+            warnings += clamp_warn + turns_warn
             marked, expected = marks.coverage(run, index)
             if index is not None and marked < expected:
                 warnings.append(
@@ -986,7 +1069,8 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
 def rec_statuses(tr: dict, person_id: str) -> dict[str, str]:
     """`REC-id → статус` выданных рекомендаций человека, на лету по живым прогонам.
 
-    `followed`/`ignored` закрывают, `partial` оставляет открытой, `not_observable` не меняет.
+    `followed`/`ignored` закрывают, `partial` оставляет открытой, `not_observable` и
+    `not_applicable_yet` не меняют.
     Рекомендации отозванного прогона сюда не попадают, его вердикты тоже не считаются.
     """
     return {rid: item["status"] for rid, item in issued_recs(tr.get("runs") or [], person_id).items()}
@@ -1004,30 +1088,182 @@ def _awaits_approval(run: dict, gated: bool) -> bool:
     return gated and run.get("review_status") != APPROVED_STATUS
 
 
-def open_recs(tr: dict, person_id: str, *, gated: bool) -> dict:
-    """`{open, pending_approval, next_number}`: рекомендации `{id, axis, text, period, run_id}`.
+# --- момент выдачи рекомендации и логи после него -----------------------------
+
+
+def parse_ts(value) -> datetime | None:
+    """Время из трекера или индекса логов (`YYYY-MM-DDTHH:MM:SSZ`, пробел вместо `T`, смещение)
+    → aware datetime в UTC; не строка или не разбирается → `None` (вызывающий пишет предупреждение)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        at = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return (at if at.tzinfo is not None else at.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
+def rec_issue_time(run: dict, gated: bool) -> tuple[str | None, str | None]:
+    """(момент выдачи рекомендаций прогона, предупреждение или `None`).
+
+    Без гейта ревьюера (self, team/course с `reviewer_gate: false`) текст уходит человеку сразу:
+    момент выдачи — `reviewed_at` прогона. С гейтом — `approved_at` (время approve); черновик →
+    `(None, None)`: человек его не получал. Одобренный прогон без `approved_at` (одобрен до
+    появления поля) → `reviewed_at` со строкой-предупреждением: момент выдачи мог быть позже.
+    """
+    if _awaits_approval(run, gated):
+        return None, None
+    if gated:
+        approved = run.get("approved_at")
+        if isinstance(approved, str) and approved.strip():
+            return approved, None
+        return run.get("reviewed_at"), (
+            f"прогон {run.get('run_id')} одобрен без approved_at (одобрение записано до появления поля): "
+            f"момент выдачи его рекомендаций взят по reviewed_at {run.get('reviewed_at')}, "
+            f"настоящий approve мог быть позже"
+        )
+    return run.get("reviewed_at"), None
+
+
+def _session_label(entry: dict) -> str:
+    return str(entry.get("session_id") or entry.get("key") or entry.get("path") or "?")
+
+
+def _undated(entries: list[dict]) -> list[str]:
+    """Предупреждения по сессиям без `log_ended_at` (и без начала после любой выдачи): не угадываем."""
+    return [f"у сессии {_session_label(e)} нет дат лога (log_ended_at): она не считается сессией "
+            f"после выдачи рекомендаций" for e in entries if parse_ts(e.get("log_ended_at")) is None]
+
+
+def _after(entry: dict, issued: datetime) -> bool:
+    """Сессия шла после выдачи: `log_ended_at > issued` (длинная сессия, начатая до выдачи и
+    продолженная после, годится). Конца нет, но начало позже выдачи — тоже после; иначе нет."""
+    end = parse_ts(entry.get("log_ended_at"))
+    if end is not None:
+        return end > issued
+    start = parse_ts(entry.get("log_started_at"))
+    return start is not None and start > issued
+
+
+def rec_evaluable(issued_at, entries: list[dict]) -> bool:
+    """Есть ли среди записей индекса `entries` сессия, законченная после `issued_at`."""
+    issued = parse_ts(issued_at)
+    return issued is not None and any(_after(e, issued) for e in entries)
+
+
+def period_session_entries(root: Path, person_id: str, period_label: str | None) -> tuple[list[dict], list[str]]:
+    """Записи индекса, которые пойдут в пачки периода (как `batches`), и предупреждения.
+
+    Нет индекса → `([], [строка])`: без дат сессий ни одна рекомендация не оценима.
+    """
+    index = marks.load_index(root)
+    if index is None:
+        return [], [f"индекса логов нет ({ws_paths(root)['logs_index']}): даты сессий периода не "
+                    f"известны, ни одна рекомендация не оценима (evaluable: false)"]
+    entries = [e for e in index.get("logs") or [] if isinstance(e, dict) and e.get("person_id") == person_id]
+    return batches.period_candidates(entries, load_config(root)["batches"], period_label), []
+
+
+def open_recs(tr: dict, person_id: str, *, gated: bool, sessions: list[dict] | None = None) -> dict:
+    """`{open, pending_approval, next_number}`: рекомендации `{id, axis, text, period, run_id, issued_at}`.
 
     `gated` (`reviewer_gated(config)`) → в `open` только рекомендации одобренных прогонов,
     открытые рекомендации живых неодобренных прогонов — в `pending_approval`: человек их не
     получал, вердикт по ним откладывается до approve. Без гейта `pending_approval` пуст.
-    `period` — метка периода прогона, выдавшего рекомендацию. Номер считается по всем прогонам,
-    включая отозванные и черновики: их номера заняты навсегда.
+    `period` — метка периода прогона, выдавшего рекомендацию; `issued_at` — момент выдачи
+    (`rec_issue_time`; у черновых `None`). Номер считается по всем прогонам, включая отозванные
+    и черновики: их номера заняты навсегда.
+
+    `sessions` — записи индекса сессий текущего периода (`period_session_entries`): тогда у
+    каждой рекомендации из `open` есть `evaluable` (хоть одна сессия закончена после
+    `issued_at`), а в результате — `warnings` (сессии без дат, одобрение без `approved_at`).
     """
     by_id = {r.get("run_id"): r for r in tr.get("runs") or [] if isinstance(r, dict)}
-    opened, pending = [], []
+    opened, pending, warnings = [], [], []
     for rid, item in issued_recs(tr.get("runs") or [], person_id).items():
         if item["status"] != "open":
             continue
         run = by_id.get(item["run_id"]) or {}
+        issued_at, warning = rec_issue_time(run, gated)
+        if warning and warning not in warnings:
+            warnings.append(warning)
         target = pending if _awaits_approval(run, gated) else opened
-        target.append({
+        rec = {
             "id": rid,
             "axis": item["rec"].get("axis"),
             "text": item["rec"].get("text"),
             "period": (run.get("period") or {}).get("label"),
             "run_id": item["run_id"],
-        })
-    return {"open": opened, "pending_approval": pending, "next_number": next_rec_number(tr, person_id)}
+            "issued_at": issued_at,
+        }
+        if sessions is not None and target is opened:
+            rec["evaluable"] = rec_evaluable(issued_at, sessions)
+            if parse_ts(issued_at) is None:
+                warnings.append(f"у {rid} нет момента выдачи (reviewed_at/approved_at прогона "
+                                f"{item['run_id']}: {issued_at!r}): evaluable: false")
+        target.append(rec)
+    result = {"open": opened, "pending_approval": pending, "next_number": next_rec_number(tr, person_id)}
+    if sessions is not None:
+        result["warnings"] = warnings + (_undated(sessions) if opened else [])
+    return result
+
+
+def early_verdict_guard(run: dict, runs: list, index: dict | None, gated: bool, lang: str = "ru") -> list[str]:
+    """Страж `append`: вердикт по рекомендации, выданной после всех логов прогона → `not_applicable_yet`.
+
+    Вердикт `followed|partial|ignored|not_observable` по рекомендации, у которой ни одна
+    оценённая сессия прогона (`sessions_reviewed` со статусом `reviewed`, даты из индекса) не
+    закончена после момента выдачи (`rec_issue_time`), заменяется на `not_applicable_yet`:
+    рекомендация остаётся открытой. Каждая замена — строка в возвращаемых предупреждениях (они
+    идут в `warnings` прогона и в вывод команды). Сессия без дат или вне индекса после выдачи не
+    считается (не угадываем) и тоже даёт строку. Черновые рекомендации не трогаются: вердикт
+    по ним отклоняет `draft_verdict_problems`. Проверяется только новый прогон; записанные
+    раньше вердикты `validate_file` не трогает.
+    """
+    pid = run.get("person_id") or ""
+    pos = next((i for i, r in enumerate(runs) if r is run), len(runs))
+    prior = [r for r in runs[:pos] if isinstance(r, dict)]
+    by_id = {r.get("run_id"): r for r in prior}
+    issued = issued_recs(prior, pid)
+    verdicts = run.get("prev_recommendations") or []
+    targets = [v for v in verdicts if isinstance(v, dict) and v.get("verdict") in EVALUATED_VERDICTS
+               and v.get("id") in issued]
+    if not targets:
+        return []
+    entries, warnings = [], []
+    for session in run.get("sessions_reviewed") or []:
+        if not isinstance(session, dict) or (session.get("status") or REVIEWED_STATUS) != REVIEWED_STATUS:
+            continue
+        entry = _lookup(index, pid, session) if index is not None else None
+        if entry is None:
+            warnings.append(f"сессии {_session_ref(session)} нет в индексе логов: её даты не известны, "
+                            f"после выдачи рекомендаций она не считается")
+            continue
+        entries.append(entry)
+    warnings += _undated(entries)
+    for verdict in targets:
+        source = by_id.get(issued[verdict["id"]]["run_id"]) or {}
+        if _awaits_approval(source, gated):
+            continue
+        issued_at, warning = rec_issue_time(source, gated)
+        if warning and warning not in warnings:
+            warnings.append(warning)
+        if rec_evaluable(issued_at, entries):
+            continue
+        old = verdict["verdict"]
+        verdict.update(verdict=TOO_EARLY_VERDICT, evidence=None, note=(
+            f"the period's logs ended before the recommendation was issued ({issued_at}); "
+            f"the judge's verdict {old} was replaced" if lang == "en" else
+            f"логи периода закончились до выдачи рекомендации ({issued_at}); вердикт судьи {old} заменён"))
+        warnings.append(
+            f"вердикт {verdict['id']} заменён: логи периода старше выдачи ({old} → not_applicable_yet; "
+            f"выдана {issued_at}, ни одна оценённая сессия прогона не закончена позже; рекомендация "
+            f"остаётся открытой, судья не перезапускается)"
+        )
+    return warnings
 
 
 # --- правка прогона ----------------------------------------------------------

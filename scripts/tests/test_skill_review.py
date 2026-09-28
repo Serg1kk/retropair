@@ -410,6 +410,32 @@ class OrchestrationTest(unittest.TestCase):
         append_row = next(ln for ln in section.splitlines() if ln.startswith("| `append`"))
         self.assertIn("неодобренного черновика", append_row)
 
+    def test_open_recs_issued_at_and_evaluable_from_script(self) -> None:
+        """A16: `issued_at` и `evaluable` из `open-recs --period-label` идут агентам как есть;
+        замена вердикта стражем `append` — код 0, судья не перезапускается."""
+        brief = self.text.split("## Бриф коллектора", 1)[1].split("\n## ", 1)[0]
+        row = next(ln for ln in brief.splitlines() if ln.startswith("| `open_recs`"))
+        for phrase in ("issued_at", "evaluable", "--period-label", "not_applicable_yet"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, row)
+        first = phases(self.skill.split("\n---\n", 1)[1])[1]
+        for phrase in ("open-recs <person> --json --period-label <label>", "issued_at", "evaluable",
+                       "сам не пересчитывай", "заново перед каждым прогоном"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, first)
+        seventh = phases(self.skill.split("\n---\n", 1)[1])[7]
+        self.assertIn("not_applicable_yet", seventh)
+        self.assertIn("логи периода старше выдачи", seventh)
+        codes = self.text.split("## Коды выхода", 1)[1].split("\n## ", 1)[0]
+        append_row = next(ln for ln in codes.splitlines() if ln.startswith("| `append`"))
+        self.assertIn("логи периода старше выдачи", append_row)
+        judge = (PLUGIN / "agents" / "log-judge.md").read_text(encoding="utf-8")
+        collector = (PLUGIN / "agents" / "log-collector.md").read_text(encoding="utf-8")
+        contract = (PLUGIN / "skills" / "review" / "references" / "judge-input.md").read_text(encoding="utf-8")
+        self.assertIn("`evaluable: false` → всегда `not_applicable_yet`", judge)
+        self.assertIn("Сигналы по рекомендации с `evaluable: false` не собирай", collector)
+        self.assertIn("`open_recs[]{id,text,period,issued_at,evaluable}`", contract)
+
     def test_judge_brief_carries_next_rec_number(self) -> None:
         """A07: судья получает следующий свободный номер, `append` всё равно перенумерует."""
         judge = self.text.split("## Бриф судьи", 1)[1].split("\n## ", 1)[0]

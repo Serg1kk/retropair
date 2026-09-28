@@ -38,6 +38,11 @@
   «другая сессия» в `warnings`. Разные исходники одного ключа за прогон разводятся так же; копии
   одной сессии (одна — префикс другой) — побеждает больше ходов, больше байтов, путь; строка
   «дубль ключа …»;
+- проигравший исходник-дубль запоминается в сайдкаре записи снапшота: `duplicate_sources`
+  {переносимый путь: sha256 сырых байтов}; прежний держатель, уступивший более полной копии, —
+  тоже. Известный дубль с тем же sha не разбирается, строки «дубль ключа» нет — только счётчик
+  `known_duplicates` в сводке; sha сменился — обычное сравнение (строка, замена более полной
+  копией); исходника больше нет среди источников — запись уходит молча;
 - склейка до разбора исходников: снапшот `<id>_<sha8>` с ключом `<id>#<sha8>` и `session_id ==
   <id>` (настоящий идентификатор) — копия той же сессии, разведённая сбором 0.1.2–0.1.4. Под
   именем `<id>` остаётся более полная из двух, файл-дубль удаляется (это производная копия,
@@ -224,6 +229,49 @@ class Run:
                 and entry.get("source_path") == portable
                 and (self.metas.logs / sf.person_id / name).is_file())
 
+    # ── известные дубли (A14) ─────────────────────────────────────────────────
+
+    def known_duplicate(self, sf: sources.SourceFile, sha: str) -> bool:
+        """Исходник записан в `duplicate_sources` лежащего снапшота с тем же sha сырых байтов —
+        копия уже сравнена и проиграла: не разбирается, строки «дубль ключа» нет (счётчик)."""
+        portable = portable_path(sf.path, self.root)
+        if self.metas.by_source(sf.person_id, portable, str(sf.path)) is not None:
+            return False                    # исходник сам держит снапшот — решает `unchanged`
+        for name, entry in self.metas.of(sf.person_id).items():
+            dups = entry.get("duplicate_sources") if isinstance(entry, dict) else None
+            if isinstance(dups, dict) and portable in dups:
+                return (dups[portable] == sha and name not in self.replace
+                        and (self.metas.logs / sf.person_id / name).is_file())
+        return False
+
+    def remember_duplicates(self, person: str, name: str, cands: list[dict]) -> None:
+        """Проигравшие копии → `duplicate_sources` записи снапшота `name` (путь → sha)."""
+        entry = self.metas.of(person).get(name)
+        if not isinstance(entry, dict):
+            return                          # снапшот без сайдкара: запомнить негде, строка повторится
+        dups = dict(entry.get("duplicate_sources") or {})
+        for c in cands:
+            if c["portable"] != entry.get("source_path"):
+                dups[c["portable"]] = c["sha"]
+        if dups:
+            entry["duplicate_sources"] = dups
+
+    def forget_missing_duplicates(self, present: set[tuple[str, str]], skip: set[str]) -> None:
+        """Дубль-исходника больше нет среди источников — запись уходит из `duplicate_sources` молча.
+        Люди из `skip` (без согласия: источники не читались) не трогаются."""
+        for person, meta in self.metas.data.items():
+            if person in skip:
+                continue
+            for entry in meta.values():
+                dups = entry.get("duplicate_sources") if isinstance(entry, dict) else None
+                if not isinstance(dups, dict):
+                    continue
+                kept = {p: s for p, s in dups.items() if (person, p) in present}
+                if kept:
+                    entry["duplicate_sources"] = kept
+                else:
+                    entry.pop("duplicate_sources")
+
     # ── ключи и победители ────────────────────────────────────────────────────
 
     def sticky(self, c: dict) -> None:
@@ -256,6 +304,7 @@ class Run:
                     self.warnings.append(f"дубль ключа {items[0]['key']}: "
                                          + ", ".join(str(c["src"].path) for c in items)
                                          + f" — взят {items[0]['src'].path}")
+                items[0]["dups"] = items[1:]
                 winners.append(items[0])
                 continue
             items.sort(key=lambda c: (-c["doc"]["turns_total"], -c["doc"]["bytes"], str(c["src"].path)))
@@ -272,6 +321,7 @@ class Run:
                     self.warnings.append(f"дубль ключа {cl[0]['key']}: "
                                          + ", ".join(str(c["src"].path) for c in cl)
                                          + f" — взят {cl[0]['src'].path}")
+                cl[0]["dups"] = cl[1:]
             if len(clusters) > 1:
                 entry = self.metas.of(person).get(name)
                 holder_path = entry.get("source_path") if isinstance(entry, dict) else None
@@ -307,9 +357,10 @@ class Run:
         replace = c["name"] in self.replace
         if replace:
             self.replaced.add(c["name"])
+        same_src = bool(old) and old.get("source_path") in (c["portable"], str(c["src"].path))
+        took_over = False                   # та же сессия, копия из другого исходника полнее
         if target.is_file() and not replace:
             old_text = target.read_text(encoding="utf-8", errors="replace")
-            same_src = bool(old) and old.get("source_path") in (c["portable"], str(c["src"].path))
             new_doc, old_doc = normalize.parse(text), normalize.parse(old_text)
             new_t, old_t = _pairs(new_doc["turns"]), _pairs(old_doc["turns"])
             if same_src and len(new_t) < len(old_t):
@@ -321,6 +372,7 @@ class Run:
             if not same_src and not inventory.is_content_key(c["base_key"]):
                 src = old.get("source_path") if old else "неизвестен"
                 if _richness(new_doc) > _richness(old_doc):
+                    took_over = True
                     self.warnings.append(
                         f"дубль ключа {c['key']}: {src} — копия той же сессии, что {c['src'].path}; "
                         f"logs/{person}/{c['name']} перезаписан более полной копией")
@@ -328,15 +380,17 @@ class Run:
                     self.warnings.append(
                         f"дубль ключа {c['key']}: {c['src'].path} — копия той же сессии, что "
                         f"logs/{person}/{c['name']} (исходник {src}); оставлен лежащий")
+                    self.remember_duplicates(person, c["name"], [c, *c.get("dups", [])])
                     return
             elif not same_src:
                 if len(new_t) > len(old_t) and _is_prefix(old_t, new_t):
-                    pass                        # та же сессия, новый исходник полнее — берём его
+                    took_over = True            # та же сессия, новый исходник полнее — берём его
                 elif _is_prefix(new_t, old_t):
                     src = old.get("source_path") if old else "неизвестен"
                     self.warnings.append(
                         f"дубль ключа {c['key']}: {c['src'].path} — копия той же сессии, что "
                         f"logs/{person}/{c['name']} (исходник {src}); оставлен лежащий")
+                    self.remember_duplicates(person, c["name"], [c, *c.get("dups", [])])
                     return
                 elif redirected:
                     self.warnings.append(
@@ -357,7 +411,16 @@ class Run:
                 write_text_atomic(target, text)
         else:
             write_text_atomic(target, text)
-        meta[c["name"]] = _meta_entry(c, hits, self.fp)
+        meta[c["name"]] = entry = _meta_entry(c, hits, self.fp)
+        # известные дубли переходят к новой записи, если под именем та же сессия; прежний держатель,
+        # уступивший более полной копии, сам становится известным дублем
+        dups = dict(old.get("duplicate_sources") or {}) if old and (same_src or took_over) else {}
+        if took_over and old.get("source_path") and old.get("source_sha256"):
+            dups[old["source_path"]] = old["source_sha256"]
+        dups.update((d["portable"], d["sha"]) for d in c.get("dups", []))
+        dups.pop(c["portable"], None)
+        if dups:
+            entry["duplicate_sources"] = dups
         rep = sanitize.report(c["portable"], hits)
         if rep["rules_hit"] or rep["renamed"]:
             self.sanitized.append(rep)
@@ -507,6 +570,7 @@ def _pass(root: Path, providers: list[str] | None, now: str | None = None,
     files = sorted(files, key=lambda sf: (order[sf.source_id], str(sf.path)))
 
     cands = []
+    known_dups = 0
     for sf in files:
         try:
             sha = source_sha256(sf.path)
@@ -515,11 +579,16 @@ def _pass(root: Path, providers: list[str] | None, now: str | None = None,
             continue
         if run.unchanged(sf, sha):
             continue
+        if run.known_duplicate(sf, sha):
+            known_dups += 1
+            continue
         c = _candidate(root, sf, sha, run.warnings)
         if c is not None:
             cands.append(c)
     for c in run.pick_winners(cands):
         run.snapshot(c)
+    run.forget_missing_duplicates({(sf.person_id, portable_path(sf.path, root)) for sf in files},
+                                  denied)
     run.resanitize_stale()
     run.metas.save()
     for name in sorted(run.replace - run.replaced):
@@ -542,6 +611,7 @@ def _pass(root: Path, providers: list[str] | None, now: str | None = None,
         "slug_named": junk["slug_named"],
         "context_report": junk["context_report"],
         "warnings": list(index.get("warnings") or []),
+        "known_duplicates": known_dups,
         "specstory": sync_lines,
         "last_snapshot_at": index.get("updated_at"),
         "logs_indexed": len(index.get("logs") or []),
@@ -618,6 +688,8 @@ def format_text(out: dict) -> str:
             lines.append(f"- {rep['file']}: {rules}; имён заменено {rep['renamed']}")
     lines.append(f"*.orig найдено (не взяты): {out['orig']} · context-report (не взяты): "
                  f"{out['context_report']} · слаг-файлов SpecStory: {out['slug_named']}")
+    if out.get("known_duplicates"):
+        lines.append(f"известных дублей источников: {out['known_duplicates']} (без изменений)")
     if out["warnings"]:
         lines.append("предупреждения:")
         lines += [f"- {w}" for w in out["warnings"]]

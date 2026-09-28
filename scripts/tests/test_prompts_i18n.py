@@ -39,7 +39,8 @@ ENUM_MAP = {
     "levels": [("judge", "data.summary.level_judge")],
     "verdicts": [("judge", "data.feedback_parts.criteria.items.verdict")],
     "rec_statuses": [("judge", "data.recommendations.items.status")],
-    "rec_verdicts": [("judge", "data.prev_recommendations.items.verdict")],
+    "rec_verdicts": [("judge", "data.prev_recommendations.items.verdict"),
+                     ("tracker", "runs.items.prev_recommendations.items.verdict")],
     "session_statuses": [
         ("judge", "data.session_scope.sessions.items.status"),
         ("collector", "sessions.items.status"),
@@ -120,7 +121,8 @@ def catalog(text: str) -> tuple[dict[str, str], dict[str, str]]:
 
 def expected_keys(i18n: dict) -> dict[str, list[str]]:
     """Секция → ключи, которые обязаны быть в i18n, из схем и референсов."""
-    schemas = {"judge": load_schema("judge"), "collector": load_schema("collector")}
+    schemas = {"judge": load_schema("judge"), "collector": load_schema("collector"),
+               "tracker": load_schema("tracker")}
     out: dict[str, list[str]] = {}
     for section, refs in ENUM_MAP.items():
         keys: list[str] = []

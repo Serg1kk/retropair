@@ -374,6 +374,72 @@ class ReportJsBehaviourTest(unittest.TestCase):
         self.assertEqual(_run_node(script),
                          ["T:reason_other", "T:reason_short_log", "some new code", "T:no_data"])
 
+    def _ticks(self, labels: list) -> list:
+        script = (
+            _js_function(self.js, "periodTick") + "\n" + _js_function(self.js, "tickAnchor")
+            + f"\nconst L = {json.dumps(labels)};"
+            "\nprocess.stdout.write(JSON.stringify(L.map((l, i) => [periodTick(l, i), tickAnchor(i, L.length)])));"
+        )
+        return _run_node(script)
+
+    def test_period_tick_run_labels_become_period_number_without_date(self):
+        got = [tick for tick, _ in self._ticks(["run-20260927", "run-20260927-2", "run-20261231-14"])]
+        self.assertEqual(got, ["№1", "№2", "№3"])
+        self.assertFalse(any("." in tick for tick in got))
+
+    def test_period_tick_ellipsis_only_for_long_labels(self):
+        got = [tick for tick, _ in self._ticks(["P1", "2026-W38", "sprint-review-12", "run-2026"])]
+        self.assertEqual(got, ["P1", "2026-W38", "sprint-…", "run-2026"])
+        self.assertTrue(all(len(t) <= 8 for t in got))
+
+    def test_tick_anchor_keeps_edge_labels_inside(self):
+        self.assertEqual([a for _, a in self._ticks(["a", "b", "c"])], ["start", "middle", "end"])
+        self.assertEqual([a for _, a in self._ticks(["a", "b"])], ["start", "end"])
+        self.assertEqual([a for _, a in self._ticks(["a"])], ["middle"])
+
+    def test_line_svg_short_ticks_with_full_label_in_title(self):
+        pts = [{"period": p, "date": d, "axes": {"a": {"ie": False, "score": 2}}}
+               for p, d in (("run-20260927", "2026-09-27"), ("run-20260927-2", "2026-09-27"),
+                            ("run-20260928", "2026-09-28"))]
+        script = (
+            "const esc = s => String(s); const axName = a => a; const t = k => k;\n"
+            "const fmtDate = s => s; const fmtShort = s => s.slice(8, 10) + '.' + s.slice(5, 7);\n"
+            "const reasonName = r => r;\n"
+            + _js_function(self.js, "periodTick") + "\n" + _js_function(self.js, "tickAnchor") + "\n"
+            + _js_function(self.js, "lineSVG")
+            + f"\nprocess.stdout.write(JSON.stringify(lineSVG({json.dumps(pts)}, 'a', 300, -1)));"
+        )
+        svg = _run_node(script)
+        ticks = re.findall(r'<text class="tick-period"[^>]*text-anchor="(\w+)"[^>]*>'
+                           r'<title>([^<]*)</title>([^<]*)</text>', svg)
+        self.assertEqual(ticks, [("start", "run-20260927", "№1"),
+                                 ("middle", "run-20260927-2", "№2"),
+                                 ("end", "run-20260928", "№3")])
+        dates = re.findall(r'<text class="tick-date"[^>]*text-anchor="(\w+)"', svg)
+        self.assertEqual(dates, ["start", "middle", "end"])
+
+    def test_chart_svg_clips_overflow(self):
+        css = (SCRIPTS / "lib" / "report_assets" / "report.css").read_text(encoding="utf-8")
+        rule = re.search(r"^\.chart svg \{([^}]*)\}", css, re.M)
+        self.assertIsNotNone(rule)
+        self.assertIn("overflow: hidden", rule.group(1))
+
+    def test_person_heads_count_assessed_sessions(self):
+        for name in ("personView", "personalView"):
+            with self.subTest(function=name):
+                body = _js_function(self.js, name)
+                self.assertIn("t('sessions_assessed')", body)
+                self.assertNotIn("t('tile_sessions')", body)
+        self.assertIn("t('sessions_skipped')", _js_function(self.js, "personView"))
+
+    def test_retracted_reviews_shown_small_not_as_warning_chip(self):
+        body = _js_function(self.js, "topbar")
+        self.assertIn("m.reviews_of_retracted", body)
+        line = [ln for ln in body.splitlines() if "t('retracted_reviews')" in ln]
+        self.assertEqual(len(line), 1, body)
+        self.assertNotIn("chip warn", line[0])
+        self.assertIn("muted small", line[0])
+
     def test_trimmed_point_note_reads_point_flag(self):
         body = _js_function(self.js, "evidenceCard")
         self.assertIn("run.trimmed", body)

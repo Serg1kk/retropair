@@ -565,7 +565,7 @@
         },
         "prev_recommendations": {
           "type": "array",
-          "description": "Вердикт по каждой открытой рекомендации прошлых прогонов. not_observable оставляет рекомендацию открытой и НЕ означает «проигнорировал».",
+          "description": "Вердикт по каждой открытой рекомендации прошлых прогонов. not_observable оставляет рекомендацию открытой и НЕ означает «проигнорировал». not_applicable_yet — рекомендация во входе с evaluable: false (все логи периода закончились до её выдачи): судить рано, она остаётся открытой.",
           "items": {
             "type": "object",
             "required": [
@@ -583,7 +583,8 @@
                   "followed",
                   "partial",
                   "ignored",
-                  "not_observable"
+                  "not_observable",
+                  "not_applicable_yet"
                 ]
               },
               "evidence": {
