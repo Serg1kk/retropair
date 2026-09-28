@@ -132,7 +132,7 @@ Cost with the default models (opus judge, sonnet collectors): about $2 and 5–1
 
 ## Configuration
 
-The workspace settings are in `.sessionretro/config.json`; `setup` writes them, you can edit them by hand.
+The workspace settings are in `.sessionretro/config.json`; `setup` writes them, you can edit them by hand. `setup` does not ask about `reviewer_gate`, `sanitize` and `batches`: change them only in the file by hand (a `setup-apply` answer with these keys is rejected with code 2).
 
 | Key | Default | What it changes |
 |---|---|---|
@@ -141,9 +141,9 @@ The workspace settings are in `.sessionretro/config.json`; `setup` writes them, 
 | `sources` | SpecStory + Claude Code of this project | where logs come from: `claude-jsonl`, `specstory`, `dir`, `git` |
 | `hook.enabled` | `true` | background collection at the end of every Claude Code session |
 | `models` | collector `sonnet`/`medium`, judge `opus`/`high`, critic `sonnet`/`medium` | model and effort of each agent |
-| `period.mode` | `run` | periods by run date, by date windows or by labels |
+| `period.mode` | `run` | periods by run date (`run`) or by date windows (`dates`); `labels` is accepted, but in 0.1 `review` does not ask for a label and such runs stay unlabeled |
 | `show_scores` | `false` | show axis scores in personal reports (self mode) |
-| `reviewer_gate` | `true` | in team and course modes a text is a draft until approved |
+| `reviewer_gate` | `true` | in team and course modes a text is a draft until approved; by hand only |
 | `sanitize.names`, `sanitize.extra_patterns` | empty | your own words and patterns to remove from logs |
 | `batches.min_turns` | `4` | shorter sessions are marked "too short" and not assessed |
 | `template` | `default` | the text template; your own copy lives in `.sessionretro/templates/` |

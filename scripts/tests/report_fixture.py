@@ -8,7 +8,7 @@
 Детерминированные особые случаи (i — номер человека с нуля, P — период):
 - i=0: в P1 двойник с `retracted` и более поздним `reviewed_at` (у него есть ревью —
   оно станет непривязанным); в последнем периоде ось `reversibility` без данных
-  (`insufficient_evidence`, `no_signal`); в одной цитате `<img src=x onerror=alert(1)>`;
+  (`insufficient_evidence`, `short_log`); в одной цитате `<img src=x onerror=alert(1)>`;
 - i=1: в P1 живой дубль `revision: 2` с более поздним `reviewed_at` (ревью только у него);
   в P2 `operator_override {axes: {verification: 4}}` и `gating_triggered`;
 - i=2: пропущен P2; в P1 `level_computed: null`, есть только `level_judge`;
@@ -257,7 +257,7 @@ class _Builder:
         for ax, axis in enumerate(self.axes):
             if axis == ie_axis:
                 out.append({"id": axis, "score": None, "insufficient_evidence": True,
-                            "insufficient_evidence_reason": "no_signal", "evidence": [],
+                            "insufficient_evidence_reason": "short_log", "evidence": [],
                             "subcriteria": [], "note": ""})
                 continue
             evidence = []

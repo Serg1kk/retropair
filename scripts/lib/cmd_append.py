@@ -20,8 +20,8 @@ def register(subparsers) -> None:
     p.add_argument("--period-confidence", choices=("inferred", "explicit"), default="inferred",
                    help="метка периода выведена (inferred) или названа явно (explicit)")
     p.add_argument("--replace", metavar="RUN", help="переписать прогон RUN (id и правка ревьюера сохраняются)")
-    p.add_argument("--skipped", nargs="+", default=[], metavar="SID",
-                   help="сессии, известные и осознанно пропущенные этим прогоном")
+    p.add_argument("--skipped", nargs="+", action="extend", default=[], metavar="SID",
+                   help="сессии, известные и осознанно пропущенные этим прогоном; флаг можно повторять")
     p.set_defaults(func=handle)
 
 

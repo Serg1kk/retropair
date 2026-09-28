@@ -178,3 +178,34 @@ def write(root: Path, cfg: dict, force: bool = False) -> dict:
     if record != old_record:
         write_json_atomic(record_path(root).resolve(), record)
     return res
+
+
+def sync(root: Path, cfg: dict) -> dict:
+    """После обновления плагина: обновить только «устаревшие» файлы (тело = записанный отпечаток,
+    болванка новее) до текущей болванки с model/effort из конфига.
+
+    Отчёт `{"updated", "unchanged", "edited", "missing", "record"}`: роли по спискам, `record` —
+    есть ли `agents.json`. Правленые (и неразличимые без записи) файлы и отсутствующие не трогает,
+    новых файлов не создаёт: нет файла — ретро берёт агента плагина.
+    """
+    res = {"updated": [], "unchanged": [], "edited": [], "missing": [],
+           "record": record_path(root).is_file()}
+    record = _load_record(root)
+    changed = False
+    for item in status(root, cfg):
+        role = item["role"]
+        if not item["exists"]:
+            res["missing"].append(role)
+        elif item["body_edited"]:
+            res["edited"].append(role)
+        elif item["outdated"]:
+            text = render(role, *_role_models(cfg, role))
+            write_text_atomic(target(root, role).resolve(), text)
+            record[role] = {"sha256": _sha(text), "plugin_version": __version__}
+            res["updated"].append(role)
+            changed = True
+        else:
+            res["unchanged"].append(role)
+    if changed:
+        write_json_atomic(record_path(root).resolve(), record)
+    return res

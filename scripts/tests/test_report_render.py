@@ -326,11 +326,11 @@ class ReportJsBehaviourTest(unittest.TestCase):
         script = (
             "const t = k => 'T:' + k; const humanize = id => String(id).replace(/_/g, ' ');\n"
             + _js_function(self.js, "reasonName")
-            + "\nprocess.stdout.write(JSON.stringify([reasonName('other'), reasonName('no_signal'),"
+            + "\nprocess.stdout.write(JSON.stringify([reasonName('other'), reasonName('short_log'),"
               " reasonName('some_new_code'), reasonName(null)]));"
         )
         self.assertEqual(_run_node(script),
-                         ["T:reason_other", "T:reason_no_signal", "some new code", "T:no_data"])
+                         ["T:reason_other", "T:reason_short_log", "some new code", "T:no_data"])
 
     def test_trimmed_point_note_reads_point_flag(self):
         body = _js_function(self.js, "evidenceCard")

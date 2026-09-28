@@ -497,7 +497,7 @@
           },
           "reason": {
             "type": "string",
-            "description": "Почему не наблюдалось. Причину знаешь только ты: судья видит голое имя оси и без этого поля напишет behaviour_absent на всё, а тогда «инструмент не пишет трейс» и «человек так не делает» сольются в одно.",
+            "description": "Почему не наблюдалось. Причину знаешь только ты: судья видит голое имя оси и без этого поля напишет behaviour_absent на всё, а тогда «инструмент не пишет трейс» и «человек так не делает» сольются в одно. quote_unverified коллектор не ставит: её ставит check-collector --drop-invalid, когда все наблюдения по оси отброшены, потому что их цитаты не сверились с логом.",
             "enum": [
               "short_log",
               "behaviour_absent",
@@ -506,7 +506,8 @@
               "tool_has_no_trace",
               "log_truncated",
               "work_outside_transcript",
-              "nothing_to_verify"
+              "nothing_to_verify",
+              "quote_unverified"
             ]
           },
           "note": {
@@ -711,19 +712,10 @@
         },
         "warnings": {
           "type": "array",
+          "description": "Коды предупреждений коллектора. Строки с префиксом «check-collector: » дописывает проверка выхода: ремонт адреса или склейки цитаты и отброшенные записи; коллектор их не пишет.",
           "items": {
             "type": "string",
-            "enum": [
-              "metrics_missing",
-              "no_context_report",
-              "redaction_leak",
-              "unredacted_input",
-              "log_truncated",
-              "timestamps_missing",
-              "spans_periods",
-              "sessions_excluded",
-              "batch_truncated"
-            ]
+            "pattern": "^(metrics_missing|no_context_report|redaction_leak|unredacted_input|log_truncated|timestamps_missing|spans_periods|sessions_excluded|batch_truncated)$|^check-collector: \\S"
           }
         },
         "notes": {

@@ -5,6 +5,11 @@
 схемы. Дальше — схема `collector` и смысловые сходимости, которые схемой не выражаются
 (условие 4 «Проверок скриптом» в `references/output-contract.md`: каждая из восьми осей ровно
 в одном из `observations` и `axes_unobserved`; плюс номер пачки не больше `batch.total` и статус).
+
+Цитаты сверяются с логами (`attribution_problems`). Что по логу восстанавливается однозначно —
+номер хода и склейка кусков одной реплики без «…», — `check_files` чинит сам (`repair_quotes`)
+и пишет строкой в `metadata.warnings`; `--drop-invalid` после исчерпания перезапусков убирает
+неремонтируемые записи (`drop_unverified`), тоже строкой. Текст агента не чинится никогда.
 """
 
 from __future__ import annotations
@@ -94,6 +99,16 @@ _MARKUP_RE = re.compile(r"[*`]")
 _QUOTES_RE = re.compile(r"[«»„“”‟\"]")
 _DASHES_RE = re.compile(r"[‐‑‒–—―]")
 MIN_FRAGMENT = 3
+# Минимум куска при склейке без «…»: из двухсловных обрывков длинной реплики собирается фраза,
+# которой человек не говорил; три слова и 15 знаков — уже дословный отрывок, а не случайные слова.
+MIN_PIECE_WORDS = 3
+MIN_PIECE_CHARS = 15
+QUOTE_MAX = 400
+# Строки ремонта и отбрасывания в `metadata.warnings` (схема `collector` пускает их по префиксу).
+WARN_PREFIX = "check-collector: "
+UNVERIFIED_REASON = "quote_unverified"
+_EDGE = ".,;:!?\"'()- "                       # края куска после `_norm`
+_EDGE_RAW = _EDGE + "«»„“”‟‐‑‒–—―…"            # те же края в исходном тексте цитаты
 
 
 def _norm(text: str) -> str:
@@ -153,8 +168,10 @@ def quote_problem(item: dict, doc: dict) -> str | None:
     None — стоит."""
     turn_index = item.get("turn_index")
     sid = item.get("session_id")
-    fragments = _fragments(item.get("quote") or "")
     head = f"сессия {sid}, ход {turn_index}"
+    if not isinstance(item.get("quote"), str):
+        return f"{head}: цитата не строка — сверять нечего"
+    fragments = _fragments(item["quote"])
     if not fragments:
         return f"{head}: цитата пустая — дословного текста нет"
     turns = doc.get("turns") or []
@@ -208,6 +225,154 @@ def attribution_problems(obj: dict, docs: dict) -> list[str]:
     return problems
 
 
+def _human_text(turn: dict) -> str | None:
+    """Нормализованная реплика человека в ходе; None — ход не человека."""
+    kind, text = _turn_sources(turn)[0]
+    return text if kind == "human" else None
+
+
+def _tokens(part: str) -> list[tuple[str, str]]:
+    """Слова отрывка: (как в цитате, нормализованное); слово из одной разметки выпадает."""
+    return [(raw, _norm(raw)) for raw in part.split() if _norm(raw)]
+
+
+def _splice(quote: str, text: str) -> str | None:
+    """Цитата, собранная из дословных кусков реплики `text` (нормализованной) в исходном порядке,
+    с « … » между кусками; None — так не собрать.
+
+    Каждый отрывок цитаты (между уже стоящими «…») режется жадно: самый длинный префикс слов,
+    который есть в реплике после предыдущего куска. Отрывок, разрезанный хотя бы надвое, годится,
+    только если каждый его кусок не короче `MIN_PIECE_WORDS` слов и `MIN_PIECE_CHARS` знаков;
+    разрез нужен хотя бы в одном месте (иначе это не склейка)."""
+    cursor, out, split = 0, [], False
+    for part in _ELLIPSIS_RE.split(quote):
+        toks = _tokens(part)
+        if not toks:
+            continue
+        pieces, i = [], 0
+        while i < len(toks):
+            hit = None
+            for k in range(len(toks) - i, 0, -1):
+                whole = " ".join(n for _, n in toks[i:i + k])
+                for cand, trimmed in ((whole, False), (whole.strip(_EDGE), True)):
+                    pos = text.find(cand, cursor) if cand else -1
+                    if pos >= 0:
+                        hit = (k, cand, pos, trimmed)
+                        break
+                if hit:
+                    break
+            if hit is None:
+                return None
+            k, cand, pos, trimmed = hit
+            raw = " ".join(r for r, _ in toks[i:i + k])
+            pieces.append((raw.strip(_EDGE_RAW) if trimmed else raw, cand))
+            cursor, i = pos + len(cand), i + k
+        if len(pieces) > 1:
+            split = True
+            if any(len(c.split()) < MIN_PIECE_WORDS or len(c) < MIN_PIECE_CHARS for _, c in pieces):
+                return None
+        out.append(" … ".join(r for r, _ in pieces))
+    return " … ".join(out) if split else None
+
+
+def _repair(item: dict, doc: dict) -> tuple[int, str | None] | None:
+    """(ход, новая цитата или None) — единственный ремонт, который лог допускает; None — нет.
+
+    1. Цитата дословно (как её сверяет `quote_problem`) стоит ровно в одном другом ходе как
+       реплика человека или команда/вывод инструмента → адрес этого хода. В нескольких ходах —
+       не чинится: какой имел в виду коллектор, по логу не решить.
+    2. Нигде целиком её нет, но она собирается из кусков ОДНОЙ реплики человека в исходном
+       порядке (`_splice`): сначала названный ход, потом ровно один другой ход человека.
+    Текст агента и вставки харнесса сюда не попадают: ищутся только `human` и `tool`."""
+    fragments = _fragments(item["quote"])
+    if not fragments:
+        return None
+    named = item.get("turn_index")
+    turns = doc.get("turns") or []
+    exact = [t.get("index") for t in turns
+             if t.get("index") != named and _found_in(fragments, t) & {"human", "tool"}]
+    if exact:
+        return (exact[0], None) if len(exact) == 1 else None
+    at = next((t for t in turns if t.get("index") == named), None)
+    text = _human_text(at) if at is not None else None
+    glued = _splice(item["quote"], text) if text is not None else None
+    if glued:
+        return named, glued
+    found = []
+    for t in turns:
+        text = _human_text(t) if t.get("index") != named else None
+        glued = _splice(item["quote"], text) if text is not None else None
+        if glued:
+            found.append((t.get("index"), glued))
+    return found[0] if len(found) == 1 else None
+
+
+def _quote_items(obj: dict):
+    """(блок, номер, запись) для записей с ходом и цитатой-строкой."""
+    for block in QUOTE_BLOCKS:
+        items = obj.get(block)
+        if not isinstance(items, list):
+            continue
+        for i, item in enumerate(items):
+            if isinstance(item, dict) and item.get("turn_index") is not None and "quote" in item:
+                yield block, i, item
+
+
+def repair_quotes(obj: dict, docs: dict) -> list[str]:
+    """Починить на месте адреса и склейки цитат, которые лог восстанавливает однозначно
+    (`_repair`); вернуть строки для `metadata.warnings`, по строке на правку. Ремонт, после
+    которого цитата всё равно не сверяется или длиннее `QUOTE_MAX`, не применяется: запись
+    остаётся проблемой `attribution_problems`."""
+    lines = []
+    for block, i, item in _quote_items(obj):
+        doc = docs.get(item.get("session_id"))
+        if not isinstance(doc, dict) or not isinstance(item["quote"], str) or quote_problem(item, doc) is None:
+            continue
+        fix = _repair(item, doc)
+        if fix is None:
+            continue
+        turn, glued = fix
+        trial = {**item, "turn_index": turn, "quote": glued or item["quote"]}
+        if len(trial["quote"]) > QUOTE_MAX or quote_problem(trial, doc) is not None:
+            continue
+        where = f"$.{block}[{i}], сессия {item.get('session_id')}"
+        if turn != item["turn_index"]:
+            lines.append(f"{WARN_PREFIX}цитата перенесена: {where}, ход {item['turn_index']} → {turn}")
+        if glued:
+            lines.append(f"{WARN_PREFIX}цитата склеена через «…»: {where}, ход {turn}, "
+                         f"кусков {glued.count(' … ') + 1}")
+        item["turn_index"], item["quote"] = turn, trial["quote"]
+    return lines
+
+
+def drop_unverified(obj: dict, docs: dict) -> list[str]:
+    """Убрать записи, чьи цитаты не сверяются с разобранным логом (после `repair_quotes`), и
+    вернуть строки для `metadata.warnings`: «отброшено: блок, сессия, ход, причина». Ось, у которой
+    не осталось наблюдений, уходит в `axes_unobserved` с причиной `quote_unverified`. Запись,
+    чей лог не найден или не разобран, не трогается: это сбой пути, а не цитаты."""
+    lines = []
+    before = {o.get("axis") for o in obj.get("observations") or [] if isinstance(o, dict)}
+    drop: dict[str, set[int]] = {}
+    for block, i, item in _quote_items(obj):
+        doc = docs.get(item.get("session_id"))
+        why = quote_problem(item, doc) if isinstance(doc, dict) else None
+        if why:
+            drop.setdefault(block, set()).add(i)
+            lines.append(f"{WARN_PREFIX}отброшено: $.{block}[{i}], {why}")
+    for block, gone in drop.items():
+        obj[block] = [x for j, x in enumerate(obj[block]) if j not in gone]
+    after = {o.get("axis") for o in obj.get("observations") or [] if isinstance(o, dict)}
+    unobserved = obj.get("axes_unobserved")
+    for axis in i18n.keys("axes"):
+        if axis in before and axis not in after and isinstance(unobserved, list):
+            unobserved.append({"axis": axis, "reason": UNVERIFIED_REASON,
+                               "note": "check-collector: все наблюдения по оси отброшены — "
+                                       "их цитаты не сверились с логом"})
+            lines.append(f"{WARN_PREFIX}ось {axis}: наблюдений не осталось → axes_unobserved "
+                         f"({UNVERIFIED_REASON})")
+    return lines
+
+
 def _log_path(raw: str, state_dir: Path | None) -> tuple[Path | None, str | None]:
     """Путь лога сессии: абсолютный как есть, относительный — от `.sessionretro/` workspace
     (так его пишет сбор). (путь, None) или (None, почему не определить)."""
@@ -243,11 +408,13 @@ def load_docs(obj: dict, state_dir: Path | None) -> dict:
     return docs
 
 
-def check_batch(obj, state_dir: Path | None = None, *, quotes: bool = False) -> list[str]:
+def check_batch(obj, state_dir: Path | None = None, *, quotes: bool = False,
+                docs: dict | None = None) -> list[str]:
     """Все проблемы одной пачки; пустой список — пачку можно отдавать судье.
 
     `quotes=True` — ещё и сверка цитат с логами сессий (`attribution_problems`); относительные
-    `sessions[].path` берутся от `state_dir` (папка `.sessionretro/`). Без `quotes` проверяются
+    `sessions[].path` берутся от `state_dir` (папка `.sessionretro/`), уже разобранные логи можно
+    подать в `docs` (как у `load_docs`). Без `quotes` проверяются
     только сам выход: схема, поля оценки, сходимости. Нет схемы `collector` → `SrError(1)` из
     `tracker.schema_problems`: это отказ инструмента, а не брак пачки.
     """
@@ -257,7 +424,7 @@ def check_batch(obj, state_dir: Path | None = None, *, quotes: bool = False) -> 
         return ["$: стаб не заполнен: коллектор не записал выход"]
     problems = forbidden_keys(obj) + tracker.schema_problems(obj, "collector") + sense_problems(obj)
     if quotes and isinstance(obj.get("sessions"), list):
-        problems += attribution_problems(obj, load_docs(obj, state_dir))
+        problems += attribution_problems(obj, load_docs(obj, state_dir) if docs is None else docs)
     return problems
 
 
@@ -287,28 +454,61 @@ def _state_dir(batch_path: Path, explicit: str | None) -> Path | None:
         return None
 
 
-def check_files(paths, workspace_dir: str | None = None) -> tuple[int, list[dict]]:
+def _can_repair(obj) -> bool:
+    """Ремонт возможен, только если его есть куда записать: `metadata.warnings` — массив."""
+    return (isinstance(obj, dict) and "stub" not in obj and isinstance(obj.get("sessions"), list)
+            and isinstance(obj.get("metadata"), dict) and isinstance(obj["metadata"].get("warnings"), list))
+
+
+def check_files(paths, workspace_dir: str | None = None, *,
+                drop_invalid: bool = False) -> tuple[int, list[dict]]:
     """Проверить файлы пачек вместе со сверкой цитат по логам; код 0 все чистые · 1 хоть одна
-    кривая · 2 кривых нет, но есть отсутствующие."""
+    кривая · 2 кривых нет, но есть отсутствующие.
+
+    Адрес и склейку цитат, которые лог восстанавливает однозначно, чинит всегда
+    (`repair_quotes`); `drop_invalid` — ещё и убирает записи с неремонтируемыми цитатами
+    (`drop_unverified`). Каждая правка — строка в `metadata.warnings` файла и в `repaired` /
+    `dropped` результата; исправленный файл пишется атомарно (`written`). Пачка, у которой после
+    отбрасывания не осталось ни одного наблюдения, — упавшая: код 1, файл не трогается."""
     results: list[dict] = []
     bad = missing = 0
     for raw in paths:
         path = Path(raw)
         if not path.is_file():
-            results.append({"path": str(raw), "missing": True, "problems": ["файла нет"], "problems_total": 1})
+            results.append({"path": str(raw), "missing": True, "problems": ["файла нет"], "problems_total": 1,
+                            "repaired": [], "dropped": [], "written": False})
             missing += 1
             continue
         try:
             obj = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as err:
             results.append({"path": str(raw), "missing": False, "problems": [f"не разбирается: {err}"],
-                            "problems_total": 1})
+                            "problems_total": 1, "repaired": [], "dropped": [], "written": False})
             bad += 1
             continue
-        problems = check_batch(obj, _state_dir(path, workspace_dir), quotes=True)
+        state = _state_dir(path, workspace_dir)
+        docs = load_docs(obj, state) if isinstance(obj, dict) and isinstance(obj.get("sessions"), list) else None
+        repaired: list[str] = []
+        dropped: list[str] = []
+        failed: list[str] = []
+        if _can_repair(obj):
+            repaired = repair_quotes(obj, docs)
+            if drop_invalid:
+                had = obj.get("observations") if isinstance(obj.get("observations"), list) else []
+                had = len(had)
+                dropped = drop_unverified(obj, docs)
+                if had and not obj.get("observations"):
+                    failed.append("$.observations: после отбрасывания неверифицируемых цитат не осталось "
+                                  "ни одного наблюдения — пачка считается упавшей, файл не изменён")
+            obj["metadata"]["warnings"] += repaired + dropped
+        problems = failed + check_batch(obj, state, quotes=True, docs=docs)
+        written = bool(repaired or dropped) and not failed
+        if written:
+            workspace.write_json_atomic(path, obj)
         if problems:
             bad += 1
         results.append({"path": str(raw), "missing": False, **_summary(obj), "problems": problems[:MAX_PROBLEMS],
-                        "problems_total": len(problems)})
+                        "problems_total": len(problems), "repaired": repaired, "dropped": dropped,
+                        "written": written})
     code = 1 if bad else (2 if missing else 0)
     return code, results

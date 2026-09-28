@@ -120,7 +120,8 @@ into your project:
 | critic | `.claude/agents/sessionretro-feedback-critic.md` | `models.critic` |
 
 If the file exists in the project, the retro uses it; if not, it uses the plugin's agent. Plugin
-updates do not touch these files: your edits stay.
+updates do not touch files you edited: your edits stay (how unedited ones are updated: see
+"After a plugin update" below).
 
 ### Model and effort
 
@@ -176,6 +177,19 @@ cases apart when a file differs from the new version's prompt:
   `--force`;
 - **the file was edited**: the body matches neither the fingerprint nor the new prompt. It is
   marked "edited by hand" and left alone, as described above.
+
+You do not have to do this by hand: `/sessionretro:review` runs `agents sync` at the start of
+every run, before any agent is launched. It updates only unedited files to the current prompt
+with the models from `config.json`, leaves edited ones alone, creates no missing files and always
+exits with code `0`, so the retro does not stop. The retro shows you its lines; with `--no-ask`
+it puts them into the final summary:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
+```
+
+No agent files: it prints "no project agents" and the retro uses the plugin agents. `--json`
+prints the same report as an object `{"updated", "unchanged", "edited", "missing", "record"}`.
 
 Projects set up before `agents.json` existed have no record: there any difference counts as a
 human edit. If you did not edit the files, run `agents write --force` once and updates will flow

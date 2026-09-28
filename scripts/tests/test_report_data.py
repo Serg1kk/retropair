@@ -108,7 +108,7 @@ class TestCollect(_Base):
         axis = self.person["anna"]["points"][-1]["axes"]["reversibility"]
         self.assertIsNone(axis["score"])
         self.assertTrue(axis["ie"])
-        self.assertEqual(axis["reason"], "no_signal")
+        self.assertEqual(axis["reason"], "short_log")
         for person in self.model["people"]:
             for pt in person["points"]:
                 for ax in pt["axes"].values():
@@ -438,7 +438,13 @@ class TestFreeTextEnums(_Base):
 
     def test_known_reason_kept(self) -> None:
         self.assertEqual(self.person["anna"]["points"][-1]["axes"]["reversibility"]["reason"],
-                         "no_signal")
+                         "short_log")
+
+    def test_reason_codes_match_judge_schema(self) -> None:
+        schema = json.loads((_util.PLUGIN / "references" / "schemas" / "judge.json").read_text("utf-8"))
+        axis = schema["properties"]["data"]["properties"]["axes"]["items"]["properties"]
+        enum = {code for code in axis["insufficient_evidence_reason"]["enum"] if code}
+        self.assertEqual(rd.reason_codes(rd.load_i18n()), enum | {"other"})
 
     def test_reason_other_has_i18n(self) -> None:
         entry = rd.load_i18n()["report"]["reason_other"]

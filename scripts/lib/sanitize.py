@@ -7,8 +7,8 @@
   трогаются, структура остаётся валидным JSON, значения служебных ключей (`STRUCTURAL_KEYS`:
   идентификаторы, время, типы) не санитайзятся вовсе.
 
-Порядок: правила `RULES` до `email` включительно (секреты, строки подключения, почта) → имена
-людей → остальные правила `RULES` → логин ОС (`local_user`) → пользовательские `extra_patterns`.
+Порядок: правила `RULES` до `email` включительно (секреты, строки подключения, почта) → колонка
+пароля под строкой заголовка (`password_column`: CSV/TSV, таблица) → имена людей → остальные правила `RULES` → логин ОС (`local_user`) → пользовательские `extra_patterns`.
 `email` раньше имён: иначе адрес, в котором есть имя из списка, стал бы `[NAME]@<домен>` с
 живым доменом; секреты раньше `email`: пароль в `postgres://user:pass@host` — строка подключения. Оба режима возвращают пару `(результат, hits)`, где
 `hits = {правило: число замен}`; замены имён считаются как `names`, пользовательских шаблонов —
@@ -41,7 +41,7 @@ from .workspace import SrError
 
 # Версия правил: поднимается при любом изменении поведения санитайзера, которое меняет вывод
 # (порядок правил, новые метки, проверки `CHECKS`). Входит в `fingerprint` вместе с самими шаблонами.
-RULES_VERSION = 6
+RULES_VERSION = 7
 
 NAME_MARK = "[NAME]"
 EXTRA_MARK = "[REDACTED]"
@@ -63,17 +63,20 @@ _SECRET_WORDS = (r"(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?ke
 
 # ── пароль и секрет 2FA/TOTP в свободном тексте (ответ агента, таблица, список) ──
 # Метка с начала токена (lookbehind — линейное время, как у `code_secret`); префикс через `_.-`
-# разрешён (`db_password:`), середина слова — нет (`bypass:`).
-_LABEL_START = r"(?<![\w.\-])(?:[\w.\-]*[_.\-])?"
+# разрешён (`db_password:`), середина слова — нет (`bypass:`). Сразу после escape `\n`, `\r`, `\t`
+# текстом (исходник с f-строкой `"…\nPassword: …"` в выводе grep/cat/Read) — тоже начало токена.
+_LABEL_START = r"(?:(?<![\w.\-])|(?<=\\[nrt]))(?:[\w.\-]*[_.\-])?"
 _PASS_LABEL = r"(?:парол[ьяеюи]\w{0,3}|password|passwd|passcode|pswd|pass|pwd)(?:_\w*)?"
 _TOTP_LABEL = (r"(?:2fa|totp|otp|mfa|authenticator|аутентификатор\w*|ключ\w*[ \t]+аутентификатора"
                r"|secret|секрет\w*)(?:[ \t_\-]{1,2}(?:secret|key|seed|code|ключ|секрет|код)\w*){0,2}")
 # Разделитель: `:` (и полноширинный), тире; дефис — только в пробелах (`password-reset` не метка);
 # ячейка таблицы `|` — с пробелом хотя бы с одной стороны (`secret|password|api_key` в шаблоне grep
 # — не таблица). `=` — забота `env_secret`/`code_secret` (в коде `first_pass = f()` не пароль).
-# Вокруг — markdown-выделение `**`/`_` и обратная кавычка.
+# Вокруг — markdown-выделение `**`/`_` и обратная кавычка; после разделителя пробел — ещё и escape
+# `\t` текстом. Второй пробельный отрезок — только после `*`/`_`: два `*` подряд квадратичны.
+_SEP_WS = r"(?:[ \t]|\\{1,4}t)*"
 _LABEL_SEP = (r"[*_]{0,3}(?:[ \t]*(?:[:：]|[—–])|[ \t]+-(?=[ \t])|[ \t]*\|(?=[ \t])|[ \t]+\|)"
-              r"[ \t]*[*_]{0,3}[ \t]*`?")
+              + _SEP_WS + r"(?:[*_]{1,3}" + _SEP_WS + r")?`?")
 # Значение: до пробела, `|`, обратной кавычки, `"` и `\` (граница строки JSON); не с `[` (метка
 # санитайзера), не с `/` и `~` (путь, `pwd: /tmp`), не с `*` (шаблон `password: *[a-z]`);
 # хвостовая пунктуация предложения не входит. Минимум 4 символа.
@@ -165,7 +168,9 @@ RULES: list[tuple[str, str, str]] = [
      "[OTP_SECRET]"),
 
     # ── персональные данные ────────────────────────────────────────────────────
-    ("email", r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b", "[EMAIL]"),
+    # После escape `\n`/`\r`/`\t` текстом адрес начинается за буквой escape: иначе `\nbob@…` стал бы
+    # `\[EMAIL]` — escape и разделитель строк пропали бы.
+    ("email", r"(?:(?<=\\[nrt])|(?<!\\)\b|(?<=\\)(?![nrt]))[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b", "[EMAIL]"),
     # Хвостовой lookahead пропускает точку конца предложения, но не десятичное продолжение.
     ("phone", r"(?<![\w.])(?:\+?\d{1,3}[ \-]?)?\(?\d{2,4}\)?[ \-]?\d{3}[ \-]?\d{2}[ \-]?\d{2}"
      r"(?!\w|\.\d)", "[PHONE]"),
@@ -246,6 +251,108 @@ def _check_json(m: re.Match) -> bool:
 # Меняете проверку — поднимите `RULES_VERSION`.
 CHECKS = {"password_text": _check_password, "totp_secret": _check_totp,
           "base32_secret": _check_base32, "json_secret": _check_json}
+
+# ── колонка пароля под строкой заголовка: CSV/TSV, markdown- и psql-таблица в выводе инструмента ──
+# Метки рядом со значением нет: заголовок `username,password` — строкой выше. Проход после секретов
+# и `email`: строки (перевод строки или его escape текстом, в том числе `\\n` сырого JSONL) делятся
+# на ячейки разделителем заголовка; в строках ниже с тем же числом ячеек значение колонки пароля
+# меняется на `[PASSWORD]`. Блок кончается первой строкой с другим числом ячеек (пустой строкой).
+PASSWORD_COLUMN_KEY = "password_column"
+PASSWORD_MARK = "[PASSWORD]"
+_COL_HINT = re.compile(r"(?i)pass|pwd|парол")
+_ROW_SPLIT = re.compile(r"(\r?\n|(?:\\{1,4}r)?\\{1,4}n)")
+_CELL_SPLITS = tuple(re.compile(p) for p in (r"(,)", r"(;)", r"(\|)", r"(\t)", r"(\\{1,4}t)"))
+_SPACED_SPLITS = frozenset({r"(\|)", r"(\t)", r"(\\{1,4}t)"})  # в имени колонки можно пробел
+# Префикс первой ячейки: номер строки Read (`     1→`) или путь и номер строки grep (`a.csv:1:`).
+_ROW_PREFIX = r"(?:[ \t]*\d{1,7}→|[^\s:,;|]{1,200}?:\d{1,7}[:\-])?"
+_CELL_QUOTE = r"""(?:\\*["'`]|\*{1,2})?"""
+_COL_NAME = r"[ \t]*" + _CELL_QUOTE + r"(?P<name>[^\W\d][\w.\- ]{0,39}?)" + _CELL_QUOTE + r"[ \t]*"
+_COL_NAME_FIRST = re.compile(_ROW_PREFIX + _COL_NAME)
+_COL_NAME_REST = re.compile(_COL_NAME)
+_COL_LABEL = re.compile(r"(?i)(?:[\w.\-]*[_.\- ])?(?:парол[ьяеюи]\w{0,3}|password|passwd|passcode|pswd"
+                        r"|pass|pwd)(?:[_ \-]\w*)?")
+# Значение — ячейка целиком (в кавычках или без): фраза с пробелами — не пароль.
+_COL_VALUE = r"""[ \t]*\\*["'`]?)(?P<val>[^\s"'`\\|,;]+)(?P<post>\\*["'`]?[ \t]*)"""
+_COL_VALUE_FIRST = re.compile(r"(?P<pre>" + _ROW_PREFIX + _COL_VALUE)
+_COL_VALUE_REST = re.compile(r"(?P<pre>" + _COL_VALUE)
+# Не пароль: итог теста в колонке `pass`, числа, короче 4 символов.
+_COL_SKIP = re.compile(r"(?i)pass(?:ed)?|fail(?:ed)?|ok|yes|no|skip(?:ped)?|n/a|[\d.,%+\-]+")
+# Линейка под заголовком: `|---|---|`, `-----+-----`.
+_RULER = re.compile(r"[ \t|:+=\-]*-[ \t|:+=\-]*")
+
+
+def _column_header(row: str) -> tuple[re.Pattern, int, list[int]] | None:
+    """Строка — заголовок с колонкой пароля: (разделитель, число ячеек, номера колонок пароля)."""
+    for split in _CELL_SPLITS:
+        cells = split.split(row)[0::2]
+        if len(cells) < 2:
+            continue
+        cols: list[int] = []
+        names = 0
+        for k, cell in enumerate(cells):
+            if not cell.strip():
+                if split.pattern == r"(\|)" and k in (0, len(cells) - 1):
+                    continue  # края markdown-таблицы
+                break
+            m = (_COL_NAME_FIRST if k == 0 else _COL_NAME_REST).fullmatch(cell)
+            if m is None:
+                break
+            name = m.group("name").strip()
+            if " " in name and split.pattern not in _SPACED_SPLITS:
+                break  # «Enter username, password» — фраза, а не CSV
+            names += 1
+            if _COL_LABEL.fullmatch(name):
+                cols.append(k)
+        else:
+            if cols and names >= 2:
+                return split, len(cells), cols
+    return None
+
+
+def _mask_columns(pieces: list[str], cols: list[int], hits: dict[str, int]) -> str | None:
+    changed = False
+    for k in cols:
+        cell = pieces[2 * k]
+        m = (_COL_VALUE_FIRST if k == 0 else _COL_VALUE_REST).fullmatch(cell)
+        if m is None:
+            continue
+        val = m.group("val")
+        if len(val) < 4 or ALLOWLIST.fullmatch(val) or _COL_SKIP.fullmatch(val):
+            continue
+        pieces[2 * k] = m.group("pre") + PASSWORD_MARK + m.group("post")
+        _bump(hits, PASSWORD_COLUMN_KEY)
+        changed = True
+    return "".join(pieces) if changed else None
+
+
+def _password_columns(text: str, hits: dict[str, int]) -> str:
+    if _COL_HINT.search(text) is None:
+        return text
+    parts = _ROW_SPLIT.split(text)
+    rows = parts[0::2]
+    changed = False
+    i = 0
+    while i < len(rows):
+        header = _column_header(rows[i]) if _COL_HINT.search(rows[i]) else None
+        i += 1
+        if header is None:
+            continue
+        split, n, cols = header
+        if i < len(rows) and _RULER.fullmatch(rows[i]):
+            i += 1
+        while i < len(rows):
+            pieces = split.split(rows[i])
+            if len(pieces) != 2 * n - 1:
+                break
+            new = _mask_columns(pieces, cols, hits)
+            if new is not None:
+                rows[i] = new
+                changed = True
+            i += 1
+    if not changed:
+        return text
+    parts[0::2] = rows
+    return "".join(parts)
 
 UUID_RE = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
                      r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?![0-9A-Fa-f])")
@@ -337,6 +444,7 @@ class Sanitizer:
     def _apply(self, text: str, hits: dict[str, int]) -> str:
         for rule, pattern, repl in _COMPILED_FIRST:
             text = self._apply_rule(rule, pattern, repl, text, hits)
+        text = _password_columns(text, hits)
         if self._names_re is not None:
             text, n = self._names_re.subn(NAME_MARK, text)
             if n:
@@ -381,6 +489,8 @@ def fingerprint(sanitizer: Sanitizer) -> str:
         "rules": [[rule, pattern, repl] for rule, pattern, repl in RULES],
         "first": sorted(FIRST_RULES),
         "checks": sorted(CHECKS),
+        "columns": [_ROW_SPLIT.pattern, [c.pattern for c in _CELL_SPLITS], _COL_NAME_FIRST.pattern,
+                    _COL_LABEL.pattern, _COL_VALUE_FIRST.pattern, _COL_SKIP.pattern, _RULER.pattern],
         "allowlist": ALLOWLIST.pattern,
         "structural": sorted(STRUCTURAL_KEYS),
         "names": sorted(n.casefold() for n in sanitizer.names),

@@ -300,6 +300,7 @@
                     "log_truncated",
                     "work_outside_transcript",
                     "nothing_to_verify",
+                    "quote_unverified",
                     null
                   ]
                 },

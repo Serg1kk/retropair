@@ -87,7 +87,7 @@ class FixtureTest(unittest.TestCase):
         self.assertNotIn((third, "P2", 1, False), by)
         rev = {a["id"]: a for a in by[(first, "P3", 1, False)]["axes"]}["reversibility"]
         self.assertEqual((rev["score"], rev["insufficient_evidence"],
-                          rev["insufficient_evidence_reason"]), (None, True, "no_signal"))
+                          rev["insufficient_evidence_reason"]), (None, True, "short_log"))
         twin = by[(first, "P1", 1, True)]
         self.assertGreater(twin["reviewed_at"], by[(first, "P1", 1, False)]["reviewed_at"])
         self.assertEqual(set(twin["retracted"]), {"at", "why"})

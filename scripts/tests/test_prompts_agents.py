@@ -23,7 +23,7 @@ TOOLS = {
 }
 BODY_VERSIONS = {
     "log-collector": "collector_version: v4",
-    "log-judge": "prompt_version: v13",
+    "log-judge": "prompt_version: v14",
     "feedback-critic": "critic_version: v1",
 }
 FILE_VERSIONS = {

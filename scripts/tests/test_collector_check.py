@@ -191,6 +191,16 @@ class CheckBatchTest(CollectorCase):
         del obj["axes_unobserved"][0]["reason"]
         self.assertProblem(obj, "reason")
 
+    def test_warnings_codes_or_check_lines_only(self):
+        """A12: в `metadata.warnings` — коды коллектора или строки `check-collector: …`."""
+        obj = batch()
+        obj["metadata"]["warnings"] = ["sessions_excluded", "check-collector: цитата перенесена: x"]
+        self.assertEqual(self.problems(obj), [])
+        for bad in ("что-то ещё", "check-collector:", "sessions_excluded и ещё"):
+            with self.subTest(bad=bad):
+                obj["metadata"]["warnings"] = [bad]
+                self.assertProblem(obj, "$.metadata.warnings[0]")
+
     def test_stub_rejected(self):
         found = self.problems({"stub": True})
         self.assertEqual(len(found), 1)
@@ -457,10 +467,12 @@ class CheckFilesAttributionTest(CollectorCase):
     def test_absolute_path_needs_no_workspace(self):
         log = self.write_log("logs/alex/s.md")
         outside = self.dir / "elsewhere" / "batch-01.json"
-        code, results = collector_check.check_files(
-            [self.put_raw(self.single("ок, мержим", 3, str(log)), outside)])
-        self.assertEqual(code, 1)
-        self.assertTrue(any("ход 2" in p for p in results[0]["problems"]), results)
+        path = self.put_raw(self.single("ок, мержим", 3, str(log)), outside)
+        code, results = collector_check.check_files([path])
+        # лог найден по абсолютному пути: сдвиг хода 3 → 2 восстановлен по нему (A12)
+        self.assertEqual((code, results[0]["problems"]), (0, []))
+        self.assertTrue(any("ход 3 → 2" in ln for ln in results[0]["repaired"]), results)
+        self.assertEqual(json.loads(Path(path).read_text(encoding="utf-8"))["observations"][0]["turn_index"], 2)
 
     def test_missing_log_is_named(self):
         make_state(self.dir)
@@ -485,6 +497,269 @@ class CheckFilesAttributionTest(CollectorCase):
             code = sr.main(["check-collector", path])
         self.assertEqual(code, 1)
         self.assertIn("текст агента", out.getvalue())
+
+
+# ── A12: ремонт адреса и склейки, отбрасывание неремонтируемых ──────────────────
+# Длинная многотемная реплика человека (ход 13), на которой коллектор склеивает куски без «…»
+# и сдвигает номер хода. 0..14: чётные — человек (кроме 12, 14), нечётные — агент.
+LONG = ("смотри, тут несколько вещей сразу. во-первых, форма входа падает на пустом пароле, "
+        "и я хочу, чтобы ты сначала написал тест, который это воспроизводит. во-вторых, "
+        "не трогай конфиг сборки, там всё настроено под старый сервер. в-третьих, после правки "
+        "запусти весь набор тестов и покажи мне вывод целиком, а не пересказ.")
+AGENT_12 = "Посмотрел логи сервера: ошибок авторизации нет, есть таймауты базы."
+LONG_LOG = [
+    ("user", "сделай форму входа: email и пароль, без новых зависимостей"),
+    ("assistant", "Готово, форма на месте."),
+    ("user", "покажи, что поменялось"),
+    ("assistant", "Поменялись два файла: форма и её стили."),
+    ("user", "дальше"),
+    ("assistant", "Добавил валидацию email."),
+    ("user", "проверь ещё мобильную вёрстку"),
+    ("assistant", "На узком экране кнопка уезжает, поправил отступы."),
+    ("user", "ок, мержим"),
+    ("assistant", "Смержил в main."),
+    ("user", "ок, мержим"),
+    ("user", "хорошо, теперь посмотри на логи сервера за вчера"),
+    ("assistant", AGENT_12),
+    ("user", LONG),
+    ("assistant", "Принял, начинаю с теста на пустой пароль."),
+]
+PIECE_1 = "сначала написал тест, который это воспроизводит."
+PIECE_2 = "запусти весь набор тестов и покажи мне вывод целиком"
+GLUED = f"{PIECE_1} {PIECE_2}"          # два куска одной реплики без «…»
+
+
+def long_doc() -> dict:
+    return role_doc(LONG_LOG)
+
+
+class QuoteRepairTest(unittest.TestCase):
+    """`repair_quotes`: адрес и склейку, которые однозначно восстанавливаются по логу, скрипт
+    чинит сам со строкой в `metadata.warnings`; текст агента и неоднозначность не чинятся."""
+
+    def repair(self, obj) -> tuple[list[str], list[str]]:
+        docs = {SID: long_doc()}
+        lines = collector_check.repair_quotes(obj, docs)
+        return lines, collector_check.attribution_problems(obj, docs)
+
+    def test_glued_pieces_rewritten_with_ellipsis(self):
+        obj = quoted(GLUED, 13)
+        lines, problems = self.repair(obj)
+        self.assertEqual(problems, [])
+        self.assertEqual(obj["observations"][0]["quote"], f"{PIECE_1} … {PIECE_2}")
+        self.assertEqual(obj["observations"][0]["turn_index"], 13)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("«…»", lines[0])
+        self.assertIn("$.observations[0]", lines[0])
+        self.assertIn(SID, lines[0])
+
+    def test_turn_shifted_by_two_readdressed(self):
+        obj = quoted("не трогай конфиг сборки, там всё настроено под старый сервер", 11)
+        lines, problems = self.repair(obj)
+        self.assertEqual(problems, [])
+        self.assertEqual(obj["observations"][0]["turn_index"], 13)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("ход 11 → 13", lines[0])
+        self.assertIn("перенесена", lines[0])
+
+    def test_glued_and_shifted_both_repaired(self):
+        obj = quoted(GLUED, 11)
+        lines, problems = self.repair(obj)
+        self.assertEqual(problems, [])
+        self.assertEqual((obj["observations"][0]["turn_index"], obj["observations"][0]["quote"]),
+                         (13, f"{PIECE_1} … {PIECE_2}"))
+        self.assertIn("ход 11 → 13", " ".join(lines))
+
+    def test_every_quote_block_repaired(self):
+        for block in QUOTE_BLOCKS:
+            with self.subTest(block=block):
+                obj = quoted(GLUED, 11, block=block)
+                lines, problems = self.repair(obj)
+                self.assertEqual(problems, [])
+                self.assertEqual(obj[block][0]["turn_index"], 13)
+                self.assertIn(f"$.{block}[0]", lines[0])
+
+    def test_piece_from_agent_text_rejected(self):
+        obj = quoted(f"{PIECE_2} {AGENT_12}", 13)
+        lines, problems = self.repair(obj)
+        self.assertEqual(lines, [])
+        self.assertEqual(obj["observations"][0]["quote"], f"{PIECE_2} {AGENT_12}")
+        self.assertEqual(len(problems), 1, problems)
+
+    def test_agent_text_never_readdressed(self):
+        obj = quoted(AGENT_12, 13)
+        lines, problems = self.repair(obj)
+        self.assertEqual((lines, obj["observations"][0]["turn_index"]), ([], 13))
+        self.assertIn("текст агента", problems[0])
+
+    def test_short_pieces_rejected(self):
+        """Минимум куска — 3 слова и 15 знаков: из двухсловных обрывков длинной реплики можно
+        собрать фразу, которой человек не говорил («тут несколько» + «форма входа падает»)."""
+        self.assertEqual((collector_check.MIN_PIECE_WORDS, collector_check.MIN_PIECE_CHARS), (3, 15))
+        for quote in ("тут несколько форма входа падает", "форма входа падает на пустом пароле тест"):
+            with self.subTest(quote=quote):
+                obj = quoted(quote, 13)
+                lines, problems = self.repair(obj)
+                self.assertEqual(lines, [])
+                self.assertEqual(obj["observations"][0]["quote"], quote)
+                self.assertEqual(len(problems), 1, problems)
+
+    def test_pieces_out_of_order_rejected(self):
+        obj = quoted(f"{PIECE_2} {PIECE_1}", 13)
+        lines, problems = self.repair(obj)
+        self.assertEqual(lines, [])
+        self.assertEqual(len(problems), 1, problems)
+
+    def test_ambiguous_turn_not_readdressed(self):
+        """«ок, мержим» — в ходах 8 и 10: какой из них имел в виду коллектор, по логу не решить."""
+        obj = quoted("ок, мержим", 9)
+        lines, problems = self.repair(obj)
+        self.assertEqual((lines, obj["observations"][0]["turn_index"]), ([], 9))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("ход 8", problems[0])
+        self.assertIn("ход 10", problems[0])
+
+    def test_harness_text_not_readdressed(self):
+        obj = quoted("Напоминание харнесса про задачи", 2)
+        lines = collector_check.repair_quotes(obj, {SID: role_doc()})
+        self.assertEqual((lines, obj["observations"][0]["turn_index"]), ([], 2))
+
+    def test_valid_quote_untouched(self):
+        obj = quoted(f"{PIECE_1} … {PIECE_2}", 13)
+        self.assertEqual(self.repair(obj), ([], []))
+
+    def test_tool_output_readdressed(self):
+        from _util import FIXTURES
+        from lib import normalize
+        doc = normalize.parse_file(FIXTURES / "logs" / "claude-main.jsonl")
+        obj = quoted("1 passed", 0, sid=doc["session_id"])
+        lines = collector_check.repair_quotes(obj, {doc["session_id"]: doc})
+        self.assertEqual(obj["observations"][0]["turn_index"], 1, lines)
+        self.assertIn("ход 0 → 1", lines[0])
+
+
+def two_axes() -> dict:
+    """verification — верная цитата хода 13; ownership — текст агента хода 12 (не чинится)."""
+    obj = quoted(f"{PIECE_1} … {PIECE_2}", 13)
+    obj["observations"].append({"axis": "ownership", "polarity": "negative", "session_id": SID,
+                                "turn_index": 12, "quote": AGENT_12, "reading": "x"})
+    obj["axes_unobserved"] = [u for u in obj["axes_unobserved"] if u["axis"] != "ownership"]
+    return obj
+
+
+class DropInvalidTest(unittest.TestCase):
+    """`drop_unverified` (`--drop-invalid`): после исчерпания перезапусков неремонтируемые
+    записи убираются явно, ось без наблюдений уходит в `axes_unobserved` с `quote_unverified`."""
+
+    def test_unrepairable_dropped_and_axis_unobserved(self):
+        obj = two_axes()
+        docs = {SID: long_doc()}
+        lines = collector_check.drop_unverified(obj, docs)
+        self.assertEqual([o["axis"] for o in obj["observations"]], ["verification"])
+        moved = [u for u in obj["axes_unobserved"] if u["axis"] == "ownership"]
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0]["reason"], "quote_unverified")
+        self.assertTrue(any("отброшено" in ln and "$.observations[1]" in ln and "ход 12" in ln
+                            for ln in lines), lines)
+        self.assertTrue(any("ownership" in ln and "quote_unverified" in ln for ln in lines), lines)
+        self.assertEqual(collector_check.attribution_problems(obj, docs), [])
+        self.assertEqual(collector_check.sense_problems(obj), [])
+
+
+class RepairFilesTest(CollectorCase):
+    """`check_files` чинит по умолчанию и пишет файл атомарно; `--drop-invalid` отбрасывает."""
+
+    def batch_file(self, obj: dict) -> str:
+        state = make_state(self.dir)
+        log = state / "logs" / "alex" / "long.md"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(heading_log(LONG_LOG), encoding="utf-8")
+        obj["sessions"] = [{"session_id": SID, "path": "logs/alex/long.md", "turns_total": len(LONG_LOG),
+                            "user_turns": 9, "reviewed_from_turn": None, "state": "new", "status": "read",
+                            "status_note": None}]
+        path = state / "runs" / "pending" / "alex" / "batch-01.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        return str(path)
+
+    def reread(self, path: str) -> dict:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+
+    def test_repair_written_and_schema_clean(self):
+        path = self.batch_file(quoted(GLUED, 11))
+        code, results = collector_check.check_files([path])
+        self.assertEqual((code, results[0]["problems"]), (0, []))
+        saved = self.reread(path)
+        self.assertEqual((saved["observations"][0]["turn_index"], saved["observations"][0]["quote"]),
+                         (13, f"{PIECE_1} … {PIECE_2}"))
+        warns = saved["metadata"]["warnings"]
+        self.assertTrue(any(w.startswith("check-collector: ") and "ход 11 → 13" in w for w in warns), warns)
+        self.assertEqual(collector_check.check_batch(saved, make_state(self.dir), quotes=True), [])
+        self.assertTrue(results[0]["written"])
+        self.assertEqual(len(results[0]["repaired"]), 2, results[0]["repaired"])
+        # второй проход ничего не чинит и файл не трогает
+        code, again = collector_check.check_files([path])
+        self.assertEqual((code, again[0]["repaired"], again[0]["written"]), (0, [], False))
+
+    def test_unrepairable_without_drop_is_1_and_file_kept(self):
+        obj = quoted(AGENT_12, 13)
+        path = self.batch_file(obj)
+        before = Path(path).read_text(encoding="utf-8")
+        code, results = collector_check.check_files([path])
+        self.assertEqual(code, 1)
+        self.assertTrue(any("текст агента" in p for p in results[0]["problems"]), results)
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), before)
+
+    def test_drop_invalid_removes_record_and_passes(self):
+        obj = two_axes()
+        path = self.batch_file(obj)
+        code, results = collector_check.check_files([path], drop_invalid=True)
+        self.assertEqual((code, results[0]["problems"]), (0, []))
+        saved = self.reread(path)
+        self.assertEqual([o["axis"] for o in saved["observations"]], ["verification"])
+        self.assertIn({"axis": "ownership", "reason": "quote_unverified"},
+                      [{k: u[k] for k in ("axis", "reason")} for u in saved["axes_unobserved"]])
+        self.assertTrue(any("отброшено" in w for w in saved["metadata"]["warnings"]))
+        self.assertEqual(len(results[0]["dropped"]), 2, results[0]["dropped"])
+        self.assertEqual(schema.validate(saved, "collector"), [])
+
+    def test_drop_leaving_no_observations_fails_batch(self):
+        path = self.batch_file(quoted(AGENT_12, 13))
+        before = Path(path).read_text(encoding="utf-8")
+        code, results = collector_check.check_files([path], drop_invalid=True)
+        self.assertEqual(code, 1)
+        self.assertTrue(any("не осталось ни одного наблюдения" in p for p in results[0]["problems"]),
+                        results)
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), before)
+
+    def test_missing_log_never_dropped(self):
+        obj = quoted("ок, мержим", 8)
+        path = self.batch_file(obj)
+        saved = self.reread(path)
+        saved["sessions"][0]["path"] = "logs/alex/none.md"
+        Path(path).write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+        code, results = collector_check.check_files([path], drop_invalid=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(results[0]["dropped"], [])
+        self.assertTrue(any("none.md" in p for p in results[0]["problems"]), results)
+
+    def cli(self, *args: str) -> tuple[int, dict]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = sr.main(["check-collector", *args])
+        return code, json.loads(out.getvalue())
+
+    def test_cli_names_repair(self):
+        code, report = self.cli(self.batch_file(quoted(GLUED, 11)))
+        self.assertEqual(code, 0)
+        self.assertEqual(report["repaired"], 2)
+        self.assertTrue(any("ход 11 → 13" in ln for ln in report["batches"][0]["repaired"]), report)
+
+    def test_cli_drop_invalid_flag(self):
+        code, report = self.cli("--drop-invalid", self.batch_file(two_axes()))
+        self.assertEqual(code, 0)
+        self.assertEqual(report["dropped"], 2)
+        self.assertTrue(any("отброшено" in ln for ln in report["batches"][0]["dropped"]), report)
 
 
 if __name__ == "__main__":

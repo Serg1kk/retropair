@@ -402,6 +402,151 @@ class PasswordTotpText(unittest.TestCase):
                 self.assertEqual(PLAIN.sanitize_text(text), (text, {}))
 
 
+# Выдуманный пароль A01 (повторно); `ESC_N`/`ESC_T` — escape-последовательность текстом (обратная
+# косая + буква), как в исходнике, который агент вывел через grep/cat/Read.
+PWT = "Tqzr" + "b481"
+ESC_N = "\\" + "n"
+ESC_T = "\\" + "t"
+ESC_RN = "\\" + "r" + "\\" + "n"
+
+
+def _tool_row(content) -> dict:
+    return {"type": "user", "uuid": UUID, "sessionId": UUID, "timestamp": TS,
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_01", "content": content}]}}
+
+
+class PasswordToolOutput(unittest.TestCase):
+    """A01 (повторно): пароль в выводе инструмента — метка сразу после escape `\\n`/`\\t` в выведенном
+    исходнике, вывод grep `путь:строка:`, колонка пароля в CSV/TSV/таблице под строкой заголовка."""
+
+    def assertClean(self, out: str, *values: str) -> None:
+        for v in values:
+            self.assertNotIn(v, out)
+
+    def test_bug_shape_label_after_escaped_newline(self):
+        # Форма утечки: f-строка в выведенном исходнике, метки через `\n\n`, пароль с цифрами.
+        text = ('    body = f"Org: {org}' + ESC_N * 2 + "Username: {email}" + ESC_N * 2 + "Password: "
+                + PWT + ESC_N * 2 + 'Note: see docs"\n')
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertClean(out, PWT)
+        self.assertIn(ESC_N + "Password: [PASSWORD]" + ESC_N, out)
+        self.assertIn("Username: {email}", out)
+        self.assertEqual(hits, {"password_text": 1})
+
+    def test_escape_variants(self):
+        for text, expected in (
+                (ESC_RN + "Password: " + PWT + ESC_RN, ESC_RN + "Password: [PASSWORD]" + ESC_RN),
+                (ESC_T + "pwd: " + PWT, ESC_T + "pwd: [PASSWORD]"),
+                ("x" + ESC_N + "Пароль: " + PWT, "x" + ESC_N + "Пароль: [PASSWORD]"),
+                ("\\" + ESC_N + "PASSWORD: " + PWT, "\\" + ESC_N + "PASSWORD: [PASSWORD]"),
+                ("Password:" + ESC_T + PWT + ESC_N, "Password:" + ESC_T + "[PASSWORD]" + ESC_N),
+                ("Username:" + ESC_T + "u1" + ESC_T + "Password:" + ESC_T + PWT,
+                 "Username:" + ESC_T + "u1" + ESC_T + "Password:" + ESC_T + "[PASSWORD]"),
+                (ESC_N + "2FA: " + B32 + ESC_N, ESC_N + "2FA: [OTP_SECRET]" + ESC_N)):
+            with self.subTest(text=text):
+                out, hits = PLAIN.sanitize_text(text)
+                self.assertEqual(out, expected)
+                self.assertEqual(sum(hits.values()), 1, hits)
+
+    def test_grep_output_path_line(self):
+        text = ("batches/send.py:42:    msg = f\"Org: {org}" + ESC_N + "Password: " + PWT + ESC_N + "\"\n"
+                "batches/notes.txt:7:Password: " + PWT + "\n"
+                "batches/cfg.yaml:3-  password: " + PWT + "\n")
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertClean(out, PWT)
+        self.assertEqual(hits, {"password_text": 3})
+
+    def test_sanitize_obj_tool_result_row(self):
+        grep_out = ("batches/send.py:42:    msg = f\"Org: {org}" + ESC_N * 2 + "Username: {email}" + ESC_N * 2
+                    + "Password: " + PWT + ESC_N * 2 + "\"\n" + "batches/users.csv:1:username,password\n"
+                    + "batches/users.csv:2:" + MAIL + "," + PWT + "\n")
+        for content in (grep_out, [{"type": "text", "text": grep_out}]):
+            with self.subTest(kind=type(content).__name__):
+                line = json.dumps(_tool_row(content), ensure_ascii=False)
+                out, hits = PLAIN.sanitize_obj(json.loads(line))
+                dumped = json.dumps(out, ensure_ascii=False)
+                self.assertClean(dumped, PWT, MAIL)
+                self.assertEqual(out["uuid"], UUID)
+                self.assertEqual(hits, {"password_text": 1, "email": 1, "password_column": 1})
+                # та же строка сырым JSONL: escape удвоен (`\\n`), JSON остаётся валидным
+                raw_out, raw_hits = PLAIN.sanitize_text(line)
+                self.assertClean(raw_out, PWT, MAIL)
+                json.loads(raw_out)
+
+    def test_compact_snapshot_tool_result(self):
+        import tempfile
+        from pathlib import Path
+
+        grep_out = "src/job.py:9:  text = \"" + ESC_N + "Password: " + PWT + ESC_N + "\"\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp) / (UUID + ".jsonl")
+            main.write_text(json.dumps(_tool_row(grep_out), ensure_ascii=False) + "\n", encoding="utf-8")
+            text, hits, _ = cc_jsonl.compact_snapshot(main, PLAIN.sanitize_obj)
+        self.assertClean(text, PWT)
+        self.assertEqual(hits, {"password_text": 1})
+
+    def test_password_column_under_header(self):
+        cases = [
+            ("username,password\n" + MAIL + "," + PWT + "\n", "username,password\n[EMAIL],[PASSWORD]\n"),
+            ("username,password" + ESC_N + MAIL + "," + PWT + ESC_N,
+             "username,password" + ESC_N + "[EMAIL],[PASSWORD]" + ESC_N),
+            ("login\tpassword\tnote\nu1\t" + PWT + "\tok\n", "login\tpassword\tnote\nu1\t[PASSWORD]\tok\n"),
+            ("login" + ESC_T + "pass" + ESC_N + "u1" + ESC_T + PWT,
+             "login" + ESC_T + "pass" + ESC_N + "u1" + ESC_T + "[PASSWORD]"),
+            ('"email";"Пароль"\n"u1";"' + PWT + '"\n', '"email";"Пароль"\n"u1";"[PASSWORD]"\n'),
+            ("| Логин | Пароль |\n|---|---|\n| u1 | " + PWT + " |\n| u2 | " + PWT + "x |\n",
+             "| Логин | Пароль |\n|---|---|\n| u1 | [PASSWORD] |\n| u2 | [PASSWORD] |\n"),
+            (" username | password\n----------+----------\n u1       | " + PWT + "\n",
+             " username | password\n----------+----------\n u1       | [PASSWORD]\n"),
+            ("     1→org,user_name,db_password\n     2→acme," + MAIL + "," + PWT + "\n",
+             "     1→org,user_name,db_password\n     2→acme,[EMAIL],[PASSWORD]\n"),
+            ("batches/u.csv:1:pass,user\nbatches/u.csv:2:" + PWT + ",u1\n",
+             "batches/u.csv:1:pass,user\nbatches/u.csv:2:[PASSWORD],u1\n"),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                out, hits = PLAIN.sanitize_text(text)
+                self.assertEqual(out, expected)
+                self.assertEqual(hits.get("password_column"), expected.count("[PASSWORD]"), hits)
+
+    def test_password_column_stops_at_block_end(self):
+        text = "user,password\nu1," + PWT + "\n\nname,count\nalpha1,beta2\n"
+        out, hits = PLAIN.sanitize_text(text)
+        self.assertEqual(out, "user,password\nu1,[PASSWORD]\n\nname,count\nalpha1,beta2\n")
+        self.assertEqual(hits, {"password_column": 1})
+
+    def test_email_after_escape_keeps_escape(self):
+        for text, expected in ((ESC_N + MAIL + ESC_T + MAIL, ESC_N + "[EMAIL]" + ESC_T + "[EMAIL]"),
+                               ("\\" + ESC_N + MAIL, "\\" + ESC_N + "[EMAIL]"),
+                               ("CORP\\" + MAIL, "CORP\\[EMAIL]")):
+            with self.subTest(text=text):
+                self.assertEqual(PLAIN.sanitize_text(text)[0], expected)
+
+    def test_idempotent(self):
+        text = ("username,password\n" + MAIL + "," + PWT + "\n" + ESC_N + "Password: " + PWT + ESC_N)
+        once, _ = PLAIN.sanitize_text(text)
+        self.assertEqual(PLAIN.sanitize_text(once), (once, {}))
+
+    def test_negatives_untouched(self):
+        cases = [
+            "username,password\n", "username,password" + ESC_N, "| Логин | Пароль |\n|---|---|\n",
+            "user,password\n$DB_USER,$DB_PASS\n", "user,password\nalice,os.environ['PW']\n",
+            "user,password\nu1,<password>\nu2,{password}\nu3,[PASSWORD]\nu4,***\nu5,${PW}\n",
+            "suite,pass,fail\nunit,1234,0\ne2e,17,2\n", "name,pass\ntest_login,PASS\ntest_logout,FAIL\n",
+            "user,password\nu1,abc\n", "compass,bypass\nnorth,yes1234\n",
+            "Enter username, password\nThen click, Submit99\n", "user,password\nu1,two words here\n",
+            ESC_N + "Password: ${PASS}" + ESC_N, ESC_N + "Password: required" + ESC_N,
+            ESC_N + "password-reset link" + ESC_N, ESC_N + "pwd: /tmp/work" + ESC_N,
+            ESC_N + "Password: {pw}" + ESC_N, ESC_N + 'Password: " + pw', "Password:" + ESC_T + "{pw}",
+            ESC_N + "2FA: enabled" + ESC_N, "C:" + ESC_N + "ew" + ESC_T + "emp",
+            "batches/run.sh:3:export PW=$DB_PASS", "os.environ['PASSWORD']",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(PLAIN.sanitize_text(text), (text, {}))
+
+
 # Выдуманный пароль B01; обратная косая + кавычка — экранированная кавычка JSON внутри строки.
 PWV = "Qz4" + "nR8" + "wLp2" + "xT6mK9"
 BQ = "\\" + '"'
@@ -730,6 +875,24 @@ class Performance(unittest.TestCase):
                      "#password" + "\\x" * 10000, "pass.value = '" + "\\" * 20000, '"password":"' + "a\\" * 10000,
                      "ById" * 5000, "getBy" * 5000, "#" + "a" * 20000 + "pwd", "[password" * 5000,
                      "$('#password').value = '" + "a" * 20000):
+            started = time.perf_counter()
+            s.sanitize_text(text)
+            self.assertLess(time.perf_counter() - started, 1.0, text[:16])
+
+    def test_long_tokens_linear_tool_output(self):
+        # A01 (повторно): escape подряд, метки после escape, пробелы и `\t` после метки, строки
+        # и ячейки CSV/таблиц подряд, длинный заголовок, длинная ячейка, префикс grep без конца.
+        import time
+
+        s = sanitize.Sanitizer()
+        esc_n, esc_t = "\\" + "n", "\\" + "t"
+        for text in (esc_n * 10000, (esc_n + "Password:") * 2000, "Password:" + " " * 20000,
+                     "Password:" + esc_t * 7000, "Password: **" + " " * 20000, "Password:" + "\\" * 20000,
+                     "user,password\n" * 3000, "user,password\n" + "u1,Abcd1234\n" * 5000,
+                     "|" * 20000, "password," * 3000, "a|password|" * 2000 + "\n" + "|x" * 5000,
+                     "user,password\n" + "a" * 20000, "user,password\n1:" + ":1:" * 6000,
+                     "     1→user,password\n" + " " * 20000, "-" * 20000, "user,password\n" + "-+" * 10000,
+                     "pass;" * 4000 + "\n" + "x;" * 4000, esc_n + "a" * 20000 + "@" + "b" * 10000):
             started = time.perf_counter()
             s.sanitize_text(text)
             self.assertLess(time.perf_counter() - started, 1.0, text[:16])

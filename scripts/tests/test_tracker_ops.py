@@ -720,6 +720,102 @@ class MarkLogsNoRunTest(OpsCase):
         self.assertEqual(self.paths["logs_index"].read_bytes(), before)
 
 
+ALEX_EXTRA = [f"a13a13a{i}-1a2b-4c3d-8e4f-5a6b7c8d9e1{i}" for i in range(3)]
+
+
+class RepeatedFlagsTest(OpsCase):
+    """A13: повтор многозначного флага (`--excluded`, `--sessions`, `--skipped`) накапливает список,
+    а не перетирает прежний; дубль ссылки в `mark-logs` → код 2, ничего не записано."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        index = self.index()
+        base = _entry(index, SHORT)
+        for i, sid in enumerate(ALEX_EXTRA):
+            key = f"2026-09-0{i + 1}_11-00-00Z-extra-{i}"
+            entry = json.loads(json.dumps(base))
+            entry.update({"session_id": sid, "key": key, "path": f"logs/alex/{key}.md",
+                          "source_path": f"/home/user/demo/.specstory/history/{key}.md", "state": "new"})
+            index["logs"].append(entry)
+        self.paths["logs_index"].write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+
+    def append_without_index(self) -> None:
+        saved = self.paths["logs_index"].read_bytes()
+        self.paths["logs_index"].unlink()
+        self.append_p1()
+        self.paths["logs_index"].write_bytes(saved)
+
+    def repeated(self, flag: str, reason: str | None = None) -> list[str]:
+        args = []
+        for sid in ALEX_EXTRA:
+            args += [flag, f"{sid}={reason}" if reason else sid]
+        return args
+
+    def assert_excluded(self, reason: str) -> None:
+        index = self.index()
+        for sid in ALEX_EXTRA:
+            entry = _entry(index, sid)
+            self.assertTrue(entry.get("excluded"), sid)
+            self.assertEqual(entry["excluded_reason"], reason)
+
+    def test_a13_no_run_repeated_excluded_accumulates(self):
+        code, out, err = self.cli("mark-logs", "--no-run", "--person", "alex",
+                                  *self.repeated("--excluded", "transcript_too_short"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sorted(m["session_id"] for m in json.loads(out)["marked"]), sorted(ALEX_EXTRA))
+        self.assert_excluded("transcript_too_short")
+
+    def test_a13_run_repeated_excluded_accumulates(self):
+        self.append_without_index()
+        code, out, err = self.cli("mark-logs", RUN_P1, *self.repeated("--excluded", "not_batched"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["marked"], 3 + len(ALEX_EXTRA))
+        self.assert_excluded("not_batched")
+
+    def test_a13_mixed_form_accumulates(self):
+        a, b, c = (f"{sid}=transcript_too_short" for sid in ALEX_EXTRA)
+        code, out, err = self.cli("mark-logs", "--no-run", "--person", "alex", "--excluded", a, b, "--excluded", c)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(json.loads(out)["marked"]), 3)
+        self.assert_excluded("transcript_too_short")
+
+    def test_a13_repeated_sessions_accumulates(self):
+        self.append_without_index()
+        code, out, err = self.cli("mark-logs", RUN_P1, *self.repeated("--sessions"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["marked"], 3 + len(ALEX_EXTRA))
+        index = self.index()
+        for sid in ALEX_EXTRA:
+            self.assertEqual(_entry(index, sid)["reviewed_in_run"], RUN_P1)
+
+    def test_a13_duplicate_ref_is_2_and_nothing_written(self):
+        self.append_without_index()
+        before_tr = tracker.tracker_path(self.root).read_bytes()
+        before_ix = self.paths["logs_index"].read_bytes()
+        a, b = ALEX_EXTRA[0], ALEX_EXTRA[1]
+        cases = [
+            ("mark-logs", "--no-run", "--person", "alex", "--excluded", a, b, "--excluded", a),
+            ("mark-logs", "--no-run", "--person", "alex", "--excluded", f"{a}=transcript_too_short",
+             "--excluded", f"{a}=empty_transcript"),
+            ("mark-logs", RUN_P1, "--excluded", f"{a}=not_batched", "--excluded", f"{a}=not_batched"),
+            ("mark-logs", RUN_P1, "--sessions", a, b, "--sessions", b),
+            ("mark-logs", RUN_P1, "--sessions", a, "--excluded", f"{a}=not_batched"),
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                code, _, err = self.cli(*args)
+                self.assertEqual(code, 2, err)
+                self.assertIn("указана дважды", err)
+        self.assertEqual(tracker.tracker_path(self.root).read_bytes(), before_tr)
+        self.assertEqual(self.paths["logs_index"].read_bytes(), before_ix)
+
+    def test_a13_append_repeated_skipped_accumulates(self):
+        code, out, err = self.cli("append", str(self.write(payload())), "--person", "alex",
+                                  "--period-label", "p1", "--skipped", "s-1", "--skipped", "s-2", "s-3")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.tracker_doc()["runs"][0]["sessions_skipped_known"], ["s-1", "s-2", "s-3"])
+
+
 class VerifyTest(OpsCase):
     def review_file(self, run_id: str = RUN_P1, text: str = "Текст ревью.\n"):
         path = self.paths["reviews"] / "alex" / f"{run_id}.md"

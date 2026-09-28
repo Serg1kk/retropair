@@ -220,6 +220,19 @@ class SkillTest(unittest.TestCase):
         self.assertIn("references/judge-input.md", self.body)
         self.assertIn("references/orchestration.md", self.body)
 
+    def test_phase1_syncs_project_agents(self) -> None:
+        """A15: фаза 1 до коллекторов обновляет непроправленных проектных агентов (`agents sync`)."""
+        phase = phases(self.body)[1]
+        self.assertIn('sr.py" agents sync', phase)
+        self.assertIn("правлен вручную", phase)
+        after = phase.split("agents sync", 1)[1]
+        self.assertIn("--no-ask", after)
+        self.assertIn("в сводку (фаза 12)", after, "при --no-ask строки sync не молча, а в сводку")
+        self.assertIn("до выбора агента", phase)
+        self.assertLess(phase.index("doctor --json"), phase.index('sr.py" agents sync'))
+        self.assertNotIn("agents sync", phases(self.body)[4])
+        self.assertIn("agents sync", _read(ORCH).split("## Сводка", 1)[1])
+
     def test_no_card_stops_person(self) -> None:
         """Нет карточки → прогон по человеку останавливается в фазе 1: `append` без карточки не пишет."""
         phase = phases(self.body)[1]
@@ -269,7 +282,9 @@ class SkillTest(unittest.TestCase):
         self.assertEqual(args.person, "<person>")
         self.assertIsNone(args.run_id)
         self.assertTrue(all(ref.endswith("=transcript_too_short") for ref in args.excluded), args.excluded)
-        for phrase in ("только короткие", "данных мало", "агентов не зови", "новых логов нет"):
+        self.assertGreaterEqual(len(args.excluded), 2, "A13: пример на несколько сессий одним флагом")
+        for phrase in ("только короткие", "данных мало", "агентов не зови", "новых логов нет",
+                       "флаг можно повторять"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, phase)
 
@@ -295,6 +310,11 @@ class SkillTest(unittest.TestCase):
         phase = phases(self.body)[8]
         self.assertIn("--force", phase)
         self.assertIn("добавляет", phase)
+        self.assertIn("флаг можно повторять", phase)
+        calls = [ln for ln in command_lines(phase) if commands_in(ln)[:1] == ["mark-logs"]]
+        self.assertEqual(len(calls), 1, calls)
+        args = registry_cmds.build_parser().parse_args(shlex.split(calls[0][len(LITERAL):]))
+        self.assertGreaterEqual(len(args.excluded), 2, "A13: пример на несколько сессий одним флагом")
         reasons = phase.split("Причины исключения:", 1)[1].split("\n\n", 1)[0]
         self.assertNotIn("other_period", reasons)
 
@@ -368,6 +388,13 @@ class OrchestrationTest(unittest.TestCase):
     def test_other_period_left_open(self) -> None:
         judge = self.text.split("## Бриф судьи", 1)[1].split("\n## ", 1)[0]
         self.assertIn("не закрываются", judge)
+
+    def test_mark_logs_row_repeatable_flag_and_duplicate(self) -> None:
+        """A13: `--excluded` повторяется и принимает список; дубль ссылки — код 2."""
+        section = self.text.split("## Коды выхода", 1)[1].split("\n## ", 1)[0]
+        row = next(ln for ln in section.splitlines() if ln.startswith("| `mark-logs` |"))
+        self.assertIn("флаг можно повторять", row)
+        self.assertIn("указана дважды", row)
 
     def test_open_recs_only_open_and_pending_in_summary(self) -> None:
         """B04: во вход агентов идёт только `open`; `pending_approval` — в сводку, вердикта нет."""

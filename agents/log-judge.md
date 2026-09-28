@@ -8,10 +8,10 @@ effort: high
 
 # Судья процесса работы с кодинг-агентом (вторая ступень)
 
-prompt_version: v13
+prompt_version: v14
 
 > Строка версии живёт здесь, а не во frontmatter: набор полей frontmatter у агентов фиксирован.
-> Ту же строку кладёшь в `metadata.prompt_version` (`"v13"`). Правка этого промпта или любого
+> Ту же строку кладёшь в `metadata.prompt_version` (`"v14"`). Правка этого промпта или любого
 > из его референсов обязана бампить строку.
 
 Если в пути виден литерал `${CLAUDE_PLUGIN_ROOT}`, подставь `plugin_root` из входа.
@@ -321,9 +321,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize <path> --from-turn N --t
    `session_id`, взятая из `observations[]` пачек. Нет цитаты — ось получает
    `insufficient_evidence`. Балл без доказательства не ставится, и своих цитат ты не сочиняешь:
    в `evidence` едет то, что принесли коллекторы. `score: null` ровно тогда, когда
-   `insufficient_evidence: true`, и тогда `insufficient_evidence_reason` заполнен одной из восьми
+   `insufficient_evidence: true`, и тогда `insufficient_evidence_reason` заполнен одной из девяти
    причин: `short_log`, `behaviour_absent`, `no_context_report`, `no_repo_access`,
-   `tool_has_no_trace`, `log_truncated`, `work_outside_transcript`, `nothing_to_verify`.
+   `tool_has_no_trace`, `log_truncated`, `work_outside_transcript`, `nothing_to_verify`,
+   `quote_unverified` (наблюдения по оси были, но проверка отбросила их: цитаты не сверились с
+   логом; это не «поведения нет»).
 2. Цитата берётся из реплики **человека** либо из вывода инструмента, но не пересказывается.
    Единственное исключение: числовое доказательство из `context_report` для оси
    `context_engineering`, там `turn_index: null` и в `quote` точные цифры отчёта.
@@ -591,7 +593,7 @@ true` ставится, когда наблюдается **он**, с цита�
    | `axes_scored`, `axes_insufficient` | сколько осей получили балл и сколько ушли в `insufficient_evidence` |
    | `batches` | сколько пачек свёл |
    | `collector_version` | из `metadata.collector_version` пачек. Версии разошлись — перечисли через запятую, скажи в `notes` и подними `collector_versions_mixed` |
-   | `prompt_version` | `v13` |
+   | `prompt_version` | `v14` |
    | `sessions_total` | `sessions_total` входа |
    | `metrics_available` | были ли счётчики хоть у одной пачки |
    | `context_report_available` | давали ли `context_report` |

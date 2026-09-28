@@ -1,4 +1,4 @@
-"""Команда `agents`: проектные агенты `.claude/agents/sessionretro-*.md` — write, check."""
+"""Команда `agents`: проектные агенты `.claude/agents/sessionretro-*.md` — write, check, sync."""
 
 from __future__ import annotations
 
@@ -27,6 +27,11 @@ def register(subparsers) -> None:
     ck.add_argument("--json", action="store_true", help="статус по ролям JSON-массивом")
     ck.set_defaults(func=handle_check)
 
+    sy = sub.add_parser("sync", help="после обновления плагина обновить непроправленные файлы "
+                                     "агентов; правленые не трогать (код 0)")
+    sy.add_argument("--json", action="store_true", help="отчёт одним JSON-объектом (роли)")
+    sy.set_defaults(func=handle_sync)
+
 
 def _workspace(args) -> tuple[Path, dict]:
     root = find_workspace(Path.cwd(), args.workspace)
@@ -50,6 +55,27 @@ def handle_write(args) -> int:
         paths = ", ".join(_rel(root, role) for role in res["skipped_edited"])
         raise SrError(f"agents write: правлены вручную и не перезаписаны: {paths} — "
                       f"перезаписать: agents write --force", 1)
+    return 0
+
+
+def handle_sync(args) -> int:
+    """Код 0 и при правленых файлах: это предупреждение, ретро не останавливается."""
+    root, cfg = _workspace(args)
+    res = agents.sync(root, cfg)
+    if args.json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return 0
+    lang = cfg["lang"]
+    if len(res["missing"]) == len(agents.ROLES):
+        print(t(I18N, "sync_none", lang))
+        return 0
+    edited_hint = t(I18N, "sync_edited_hint" if res["record"] else "sync_no_record", lang)
+    for key, label, hint in (("updated", "sync_updated", None), ("unchanged", "unchanged", None),
+                             ("edited", "sync_edited", edited_hint),
+                             ("missing", "sync_missing", t(I18N, "sync_missing_hint", lang))):
+        for role in res[key]:
+            line = f"{t(I18N, label, lang)}: {role} ({_rel(root, role)})"
+            print(f"{line} — {hint}" if hint else line)
     return 0
 
 

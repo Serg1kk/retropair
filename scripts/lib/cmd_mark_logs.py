@@ -17,11 +17,12 @@ from lib.workspace import SrError, find_workspace
 def register(subparsers) -> None:
     p = subparsers.add_parser("mark-logs", help="пометить в индексе логи записанного прогона")
     p.add_argument("run_id", metavar="RUN", nargs="?", help="id прогона (не задаётся с --no-run)")
-    p.add_argument("--sessions", nargs="+", default=[], metavar="REF",
-                   help="ещё оценённые сессии: session_id, его префикс от 8 знаков, ключ или путь")
-    p.add_argument("--excluded", nargs="+", default=[], metavar="REF[=reason]",
+    p.add_argument("--sessions", nargs="+", action="extend", default=[], metavar="REF",
+                   help="ещё оценённые сессии: session_id, его префикс от 8 знаков, ключ или путь; "
+                        "флаг можно повторять")
+    p.add_argument("--excluded", nargs="+", action="extend", default=[], metavar="REF[=reason]",
                    help="сессии, осознанно не оценённые; причина после = (по умолчанию not_batched, "
-                        "с --no-run transcript_too_short)")
+                        "с --no-run transcript_too_short); флаг можно повторять")
     p.add_argument("--exclude-note", help="пояснение к исключённым сессиям, попадёт в индекс")
     p.add_argument("--force", action="store_true", help="перепометить уже помеченный прогон")
     p.add_argument("--no-run", action="store_true",
@@ -29,6 +30,15 @@ def register(subparsers) -> None:
                         + ", ".join(tracker.NO_RUN_REASONS))
     p.add_argument("--person", metavar="PERSON", help="id человека; только вместе с --no-run")
     p.set_defaults(func=handle)
+
+
+def _check_duplicates(args) -> None:
+    """Одна ссылка дважды в `--sessions`/`--excluded` (в том числе с разными причинами) → код 2."""
+    seen = set()
+    for ref in [*args.sessions, *(tracker._split_excluded(v)[0] for v in args.excluded)]:
+        if ref in seen:
+            raise SrError(f"сессия {ref} указана дважды в --sessions/--excluded; оставьте одну ссылку", 2)
+        seen.add(ref)
 
 
 def _check_no_run(args) -> None:
@@ -57,6 +67,7 @@ def _no_run(args) -> int:
 
 
 def handle(args) -> int:
+    _check_duplicates(args)
     if args.no_run:
         return _no_run(args)
     if args.person:

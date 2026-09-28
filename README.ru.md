@@ -132,7 +132,7 @@ python3 scripts/sr.py --workspace demo/workspace report --group --all-personal -
 
 ## Конфигурация
 
-Настройки workspace — в `.sessionretro/config.json`; их пишет `setup`, править можно и руками.
+Настройки workspace — в `.sessionretro/config.json`; их пишет `setup`, править можно и руками. Про `reviewer_gate`, `sanitize` и `batches` `setup` не спрашивает: их меняйте только в файле руками (ответ `setup-apply` с этими ключами отклоняется с кодом 2).
 
 | Ключ | По умолчанию | Что меняет |
 |---|---|---|
@@ -141,9 +141,9 @@ python3 scripts/sr.py --workspace demo/workspace report --group --all-personal -
 | `sources` | SpecStory + Claude Code этого проекта | откуда брать логи: `claude-jsonl`, `specstory`, `dir`, `git` |
 | `hook.enabled` | `true` | фоновый сбор в конце каждой сессии Claude Code |
 | `models` | сборщик `sonnet`/`medium`, оценщик `opus`/`high`, критик `sonnet`/`medium` | модель и effort каждого агента |
-| `period.mode` | `run` | периоды по дате запуска, окнами дат или метками |
+| `period.mode` | `run` | периоды по дате запуска (`run`) или окнами дат (`dates`); `labels` принимается, но в 0.1 скилл `review` метку не спрашивает и прогоны остаются без метки |
 | `show_scores` | `false` | показывать баллы по осям в личных отчётах (режим self) |
-| `reviewer_gate` | `true` | в режимах team и course текст — черновик до одобрения |
+| `reviewer_gate` | `true` | в режимах team и course текст — черновик до одобрения; только руками |
 | `sanitize.names`, `sanitize.extra_patterns` | пусто | свои слова и шаблоны, которые вычищаются из логов |
 | `batches.min_turns` | `4` | сессии короче отмечаются «слишком короткими» и не оцениваются |
 | `template` | `default` | шаблон текста; своя копия — в `.sessionretro/templates/` |

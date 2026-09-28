@@ -250,6 +250,71 @@ class PluginUpdate(_Proj):
         self.assertIn("model: sonnet", real.read_text("utf-8"))
 
 
+class Sync(_Proj):
+    """A15: `agents.sync` после обновления плагина — обновляет только «устаревшие» файлы."""
+
+    new_stub = PluginUpdate.new_stub
+    patched = PluginUpdate.patched
+
+    def test_outdated_updated_edited_kept(self):
+        agents.write(self.proj, self.cfg)
+        edit_body(agents.target(self.proj, "critic"))
+        edited = agents.target(self.proj, "critic").read_text("utf-8")
+        with self.patched(self.new_stub()):
+            res = agents.sync(self.proj, self.cfg)
+            self.assertEqual(res, {"updated": ["judge"], "unchanged": ["collector"],
+                                   "edited": ["critic"], "missing": [], "record": True})
+            self.assertIn("новая строка промпта",
+                          agents.target(self.proj, "judge").read_text("utf-8"))
+            st = {s["role"]: s for s in agents.status(self.proj, self.cfg)}
+            self.assertEqual((st["judge"]["outdated"], st["judge"]["body_edited"]), (False, False))
+            record = json.loads(agents.record_path(self.proj).read_text("utf-8"))
+            self.assertEqual(record["judge"]["sha256"],
+                             agents._sha(agents.target(self.proj, "judge").read_text("utf-8")))
+        self.assertEqual(agents.target(self.proj, "critic").read_text("utf-8"), edited)
+
+    def test_models_from_config(self):
+        agents.write(self.proj, self.cfg)
+        path = agents.target(self.proj, "judge")
+        path.write_text(path.read_text("utf-8").replace("model: opus", "model: haiku"), "utf-8")
+        with self.patched(self.new_stub()):
+            self.assertEqual(agents.sync(self.proj, self.cfg)["updated"], ["judge"])
+            self.assertEqual(path.read_text("utf-8"), agents.render("judge", "opus", "high"))
+
+    def test_model_only_mismatch_not_touched(self):
+        agents.write(self.proj, self.cfg)
+        path = agents.target(self.proj, "judge")
+        before = path.read_text("utf-8")
+        self.cfg["models"]["judge"]["model"] = "sonnet"
+        res = agents.sync(self.proj, self.cfg)
+        self.assertEqual(res["updated"], [])
+        self.assertEqual(path.read_text("utf-8"), before)
+
+    def test_no_files_does_nothing(self):
+        res = agents.sync(self.proj, self.cfg)
+        self.assertEqual(res["missing"], ["collector", "judge", "critic"])
+        self.assertEqual(res["updated"] + res["unchanged"] + res["edited"], [])
+        self.assertFalse((self.proj / ".claude").exists())
+        self.assertFalse(agents.record_path(self.proj).exists())
+
+    def test_missing_role_not_created(self):
+        agents.write(self.proj, self.cfg)
+        agents.target(self.proj, "critic").unlink()
+        res = agents.sync(self.proj, self.cfg)
+        self.assertEqual(res["missing"], ["critic"])
+        self.assertFalse(agents.target(self.proj, "critic").exists())
+
+    def test_no_record_not_overwritten(self):
+        agents.write(self.proj, self.cfg)
+        agents.record_path(self.proj).unlink()
+        before = agents.target(self.proj, "judge").read_text("utf-8")
+        with self.patched(self.new_stub()):
+            res = agents.sync(self.proj, self.cfg)
+        self.assertEqual((res["edited"], res["updated"], res["record"]), (["judge"], [], False))
+        self.assertEqual(agents.target(self.proj, "judge").read_text("utf-8"), before)
+        self.assertFalse(agents.record_path(self.proj).exists())
+
+
 class Cli(TempHome, unittest.TestCase):
     """Команды `agents write|check` в копии фикстуры `workspace-min`."""
 
@@ -315,6 +380,68 @@ class Cli(TempHome, unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             res = run_sr("agents", "check", home=self.home, cwd=Path(tmp))
         self.assertEqual(res.returncode, 2)
+
+    def old_plugin_judge(self) -> str:
+        """Файл судьи как от прошлой версии плагина: тело старое, отпечаток в agents.json его."""
+        path = self.root / JUDGE_REL
+        old = path.read_text("utf-8") + "\nстарая строка прошлой версии\n"
+        path.write_text(old, encoding="utf-8")
+        rec = agents.record_path(self.root)
+        data = json.loads(rec.read_text("utf-8"))
+        data["judge"]["sha256"] = agents._sha(old)
+        rec.write_text(json.dumps(data), encoding="utf-8")
+        return old
+
+    def test_sync_updates_outdated_then_check_ok(self):
+        """A15: после обновления плагина `agents sync` обновляет непроправленный файл, код 0."""
+        self.assertEqual(self.sr("agents", "write").returncode, 0)
+        self.old_plugin_judge()
+        res = self.sr("agents", "check")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("устарел", res.stdout)
+        res = self.sr("agents", "sync")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn(f"обновлён: judge ({JUDGE_REL})", res.stdout)
+        self.assertIn("без изменений: collector", res.stdout)
+        self.assertNotIn("старая строка", (self.root / JUDGE_REL).read_text("utf-8"))
+        res = self.sr("agents", "check")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_sync_edited_warns_code0(self):
+        self.assertEqual(self.sr("agents", "write").returncode, 0)
+        edit_body(self.root / JUDGE_REL)
+        res = self.sr("agents", "sync")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        line = next(ln for ln in res.stdout.splitlines() if ln.startswith("правлен вручную"))
+        self.assertIn(f"judge ({JUDGE_REL})", line)
+        self.assertIn("agents write --force", line)
+        self.assertIn("своя строка", (self.root / JUDGE_REL).read_text("utf-8"))
+
+    def test_sync_json(self):
+        self.assertEqual(self.sr("agents", "write").returncode, 0)
+        self.old_plugin_judge()
+        res = self.sr("agents", "sync", "--json")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(json.loads(res.stdout),
+                         {"updated": ["judge"], "unchanged": ["collector", "critic"],
+                          "edited": [], "missing": [], "record": True})
+
+    def test_sync_no_agents_code0(self):
+        res = self.sr("agents", "sync")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout.strip(), i18n.t(("cli", "setup"), "sync_none", "ru"))
+        self.assertFalse((self.root / ".claude" / "agents").exists())
+
+    def test_sync_no_record_warns(self):
+        self.assertEqual(self.sr("agents", "write").returncode, 0)
+        self.old_plugin_judge()
+        agents.record_path(self.root).unlink()
+        before = (self.root / JUDGE_REL).read_text("utf-8")
+        res = self.sr("agents", "sync")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("agents.json", res.stdout)
+        self.assertIn("agents write --force", res.stdout)
+        self.assertEqual((self.root / JUDGE_REL).read_text("utf-8"), before)
 
 
 class SetupWritesAgents(TempHome, unittest.TestCase):

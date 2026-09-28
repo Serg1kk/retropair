@@ -57,7 +57,9 @@ const reviewStatusName = v => pick((I18N.review_statuses || {})[v], v, 'review_s
 function reasonName(code) {
   if (!code) return t('no_data');
   const known = {
-    no_signal: t('reason_no_signal'), nothing_to_verify: t('reason_nothing_to_verify'),
+    no_context_report: t('reason_no_context_report'), no_repo_access: t('reason_no_repo_access'),
+    log_truncated: t('reason_log_truncated'), nothing_to_verify: t('reason_nothing_to_verify'),
+    quote_unverified: t('reason_quote_unverified'),
     behaviour_absent: t('reason_behaviour_absent'), work_outside_transcript: t('reason_work_outside_transcript'),
     tool_has_no_trace: t('reason_tool_has_no_trace'), short_log: t('reason_short_log'),
     other: t('reason_other'),
