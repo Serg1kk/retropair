@@ -1,4 +1,9 @@
-"""Команда `check-collector`: проверить выходы коллектора до передачи судье."""
+"""Команда `check-collector`: проверить выходы коллектора до передачи судье.
+
+Кроме схемы и сходимостей сверяет каждую цитату с логом её сессии (`sessions[].path`): цитата
+стоит в названном ходе как реплика человека либо как команда или вывод инструмента. Относительные
+пути логов берутся от `.sessionretro/` workspace: `--workspace` или поиск вверх от файла пачки.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,7 @@ def register(subparsers) -> None:
 
 
 def handle(args) -> int:
-    code, results = collector_check.check_files(args.paths)
+    code, results = collector_check.check_files(args.paths, getattr(args, "workspace", None))
     report = {
         "checked": len(results),
         "with_problems": sum(1 for r in results if r["problems"]),

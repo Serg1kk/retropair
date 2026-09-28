@@ -2,6 +2,8 @@
 
 Источники не читаются и снапшоты не пишутся (это делает `collect`); только скан снапшотов,
 слияние с прежним индексом и атомарная запись под блокировкой `.sessionretro/collect.lock`.
+Идёт сбор (например, хук SessionEnd перечищает снапшоты) — ждёт его до `lock.COLLECT_WAIT_SECONDS`
+с одной строкой в stderr; не дождался — код 1 с путём lock-файла.
 Записи людей с `consent.logs: false` исключаются так же, как в `collect`.
 """
 
@@ -36,7 +38,7 @@ def handle(args) -> int:
     cfg = load_config(root)
     denied = sources.no_consent(list_people(root))
     paths = ws_paths(root)
-    with lock.file_lock(paths["state_dir"] / "collect"):
+    with lock.collect_lock(paths["state_dir"]):
         index = inventory.rebuild(root, cfg, no_consent=denied)
     if args.json:
         print(json.dumps(index, ensure_ascii=False, indent=2))

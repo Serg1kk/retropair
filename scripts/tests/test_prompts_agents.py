@@ -22,7 +22,7 @@ TOOLS = {
     "feedback-critic": "Read, Write, Edit",
 }
 BODY_VERSIONS = {
-    "log-collector": "collector_version: v3",
+    "log-collector": "collector_version: v4",
     "log-judge": "prompt_version: v13",
     "feedback-critic": "critic_version: v1",
 }

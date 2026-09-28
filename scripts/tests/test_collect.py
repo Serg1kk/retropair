@@ -7,14 +7,20 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
+import textwrap
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from _util import FIXTURES, TempHome, copy_fixture, run_sr
+from _util import FIXTURES, SCRIPTS, TempHome, copy_fixture, run_sr
 
 from lib import cmd_collect, inventory, lock, normalize, registry, sanitize
 from lib.workspace import SrError
@@ -56,6 +62,20 @@ def other_session_log() -> str:
     """Другая сессия с тем же session id (ключом), что у specstory-claude.md: другое начало, больше ходов."""
     text = (LOGS / "specstory-claude.md").read_text(encoding="utf-8")
     return text.replace("Добавь функцию сложения", OTHER_ASK, 1) + NEW_TURN
+
+
+# отдельный процесс держит замок `argv[2]` `argv[3]` секунд (как хук с долгим collect)
+HOLDER = textwrap.dedent(
+    """
+    import sys, time
+    sys.path.insert(0, sys.argv[1])
+    from pathlib import Path
+    from lib.lock import file_lock
+    with file_lock(Path(sys.argv[2]), timeout=5):
+        print("locked", flush=True)
+        time.sleep(float(sys.argv[3]))
+    """
+)
 
 
 def has_word(text: str, word: str) -> bool:
@@ -465,34 +485,145 @@ class SkipUnchangedTest(CollectBase):
         return argparse.Namespace(quiet=quiet, json=False, provider=None, replace=None,
                                   workspace=str(self.root))
 
-    def test_lock_timeout_by_mode(self):
-        self.assertEqual((cmd_collect.LOCK_TIMEOUT, cmd_collect.LOCK_TIMEOUT_QUIET), (10, 120))
-        seen = []
-        with mock.patch.object(cmd_collect, "collect",
-                               side_effect=lambda *a, **kw: seen.append(kw["lock_timeout"]) or {}), \
-                mock.patch.object(cmd_collect, "format_text", return_value=""), \
-                contextlib.redirect_stdout(io.StringIO()):
-            cmd_collect.handle(self.args(quiet=True))
-            cmd_collect.handle(self.args(quiet=False))
-        self.assertEqual(seen, [120, 10])
+    def lock_target(self) -> Path:
+        return self.root / ".sessionretro" / "collect"
 
-    def test_busy_lock_quiet_exits_0_with_stderr_line(self):
+    def flag(self) -> Path:
+        return self.root / ".sessionretro" / "collect.again"
+
+    def test_wait_constants(self):
+        self.assertEqual(lock.COLLECT_WAIT_SECONDS, 300)
+        self.assertEqual(cmd_collect.MAX_REPEATS, 3)
+        self.assertEqual(cmd_collect.AGAIN_FLAG, "collect.again")
+        self.assertFalse(hasattr(cmd_collect, "LOCK_TIMEOUT_QUIET"))
+
+    # ── B05: хук не ждёт, а запрашивает повтор ────────────────────────────────
+
+    def test_busy_lock_quiet_requests_repeat_exits_0(self):
         err = io.StringIO()
-        with lock.file_lock(self.root / ".sessionretro" / "collect"), \
-                mock.patch.object(cmd_collect, "LOCK_TIMEOUT_QUIET", 0.3), \
+        with lock.file_lock(self.lock_target()), \
+                mock.patch.object(cmd_collect, "QUIET_GRACE_SECONDS", 0.3), \
                 contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()) as out:
+            start = time.monotonic()
+            code = cmd_collect.handle(self.args(quiet=True))
+            took = time.monotonic() - start
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue(), "")
+        self.assertLess(took, 5)
+        self.assertIn("сбор уже идёт; повтор запрошен", err.getvalue())
+        self.assertEqual(len(err.getvalue().splitlines()), 1, err.getvalue())
+        self.assertTrue(self.flag().is_file())
+        self.assertIsNone(self.index())
+
+    def test_quiet_takes_lock_released_within_grace(self):
+        # короткий держатель (inventory, пометка) отпускает замок — хук собирает сам и снимает флаг
+        taken = threading.Event()
+
+        def hold():
+            with lock.file_lock(self.lock_target(), timeout=5):
+                taken.set()
+                time.sleep(0.4)
+
+        th = threading.Thread(target=hold, daemon=True)
+        th.start()
+        self.assertTrue(taken.wait(5))
+        with contextlib.redirect_stderr(io.StringIO()) as err, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            code = cmd_collect.handle(self.args(quiet=True))
+        th.join(5)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(err.getvalue(), "")
+        self.assertFalse(self.flag().exists())
+        self.assertEqual(len(self.index()["logs"]), 5)
+
+    def test_quiet_does_not_hide_other_lock_errors(self):
+        # LockBusy изнутри прохода (например, реестр) — не «сбор уже идёт», а ошибка
+        busy = lock.LockBusy("реестр занят (файл: x.lock)", 1)
+        with mock.patch.object(cmd_collect, "_pass", side_effect=busy), \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(lock.LockBusy):
+                cmd_collect.handle(self.args(quiet=True))
+        self.assertFalse(self.flag().exists())
+
+    def counting_pass(self, touch_times: int):
+        """`_pass` настоящий; первые `touch_times` вызовов во время прохода ставят флаг повтора."""
+        real = cmd_collect._pass
+        calls = []
+
+        def side(*a, **kw):
+            calls.append(kw.get("replace"))
+            if len(calls) <= touch_times:
+                self.flag().touch()
+            return real(*a, **kw)
+
+        return calls, side
+
+    def test_flag_after_pass_triggers_second_pass(self):
+        calls, side = self.counting_pass(touch_times=1)
+        with mock.patch.object(cmd_collect, "_pass", side_effect=side):
+            out = cmd_collect.collect(self.root, None, now=NOW, replace=["x.md"])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls, [["x.md"], None])
+        self.assertEqual(out["passes"], 2)
+        self.assertFalse(self.flag().exists())
+        self.assertEqual(out["logs_indexed"], 5)
+
+    def test_stale_flag_consumed_by_single_pass(self):
+        self.flag().touch()
+        calls, side = self.counting_pass(touch_times=0)
+        with mock.patch.object(cmd_collect, "_pass", side_effect=side):
+            out = cmd_collect.collect(self.root, None, now=NOW)
+        self.assertEqual((len(calls), out["passes"]), (1, 1))
+        self.assertFalse(self.flag().exists())
+
+    def test_repeats_capped_at_three(self):
+        calls, side = self.counting_pass(touch_times=100)
+        with mock.patch.object(cmd_collect, "_pass", side_effect=side):
+            out = cmd_collect.collect(self.root, None, now=NOW)
+        self.assertEqual(len(calls), 1 + cmd_collect.MAX_REPEATS)
+        self.assertEqual(out["passes"], 4)
+        self.assertTrue(any("collect.again" in w and "3" in w for w in out["warnings"]), out["warnings"])
+        self.assertTrue(self.flag().is_file(), "флаг оставлен до следующего сбора")
+
+    def test_quiet_repeat_pass_line_goes_to_stderr(self):
+        calls, side = self.counting_pass(touch_times=1)
+        with mock.patch.object(cmd_collect, "_pass", side_effect=side), \
+                contextlib.redirect_stderr(io.StringIO()) as err, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
             code = cmd_collect.handle(self.args(quiet=True))
         self.assertEqual(code, 0)
         self.assertEqual(out.getvalue(), "")
-        self.assertIn("сбор уже идёт", err.getvalue())
-        self.assertIsNone(self.index())
+        self.assertIn("проходов: 2", err.getvalue())
+
+    # ── B05: ручной сбор ждёт соседний до COLLECT_WAIT_SECONDS ────────────────
+
+    def test_interactive_waits_for_running_collect(self):
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        child = subprocess.Popen([sys.executable, "-c", HOLDER, str(SCRIPTS), str(self.lock_target()), "2"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "locked")
+            res = run_sr("collect", "--json", "--workspace", str(self.root), home=self.home, cwd=self.tmp)
+        finally:
+            child.wait(timeout=10)
+            child.stdout.close()
+            child.stderr.close()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        lines = res.stderr.splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("сбор логов уже идёт (collect.lock), жду до 300 с", lines[0])
+        self.assertEqual(json.loads(res.stdout)["counts"]["new"], 5)
 
     def test_busy_lock_interactive_is_error(self):
-        with lock.file_lock(self.root / ".sessionretro" / "collect"), \
-                mock.patch.object(cmd_collect, "LOCK_TIMEOUT", 0.3):
+        with lock.file_lock(self.lock_target()), \
+                mock.patch.object(lock, "COLLECT_WAIT_SECONDS", 0.3), \
+                contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(cmd_collect.SrError) as cm:
                 cmd_collect.handle(self.args(quiet=False))
         self.assertEqual(cm.exception.code, 1)
+        self.assertIn("collect.lock", cm.exception.message)
+        self.assertFalse(self.flag().exists())
 
 
 class CollisionTest(CollectBase):

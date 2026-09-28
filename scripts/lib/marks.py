@@ -3,7 +3,8 @@
 Индекс — формат сбора логов: `{schema_version: 1, workspace, updated_at, logs: [], warnings: []}`,
 `path` записи относительно `.sessionretro/`. Читается (`inventory.load_index`) и пишется
 (`inventory.save_index`) под тем же замком, что берут `collect` и `inventory`:
-`lock.file_lock(<.sessionretro>/collect)` → lock-файл `collect.lock` (`index_lock`). Если нужен и
+`lock.collect_lock(<.sessionretro>)` → lock-файл `collect.lock` (`index_lock`, ждёт идущий сбор
+до `lock.COLLECT_WAIT_SECONDS`). Если нужен и
 замок трекера, порядок всегда «трекер → индекс». Пометка трогает только поля `MARK_FIELDS`.
 
 Флаг ставит `inventory.mark` — единственный способ поставить `reviewed`/`excluded` (снимает
@@ -17,8 +18,7 @@ import contextlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lib import inventory
-from lib.lock import file_lock
+from lib import inventory, lock
 from lib.workspace import SrError, ws_paths
 
 EXCLUDE_REASONS = (
@@ -37,8 +37,9 @@ REVIEWED_FIELDS = ("reviewed", *inventory.REVIEWED_FIELDS, "review_from_turn")
 EXCLUDED_FIELDS = inventory.EXCLUDED_FIELDS
 MARK_FIELDS = (*REVIEWED_FIELDS, *EXCLUDED_FIELDS, "state")
 # Замок индекса — замок сбора логов: `file_lock(<state_dir>/COLLECT_LOCK)` → `collect.lock`.
-COLLECT_LOCK = "collect"
-INDEX_LOCK_TIMEOUT = 10
+COLLECT_LOCK = lock.COLLECT_LOCK
+# Ожидание замка индекса: `None` → `lock.COLLECT_WAIT_SECONDS` (сбор может держать его минуты).
+INDEX_LOCK_TIMEOUT: float | None = None
 
 # Замки индекса, которые этот процесс уже держит: `save_index` внутри `index_lock`
 # не берёт замок второй раз (второй flock на том же файле из того же процесса ждал бы себя).
@@ -59,15 +60,17 @@ def _index_path(root: Path) -> Path:
 
 @contextlib.contextmanager
 def index_lock(root: Path, timeout: float | None = None):
-    """Замок сбора логов `file_lock(.sessionretro/collect)` (файл `collect.lock`), тот же, что у
-    `collect` и `inventory`; повторный вход в процессе — без ожидания. `None` → `INDEX_LOCK_TIMEOUT`."""
-    target = ws_paths(root)["state_dir"] / COLLECT_LOCK
+    """Замок сбора логов `lock.collect_lock(.sessionretro)` (файл `collect.lock`), тот же, что у
+    `collect` и `inventory`; повторный вход в процессе — без ожидания. `None` → `INDEX_LOCK_TIMEOUT`,
+    а он `None` → `lock.COLLECT_WAIT_SECONDS` с одной строкой ожидания в stderr."""
+    state_dir = ws_paths(root)["state_dir"]
+    target = state_dir / COLLECT_LOCK
     timeout = INDEX_LOCK_TIMEOUT if timeout is None else timeout
     ident = str(target.resolve())
     if ident in _HELD:
         yield Path(f"{target}.lock")
         return
-    with file_lock(target, timeout=timeout) as lock_path:
+    with lock.collect_lock(state_dir, wait=timeout) as lock_path:
         _HELD.add(ident)
         try:
             yield lock_path

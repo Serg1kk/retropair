@@ -7,19 +7,40 @@ reviewed/excluded взаимоисключающие, дубли с приори
 
 from __future__ import annotations
 
+import argparse
+import contextlib
 import hashlib
+import io
 import json
+import os
 import shutil
+import subprocess
+import sys
 import tempfile
+import textwrap
+import time
 import unittest
 import unittest.mock
 from pathlib import Path
 
 import _util  # noqa: F401 — кладёт scripts/ в sys.path
-from _util import FIXTURES, TempHome, copy_fixture, run_sr
+from _util import FIXTURES, SCRIPTS, TempHome, copy_fixture, run_sr
 
-from lib import inventory, normalize
+from lib import cmd_inventory, inventory, lock, normalize
 from lib.workspace import SrError
+
+# отдельный процесс держит замок `argv[2]` `argv[3]` секунд (как хук с долгим collect)
+HOLDER = textwrap.dedent(
+    """
+    import sys, time
+    sys.path.insert(0, sys.argv[1])
+    from pathlib import Path
+    from lib.lock import file_lock
+    with file_lock(Path(sys.argv[2]), timeout=5):
+        print("locked", flush=True)
+        time.sleep(float(sys.argv[3]))
+    """
+)
 
 NOW = "2026-09-27T12:00:00Z"
 LOGS = FIXTURES / "logs"
@@ -609,6 +630,42 @@ class CliTest(TempHome, unittest.TestCase):
         res = run_sr("inventory", home=self.home, cwd=Path(self._tmp.name))
         self.assertEqual(res.returncode, 2)
         self.assertIn("workspace", res.stderr)
+
+    # ── B05: сбор держит collect.lock дольше 10 с ─────────────────────────────
+
+    def test_cli_inventory_waits_for_running_collect(self):
+        target = self.ws / ".sessionretro" / "collect"
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        child = subprocess.Popen([sys.executable, "-c", HOLDER, str(SCRIPTS), str(target), "2.5"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "locked")
+            start = time.monotonic()
+            res = run_sr("inventory", "--json", home=self.home, cwd=self.ws)
+            waited = time.monotonic() - start
+        finally:
+            child.wait(timeout=10)
+            child.stdout.close()
+            child.stderr.close()
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertGreaterEqual(waited, 1.5)
+        lines = res.stderr.splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("сбор логов уже идёт (collect.lock), жду до 300 с", lines[0])
+        self.assertEqual(len(json.loads(res.stdout)["logs"]), 1)
+
+    def test_inventory_lock_timeout_is_code1_with_path(self):
+        args = argparse.Namespace(workspace=str(self.ws), json=True)
+        target = self.ws / ".sessionretro" / "collect"
+        with lock.file_lock(target), \
+                unittest.mock.patch.object(lock, "COLLECT_WAIT_SECONDS", 1), \
+                contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SrError) as ctx:
+                cmd_inventory.handle(args)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn(str(self.ws / ".sessionretro" / "collect.lock"), ctx.exception.message)
+        self.assertIn("1 с", ctx.exception.message)
+        self.assertFalse((self.ws / ".sessionretro" / "logs-index.json").exists())
 
 
 class SampleFixtureTest(unittest.TestCase):

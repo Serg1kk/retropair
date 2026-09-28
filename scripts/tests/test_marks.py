@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import os
 import subprocess
@@ -11,12 +13,13 @@ import textwrap
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 import _util  # noqa: F401 — кладёт scripts/ в sys.path
 from _assess import ASSESS, make_ws
 from _util import SCRIPTS, TempHome
 
-from lib import i18n, marks
+from lib import i18n, lock, marks
 from lib.lock import file_lock
 from lib.workspace import SrError, ws_paths
 
@@ -39,7 +42,7 @@ CHILD = textwrap.dedent(
     from lib.lock import file_lock
     with file_lock(Path(sys.argv[2]), timeout=5):
         print("locked", flush=True)
-        time.sleep(3)
+        time.sleep(float(sys.argv[3]) if len(sys.argv) > 3 else 3)
     """
 )
 
@@ -127,6 +130,41 @@ class IndexIoTest(TempHome, unittest.TestCase):
                 marks.save_index(self.root, index, timeout=0.3)
         self.assertEqual(ctx.exception.code, 1)
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_default_wait_is_collect_wait(self):
+        # B05: без явного timeout индекс ждёт замок сбора столько же, сколько inventory/collect
+        self.assertIsNone(marks.INDEX_LOCK_TIMEOUT)
+        index = marks.load_index(self.root)
+        with file_lock(ws_paths(self.root)["state_dir"] / "collect"), \
+                mock.patch.object(lock, "COLLECT_WAIT_SECONDS", 0.3), \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SrError) as ctx:
+                marks.save_index(self.root, index)
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("collect.lock", ctx.exception.message)
+
+    def test_save_waits_for_running_collect_instead_of_failing(self):
+        # B05: сбор хука держит замок дольше 1 с — пометка ждёт и пишет индекс, а не падает
+        index = marks.load_index(self.root)
+        target = ws_paths(self.root)["state_dir"] / "collect"
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        child = subprocess.Popen(
+            [sys.executable, "-c", CHILD, str(SCRIPTS), str(target), "2"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+        )
+        err = io.StringIO()
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "locked")
+            with contextlib.redirect_stderr(err):
+                marks.save_index(self.root, index, now=datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc))
+        finally:
+            child.wait(timeout=10)
+            child.stdout.close()
+            child.stderr.close()
+        self.assertEqual(marks.load_index(self.root)["updated_at"], NOW)
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("сбор логов уже идёт (collect.lock)", lines[0])
 
     def test_save_when_collect_lock_held_by_other_process_code1(self):
         index = marks.load_index(self.root)

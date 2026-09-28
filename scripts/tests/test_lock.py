@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import subprocess
 import sys
 import textwrap
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -70,6 +74,83 @@ class FileLockTest(TempHome, unittest.TestCase):
 
     def test_is_windows_false_here(self):
         self.assertEqual(lock._is_windows(), os.name == "nt")
+
+    def test_on_wait_not_called_when_free(self):
+        calls = []
+        with file_lock(self.home / "data.json", timeout=0.5, on_wait=lambda: calls.append(1)):
+            pass
+        self.assertEqual(calls, [])
+
+
+def hold_in_thread(target, seconds: float) -> tuple[threading.Thread, threading.Event]:
+    """Поток держит `file_lock(target)` `seconds` секунд; событие — замок взят."""
+    taken = threading.Event()
+
+    def run():
+        with file_lock(target, timeout=5):
+            taken.set()
+            time.sleep(seconds)
+
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    if not taken.wait(5):
+        raise AssertionError(f"поток не взял замок {target}")
+    return th, taken
+
+
+class CollectLockTest(TempHome, unittest.TestCase):
+    """B05: замок сбора ждёт долго (`COLLECT_WAIT_SECONDS`) и один раз говорит об ожидании."""
+
+    def setUp(self):
+        super().setUp()
+        self.state = self.home / ".sessionretro"
+        self.target = self.state / "collect"
+
+    def test_constants(self):
+        self.assertEqual(lock.COLLECT_WAIT_SECONDS, 300)
+        self.assertEqual(lock.COLLECT_NOTICE_AFTER, 1.0)
+
+    def test_free_lock_no_notice(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), lock.collect_lock(self.state) as lock_path:
+            self.assertEqual(lock_path, self.state / "collect.lock")
+        self.assertEqual(err.getvalue(), "")
+
+    def test_waits_for_holder_and_prints_one_notice(self):
+        th, _ = hold_in_thread(self.target, 1.6)
+        err = io.StringIO()
+        start = time.monotonic()
+        with contextlib.redirect_stderr(err), lock.collect_lock(self.state):
+            waited = time.monotonic() - start
+        th.join(5)
+        self.assertGreaterEqual(waited, 1.0)
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("сбор логов уже идёт (collect.lock), жду до 300 с", lines[0])
+
+    def test_short_hold_no_notice(self):
+        th, _ = hold_in_thread(self.target, 0.3)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), lock.collect_lock(self.state):
+            pass
+        th.join(5)
+        self.assertEqual(err.getvalue(), "")
+
+    def test_timeout_is_code1_with_path_and_seconds(self):
+        with file_lock(self.target), mock.patch.object(lock, "COLLECT_WAIT_SECONDS", 0.4), \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(lock.LockBusy) as ctx:
+                with lock.collect_lock(self.state):
+                    self.fail("замок взят, хотя его держат")
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn(str(self.state / "collect.lock"), ctx.exception.message)
+        self.assertIn("0.4 с", ctx.exception.message)
+
+    def test_explicit_wait_overrides_constant(self):
+        with file_lock(self.target), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(lock.LockBusy):
+                with lock.collect_lock(self.state, wait=0.3):
+                    pass
 
 
 if __name__ == "__main__":

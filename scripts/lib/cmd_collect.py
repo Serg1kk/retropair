@@ -5,6 +5,16 @@
 `.meta.json` → перечистка снапшотов со старым отпечатком санитайзера → пересчёт инвентаря →
 `last_collect_at` в реестре → сводка.
 
+Замок и повтор:
+- ручной запуск ждёт соседний сбор до `lock.COLLECT_WAIT_SECONDS` (одна строка ожидания в stderr),
+  не дождался — код 1;
+- `--quiet` (хук) не ждёт: замок занят — флаг `.sessionretro/collect.again`, короткая попытка
+  ещё раз (`QUIET_GRACE_SECONDS`: замок могли держать `inventory` или пометка), не вышло —
+  строка «сбор уже идёт; повтор запрошен» в stderr (`collect.log`) и код 0;
+- проход начинается со снятия флага; флаг появился за проход — ещё один проход под тем же
+  замком, не больше `MAX_REPEATS` подряд (дальше строка в `warnings`, флаг остаётся следующему
+  сбору). N одновременных завершений сессий схлопываются в два прохода.
+
 Снапшоты:
 - markdown-форматы — текст исходника через `sanitize_text` целиком; `claude-jsonl` — компактный
   JSONL (`cc_jsonl.compact_snapshot`, каждая строка через `sanitize_obj`);
@@ -35,6 +45,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import sys
@@ -48,8 +59,9 @@ from lib.workspace import (SrError, find_workspace, portable_path, portable_text
 
 NO_WORKSPACE = "нет workspace"
 NO_INDEX = "нет"
-LOCK_TIMEOUT = 10          # ручной запуск: ждать соседний сбор недолго, потом ошибка
-LOCK_TIMEOUT_QUIET = 120   # хук (--quiet): соседние терминалы закрываются почти одновременно
+AGAIN_FLAG = "collect.again"   # `.sessionretro/collect.again`: пока шёл сбор, запрошен ещё один
+MAX_REPEATS = 3                # повторных проходов подряд по флагу, дальше строка в warnings
+QUIET_GRACE_SECONDS = 2        # --quiet: вторая попытка взять замок после флага (короткие держатели)
 SR_CMD = "sr.py collect"
 
 
@@ -384,9 +396,9 @@ def _sanitizer(cfg: dict, people: list[dict]) -> sanitize.Sanitizer:
                               local_users=sanitize.local_user_names())
 
 
-def collect(root: Path, providers: list[str] | None, now: str | None = None,
-            replace: list[str] | None = None, lock_timeout: float = LOCK_TIMEOUT) -> dict:
-    """Полный прогон сбора; возвращает сводку (поля — в описании файла)."""
+def _pass(root: Path, providers: list[str] | None, now: str | None = None,
+          replace: list[str] | None = None) -> dict:
+    """Один проход сбора; вызывается под `collect.lock`. Возвращает сводку (поля — в описании файла)."""
     root = Path(root)
     now = now or inventory.now_iso()
     cfg = load_config(root)
@@ -396,44 +408,43 @@ def collect(root: Path, providers: list[str] | None, now: str | None = None,
     run = Run(root, _sanitizer(cfg, people), replace or [])
     sync_lines: list[str] = []
     paths = ws_paths(root)
-    with lock.file_lock(paths["state_dir"] / "collect", timeout=lock_timeout):
-        if _has_specstory(cfg, people, denied):
-            sync_lines = [specstory.sync(root, p) for p in specstory.providers(providers, cfg)]
-        files, src_warnings, junk = sources.resolve(root, cfg, people)
-        run.warnings += src_warnings
-        order = {}
-        for sf in files:
-            order.setdefault(sf.source_id, len(order))
-        files = sorted(files, key=lambda sf: (order[sf.source_id], str(sf.path)))
+    if _has_specstory(cfg, people, denied):
+        sync_lines = [specstory.sync(root, p) for p in specstory.providers(providers, cfg)]
+    files, src_warnings, junk = sources.resolve(root, cfg, people)
+    run.warnings += src_warnings
+    order = {}
+    for sf in files:
+        order.setdefault(sf.source_id, len(order))
+    files = sorted(files, key=lambda sf: (order[sf.source_id], str(sf.path)))
 
-        cands = []
-        for sf in files:
-            try:
-                sha = source_sha256(sf.path)
-            except OSError as err:
-                run.warnings.append(f"исходник не прочитан, пропущен: {sf.path}: {err}")
-                continue
-            if run.unchanged(sf, sha):
-                continue
-            c = _candidate(root, sf, sha, run.warnings)
-            if c is not None:
-                cands.append(c)
-        for c in run.pick_winners(cands):
-            run.snapshot(c)
-        run.resanitize_stale()
-        run.metas.save()
-        for name in sorted(run.replace - run.replaced):
-            run.warnings.append(f"--replace {name}: снапшот с таким именем в этом сборе не "
-                                f"обновлялся (нет исходника или имя с ошибкой)")
+    cands = []
+    for sf in files:
+        try:
+            sha = source_sha256(sf.path)
+        except OSError as err:
+            run.warnings.append(f"исходник не прочитан, пропущен: {sf.path}: {err}")
+            continue
+        if run.unchanged(sf, sha):
+            continue
+        c = _candidate(root, sf, sha, run.warnings)
+        if c is not None:
+            cands.append(c)
+    for c in run.pick_winners(cands):
+        run.snapshot(c)
+    run.resanitize_stale()
+    run.metas.save()
+    for name in sorted(run.replace - run.replaced):
+        run.warnings.append(f"--replace {name}: снапшот с таким именем в этом сборе не "
+                            f"обновлялся (нет исходника или имя с ошибкой)")
 
-        entry = registry.find_by_path(root)
-        if entry is None:
-            run.warnings.append(f"workspace не в реестре ~/.sessionretro/workspaces.json, "
-                                f"last_collect_at не записан ({root})")
-        warnings = [portable_text(w, root) for w in run.warnings]
-        index = inventory.rebuild(root, cfg, now=now, warnings=warnings, no_consent=denied)
-        if entry is not None:
-            registry.update(entry["id"], last_collect_at=now)
+    entry = registry.find_by_path(root)
+    if entry is None:
+        run.warnings.append(f"workspace не в реестре ~/.sessionretro/workspaces.json, "
+                            f"last_collect_at не записан ({root})")
+    warnings = [portable_text(w, root) for w in run.warnings]
+    index = inventory.rebuild(root, cfg, now=now, warnings=warnings, no_consent=denied)
+    if entry is not None:
+        registry.update(entry["id"], last_collect_at=now)
 
     return {
         "counts": inventory.summary(index),
@@ -447,6 +458,59 @@ def collect(root: Path, providers: list[str] | None, now: str | None = None,
         "logs_indexed": len(index.get("logs") or []),
         "index_path": str(paths["logs_index"]),
     }
+
+
+def _passes(root: Path, providers: list[str] | None, now: str | None,
+            replace: list[str] | None) -> dict:
+    """Проходы под уже взятым замком: флаг `collect.again` появился за проход — ещё один,
+    не больше `MAX_REPEATS` подряд. `--replace` — только в первом проходе."""
+    flag = ws_paths(root)["state_dir"] / AGAIN_FLAG
+    sanitized: list[dict] = []
+    warnings: list[str] = []
+    passes = 0
+    while True:
+        flag.unlink(missing_ok=True)
+        out = _pass(root, providers, now=now, replace=replace if passes == 0 else None)
+        passes += 1
+        sanitized += out["sanitized"]
+        warnings += [w for w in out["warnings"] if w not in warnings]
+        if not flag.exists():
+            break
+        if passes > MAX_REPEATS:
+            warnings.append(
+                f"повтор сбора запрошен снова после {MAX_REPEATS} повторных проходов подряд; "
+                f"флаг {portable_path(flag, root)} оставлен следующему сбору")
+            break
+    out["sanitized"] = sanitized
+    out["warnings"] = warnings
+    out["passes"] = passes
+    return out
+
+
+def collect(root: Path, providers: list[str] | None, now: str | None = None,
+            replace: list[str] | None = None, wait: float | None = None) -> dict:
+    """Полный сбор: ждёт `collect.lock` до `wait` (`None` → `lock.COLLECT_WAIT_SECONDS`) и делает
+    проходы (`_passes`); возвращает сводку последнего прохода плюс `passes`."""
+    root = Path(root)
+    with lock.collect_lock(ws_paths(root)["state_dir"], wait=wait):
+        return _passes(root, providers, now, replace)
+
+
+def collect_quiet(root: Path, providers: list[str] | None, replace: list[str] | None = None) -> dict | None:
+    """Сбор хука: не ждёт. Замок занят — флаг `collect.again` и вторая попытка через
+    `QUIET_GRACE_SECONDS`; снова занят — `None` (повтор сделает держатель замка)."""
+    root = Path(root)
+    state_dir = ws_paths(root)["state_dir"]
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(lock.collect_lock(state_dir, wait=0, notice=False))
+        except lock.LockBusy:
+            (state_dir / AGAIN_FLAG).touch()
+            try:
+                stack.enter_context(lock.collect_lock(state_dir, wait=QUIET_GRACE_SECONDS, notice=False))
+            except lock.LockBusy:
+                return None
+        return _passes(root, providers, None, replace)
 
 
 # ── вывод ────────────────────────────────────────────────────────────────────
@@ -468,25 +532,29 @@ def format_text(out: dict) -> str:
     if out["warnings"]:
         lines.append("предупреждения:")
         lines += [f"- {w}" for w in out["warnings"]]
+    if out.get("passes", 1) > 1:
+        lines.append(f"проходов (повтор по запросу {AGAIN_FLAG}): {out['passes']}")
     lines.append(f"last_snapshot_at: {out['last_snapshot_at']}")
     return "\n".join(lines)
 
 
 def handle(args) -> int:
     root = find_workspace(Path.cwd(), args.workspace)
-    timeout = LOCK_TIMEOUT_QUIET if args.quiet else LOCK_TIMEOUT
-    try:
-        out = collect(root, args.provider, replace=getattr(args, "replace", None),
-                      lock_timeout=timeout)
-    except lock.LockBusy as err:
-        if not args.quiet:
-            raise
-        # хук: соседний сбор держит замок дольше LOCK_TIMEOUT_QUIET — он и соберёт эту сессию
-        print(f"sessionretro: сбор уже идёт в другом процессе, этот запуск пропущен ({err.message})",
-              file=sys.stderr)
-        return 0
+    replace = getattr(args, "replace", None)
     if args.quiet:
+        out = collect_quiet(root, args.provider, replace=replace)
+        if out is None:
+            flag = ws_paths(root)["state_dir"] / AGAIN_FLAG
+            print(f"sessionretro: сбор уже идёт; повтор запрошен ({flag})", file=sys.stderr)
+            return 0
+        if out["passes"] > 1:   # строка уходит в collect.log: видно, что запросы схлопнулись
+            print(f"sessionretro: повторный сбор по запросу ({AGAIN_FLAG}), проходов: {out['passes']}",
+                  file=sys.stderr)
+            for w in out["warnings"]:
+                if AGAIN_FLAG in w:
+                    print(f"sessionretro: {w}", file=sys.stderr)
         return 0
+    out = collect(root, args.provider, replace=replace)
     if args.json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
     else:

@@ -253,7 +253,8 @@ class CollectPagesTest(unittest.TestCase):
     # ── docs/ru/collect.md ────────────────────────────────────────────────────
 
     def test_doc_replace_lock_commit_and_reclean(self) -> None:
-        for needle in ("--replace", "120 секунд", "сбор уже идёт", "другая сессия",
+        for needle in ("--replace", "300 секунд", "сбор уже идёт; повтор запрошен", "collect.again",
+                       "сбор логов уже идёт (collect.lock)", "другая сессия",
                        ".sessionretro/logs/<ваш id>/", "не коммитьте", "без логина", "перечист"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.doc)
