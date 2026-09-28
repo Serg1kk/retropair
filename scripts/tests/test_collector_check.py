@@ -765,5 +765,119 @@ class RepairFilesTest(CollectorCase):
         self.assertTrue(any("отброшено" in ln for ln in report["batches"][0]["dropped"]), report)
 
 
+# ── A06: пустой массив явно — «не нашёл» отличимо от «не искал» ────────────────────
+OMITTED = ("antipattern_candidates", "gating_candidates", "flag_candidates")
+
+
+def added_line(name: str) -> str:
+    return (f"check-collector: массив {name} отсутствовал в выходе коллектора — добавлен пустой "
+            f"(не найдено или не искалось — не различить)")
+
+
+class MissingArraysTest(CollectorCase):
+    """Регрессия A06: коллектор опустил массивы кандидатов, схема их не требовала, проверка
+    молчала, судья «посчитал пустыми». Теперь схема требует каждый массив верхнего уровня, а
+    `check_files` дописывает отсутствующий пустым со строкой в `metadata.warnings`."""
+
+    def without(self, *names: str) -> dict:
+        obj = batch()
+        for name in names:
+            del obj[name]
+        return obj
+
+    def test_every_top_level_array_required_by_schema(self):
+        spec = json.loads(schema.schema_path("collector").read_text(encoding="utf-8"))
+        arrays = {k for k, v in spec["properties"].items() if v.get("type") == "array"}
+        self.assertEqual(arrays - set(spec["required"]), set())
+        self.assertLessEqual(set(collector_check.FILLED_ARRAYS), arrays)
+
+    def test_schema_without_repair_rejects_missing_array(self):
+        for name in collector_check.FILLED_ARRAYS:
+            with self.subTest(name=name):
+                self.assertProblem(self.without(name), name)
+
+    def test_check_files_adds_empty_arrays_with_warnings(self):
+        path = self.put("batch-01.json", self.without(*OMITTED))
+        code, results = collector_check.check_files([path])
+        self.assertEqual((code, results[0]["problems"]), (0, []))
+        saved = json.loads(Path(path).read_text(encoding="utf-8"))
+        for name in OMITTED:
+            self.assertEqual(saved[name], [], name)
+            self.assertIn(added_line(name), saved["metadata"]["warnings"])
+        self.assertEqual(sorted(results[0]["filled"]), sorted(added_line(n) for n in OMITTED))
+        self.assertEqual((results[0]["repaired"], results[0]["dropped"]), ([], []))
+        self.assertTrue(results[0]["written"])
+        self.assertEqual(schema.validate(saved, "collector"), [])
+        # второй проход: добавлять нечего, файл не трогается
+        code, again = collector_check.check_files([path])
+        self.assertEqual((code, again[0]["filled"], again[0]["written"]), (0, [], False))
+
+    def test_present_empty_arrays_untouched(self):
+        obj = batch()
+        for name in OMITTED:
+            obj[name] = []
+        path = self.put("batch-01.json", obj)
+        before = Path(path).read_text(encoding="utf-8")
+        code, results = collector_check.check_files([path])
+        self.assertEqual((code, results[0]["filled"], results[0]["written"]), (0, [], False))
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), before)
+
+    def test_carrying_blocks_never_filled(self):
+        """Несущие блоки (`observations`, `axes_unobserved` …) пустыми не дописываются: их
+        отсутствие — сломанный выход и перезапуск коллектора."""
+        for name in ("sessions", "observations", "axes_unobserved", "subcriteria_unobserved",
+                     "batch", "metadata"):
+            with self.subTest(name=name):
+                path = self.put(f"batch-{name}.json", self.without(name))
+                before = Path(path).read_text(encoding="utf-8")
+                code, results = collector_check.check_files([path])
+                self.assertEqual(code, 1)
+                self.assertTrue(any(name in p for p in results[0]["problems"]), results)
+                self.assertEqual(results[0]["filled"], [])
+                self.assertEqual(Path(path).read_text(encoding="utf-8"), before)
+        self.assertFalse({"sessions", "observations", "axes_unobserved", "subcriteria_unobserved"}
+                         & set(collector_check.FILLED_ARRAYS))
+
+    def test_cli_names_added_arrays(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = sr.main(["check-collector", self.put("batch-01.json", self.without(*OMITTED))])
+        report = json.loads(out.getvalue())
+        self.assertEqual((code, report["filled"], report["repaired"]), (0, 3, 0))
+        self.assertEqual(sorted(report["batches"][0]["filled"]), sorted(added_line(n) for n in OMITTED))
+
+    def test_filled_with_quote_repair_in_one_pass(self):
+        """Опущенный массив и ремонт цитаты в одной пачке: обе правки в файле, каждая в своём списке."""
+        obj = quoted(GLUED, 11)
+        del obj["flag_candidates"]
+        state = make_state(self.dir)
+        log = state / "logs" / "alex" / "long.md"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(heading_log(LONG_LOG), encoding="utf-8")
+        obj["sessions"] = [{"session_id": SID, "path": "logs/alex/long.md", "turns_total": len(LONG_LOG),
+                            "user_turns": 9, "reviewed_from_turn": None, "state": "new", "status": "read",
+                            "status_note": None}]
+        path = state / "runs" / "pending" / "alex" / "batch-01.json"   # не `put`: лог уже свой
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        code, results = collector_check.check_files([str(path)])
+        self.assertEqual((code, results[0]["problems"]), (0, []))
+        self.assertEqual(results[0]["filled"], [added_line("flag_candidates")])
+        self.assertEqual(len(results[0]["repaired"]), 2, results[0]["repaired"])
+        saved = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.assertEqual(saved["flag_candidates"], [])
+        self.assertEqual(saved["metadata"]["warnings"][-3:],
+                         [added_line("flag_candidates"), *results[0]["repaired"]])
+
+    def test_sample_fixtures_carry_every_array(self):
+        from _util import FIXTURES
+        for path in (FIXTURES / "prompts" / "collector.sample.json", ASSESS / "batch-ok.json"):
+            with self.subTest(path=path.name):
+                obj = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(schema.validate(obj, "collector"), [])
+                for name in collector_check.FILLED_ARRAYS:
+                    self.assertIsInstance(obj.get(name), list, name)
+
+
 if __name__ == "__main__":
     unittest.main()

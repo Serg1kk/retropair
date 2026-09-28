@@ -8,7 +8,7 @@ effort: medium
 
 # Сборщик доказательств по логам сессий (первая ступень)
 
-collector_version: v5
+collector_version: v6
 
 > Строка версии живёт здесь, а не во frontmatter: набор полей frontmatter у агентов фиксирован.
 > Судья кладёт эту версию в прогон. Правка этого промпта, `axes.md` или `antipatterns.md`
@@ -304,7 +304,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize <path>
 ## Шаг 4. Сборка и запись
 
 1. Собери JSON **строго** по `${CLAUDE_PLUGIN_ROOT}/references/schemas/collector.json`:
-   `schema_version: 2`, `kind: log-evidence-batch`, `metadata.collector_version: "v4"`.
+   `schema_version: 2`, `kind: log-evidence-batch`, `metadata.collector_version: "v6"`.
+   Все массивы схемы присутствуют всегда: не нашёл ничего для блока — пиши `[]`, не опускай ключ.
 2. `status`: `code` и `ok` — статус пачки; `status.message` — всегда строка, нечего сказать →
    пустая строка `""`, не `null`.
 3. `batch`: `index` и `total` из `batch` входа, `person_id` из входа, `workspace` = `workspace_id`

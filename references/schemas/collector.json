@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Выход первой ступени: доказательства по пачке сессий",
-  "description": "Что собирает коллектор (log-collector) с одной пачки логов одного участника. БАЛЛОВ ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ: коллектор видит часть материала, а балл, поставленный по части, потом невозможно свести. Схема запрещает поля оценки структурно (additionalProperties: false на каждом уровне), а не уговорами в промпте. Оценку ставит вторая ступень, судья (log-judge), на объединённых доказательствах всех пачек.",
+  "description": "Что собирает коллектор (log-collector) с одной пачки логов одного участника. БАЛЛОВ ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ: коллектор видит часть материала, а балл, поставленный по части, потом невозможно свести. Схема запрещает поля оценки структурно (additionalProperties: false на каждом уровне), а не уговорами в промпте. Оценку ставит вторая ступень, судья (log-judge), на объединённых доказательствах всех пачек. Каждый массив верхнего уровня обязателен: не нашёл — пустой [], иначе «не найдено» не отличить от «не искалось».",
   "type": "object",
   "required": [
     "schema_version",
@@ -13,7 +13,13 @@
     "axes_unobserved",
     "metadata",
     "axis_signal_sessions",
-    "subcriteria_unobserved"
+    "subcriteria_unobserved",
+    "antipattern_candidates",
+    "flag_candidates",
+    "gating_candidates",
+    "rec_signals",
+    "outcome_signals",
+    "agent_stack"
   ],
   "additionalProperties": false,
   "properties": {
@@ -712,7 +718,7 @@
         },
         "warnings": {
           "type": "array",
-          "description": "Коды предупреждений коллектора. Строки с префиксом «check-collector: » дописывает проверка выхода: ремонт адреса или склейки цитаты и отброшенные записи; коллектор их не пишет.",
+          "description": "Коды предупреждений коллектора. Строки с префиксом «check-collector: » дописывает проверка выхода: ремонт адреса или склейки цитаты, отброшенные записи и массив, который коллектор опустил и который добавлен пустым; коллектор их не пишет.",
           "items": {
             "type": "string",
             "pattern": "^(metrics_missing|no_context_report|redaction_leak|unredacted_input|log_truncated|timestamps_missing|spans_periods|sessions_excluded|batch_truncated)$|^check-collector: \\S"

@@ -8,7 +8,8 @@
 
 Цитаты сверяются с логами (`attribution_problems`). Что по логу восстанавливается однозначно —
 номер хода и склейка кусков одной реплики без «…», — `check_files` чинит сам (`repair_quotes`)
-и пишет строкой в `metadata.warnings`; `--drop-invalid` после исчерпания перезапусков убирает
+и пишет строкой в `metadata.warnings`; так же — массив кандидатов или сигналов, который коллектор
+опустил (`fill_missing_arrays`: дописывается пустым). `--drop-invalid` после исчерпания перезапусков убирает
 неремонтируемые записи (`drop_unverified`), тоже строкой. Текст агента не чинится никогда.
 """
 
@@ -318,6 +319,27 @@ def _quote_items(obj: dict):
                 yield block, i, item
 
 
+# Массивы верхнего уровня, которые коллектор опускал, когда ничего не нашёл (A06). Схема требует
+# их всегда; опущенный дописывается пустым со строкой в `metadata.warnings` — это не брак пачки,
+# но судья видит, что по этому блоку «не найдено» и «не искалось» не различить. Несущие блоки
+# (`sessions`, `observations`, `axes_unobserved`, `subcriteria_unobserved`) сюда не входят: их
+# отсутствие — сломанный выход и перезапуск коллектора.
+FILLED_ARRAYS = ("antipattern_candidates", "flag_candidates", "gating_candidates", "rec_signals",
+                 "outcome_signals", "agent_stack")
+
+
+def fill_missing_arrays(obj: dict) -> list[str]:
+    """Дописать на месте отсутствующие массивы `FILLED_ARRAYS` пустыми; вернуть строки для
+    `metadata.warnings`, по строке на массив."""
+    lines = []
+    for name in FILLED_ARRAYS:
+        if name not in obj:
+            obj[name] = []
+            lines.append(f"{WARN_PREFIX}массив {name} отсутствовал в выходе коллектора — добавлен пустой "
+                         f"(не найдено или не искалось — не различить)")
+    return lines
+
+
 def repair_quotes(obj: dict, docs: dict) -> list[str]:
     """Починить на месте адреса и склейки цитат, которые лог восстанавливает однозначно
     (`_repair`); вернуть строки для `metadata.warnings`, по строке на правку. Ремонт, после
@@ -465,10 +487,11 @@ def check_files(paths, workspace_dir: str | None = None, *,
     """Проверить файлы пачек вместе со сверкой цитат по логам; код 0 все чистые · 1 хоть одна
     кривая · 2 кривых нет, но есть отсутствующие.
 
-    Адрес и склейку цитат, которые лог восстанавливает однозначно, чинит всегда
-    (`repair_quotes`); `drop_invalid` — ещё и убирает записи с неремонтируемыми цитатами
-    (`drop_unverified`). Каждая правка — строка в `metadata.warnings` файла и в `repaired` /
-    `dropped` результата; исправленный файл пишется атомарно (`written`). Пачка, у которой после
+    Опущенные коллектором массивы `FILLED_ARRAYS` дописывает пустыми (`fill_missing_arrays`), адрес
+    и склейку цитат, которые лог восстанавливает однозначно, чинит (`repair_quotes`) — всегда;
+    `drop_invalid` — ещё и убирает записи с неремонтируемыми цитатами
+    (`drop_unverified`). Каждая правка — строка в `metadata.warnings` файла и в `filled` /
+    `repaired` / `dropped` результата; исправленный файл пишется атомарно (`written`). Пачка, у которой после
     отбрасывания не осталось ни одного наблюдения, — упавшая: код 1, файл не трогается."""
     results: list[dict] = []
     bad = missing = 0
@@ -476,22 +499,25 @@ def check_files(paths, workspace_dir: str | None = None, *,
         path = Path(raw)
         if not path.is_file():
             results.append({"path": str(raw), "missing": True, "problems": ["файла нет"], "problems_total": 1,
-                            "repaired": [], "dropped": [], "written": False})
+                            "filled": [], "repaired": [], "dropped": [], "written": False})
             missing += 1
             continue
         try:
             obj = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as err:
             results.append({"path": str(raw), "missing": False, "problems": [f"не разбирается: {err}"],
-                            "problems_total": 1, "repaired": [], "dropped": [], "written": False})
+                            "problems_total": 1, "filled": [], "repaired": [], "dropped": [],
+                            "written": False})
             bad += 1
             continue
         state = _state_dir(path, workspace_dir)
         docs = load_docs(obj, state) if isinstance(obj, dict) and isinstance(obj.get("sessions"), list) else None
+        filled: list[str] = []
         repaired: list[str] = []
         dropped: list[str] = []
         failed: list[str] = []
         if _can_repair(obj):
+            filled = fill_missing_arrays(obj)
             repaired = repair_quotes(obj, docs)
             if drop_invalid:
                 had = obj.get("observations") if isinstance(obj.get("observations"), list) else []
@@ -500,15 +526,15 @@ def check_files(paths, workspace_dir: str | None = None, *,
                 if had and not obj.get("observations"):
                     failed.append("$.observations: после отбрасывания неверифицируемых цитат не осталось "
                                   "ни одного наблюдения — пачка считается упавшей, файл не изменён")
-            obj["metadata"]["warnings"] += repaired + dropped
+            obj["metadata"]["warnings"] += filled + repaired + dropped
         problems = failed + check_batch(obj, state, quotes=True, docs=docs)
-        written = bool(repaired or dropped) and not failed
+        written = bool(filled or repaired or dropped) and not failed
         if written:
             workspace.write_json_atomic(path, obj)
         if problems:
             bad += 1
         results.append({"path": str(raw), "missing": False, **_summary(obj), "problems": problems[:MAX_PROBLEMS],
-                        "problems_total": len(problems), "repaired": repaired, "dropped": dropped,
+                        "problems_total": len(problems), "filled": filled, "repaired": repaired, "dropped": dropped,
                         "written": written})
     code = 1 if bad else (2 if missing else 0)
     return code, results

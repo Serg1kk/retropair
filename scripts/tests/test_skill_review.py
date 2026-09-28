@@ -410,6 +410,21 @@ class OrchestrationTest(unittest.TestCase):
         append_row = next(ln for ln in section.splitlines() if ln.startswith("| `append`"))
         self.assertIn("неодобренного черновика", append_row)
 
+    def test_filled_arrays_reach_summary(self) -> None:
+        """A06: опущенный коллектором массив, дописанный пустым (`filled` вывода
+        `check-collector`), — код 0 без перезапуска и строка «пачка неполная» в сводке."""
+        fifth = phases(self.skill.split("\n---\n", 1)[1])[5]
+        for phrase in ("`filled`", "пачка неполная", "не искалось"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, fifth)
+        summary = self.text.split("## Сводка", 1)[1]
+        self.assertIn("пачка неполная: <строки filled из check-collector", summary)
+        final = self.skill.split("## Фаза 12. Сводка", 1)[1]
+        self.assertIn("пачка неполная", final)
+        section = self.text.split("## Коды выхода", 1)[1].split("\n## ", 1)[0]
+        row = next(ln for ln in section.splitlines() if ln.startswith("| `check-collector` |"))
+        self.assertIn("`filled`", row)
+
     def test_open_recs_issued_at_and_evaluable_from_script(self) -> None:
         """A16: `issued_at` и `evaluable` из `open-recs --period-label` идут агентам как есть;
         замена вердикта стражем `append` — код 0, судья не перезапускается."""

@@ -6,8 +6,9 @@
 
 Номер хода и склейку кусков одной реплики без «…», которые лог восстанавливает однозначно,
 команда чинит в файле сама; `--drop-invalid` (после исчерпания перезапусков коллектора) убирает
-записи с неремонтируемыми цитатами. Каждая правка — строка в `metadata.warnings` пачки и в выводе
-(`repaired`, `dropped` по пачке и их число сверху).
+записи с неремонтируемыми цитатами. Массив кандидатов или сигналов, который коллектор опустил,
+дописывается пустым (`filled`: пачка неполная, но перезапуска не нужно). Каждая правка — строка
+в `metadata.warnings` пачки и в выводе (`filled`, `repaired`, `dropped` по пачке и их число сверху).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ def handle(args) -> int:
         "checked": len(results),
         "with_problems": sum(1 for r in results if r["problems"]),
         "missing_files": sum(1 for r in results if r["missing"]),
+        "filled": sum(len(r["filled"]) for r in results),
         "repaired": sum(len(r["repaired"]) for r in results),
         "dropped": sum(len(r["dropped"]) for r in results),
         "batches": results,
