@@ -313,6 +313,73 @@ class AnonNamesakesTest(_Base):
                          sorted(a.name_map[pid] for pid in ("anna", "boris", "vera")))
 
 
+def _rename_ids(ws: Path, renames: dict[str, str]) -> None:
+    """Переименовывает id людей в синтетическом workspace: карточки, папки ревью, трекер, тексты."""
+    state = ws / ".sessionretro"
+    pats = [(re.compile(r"(?<![A-Za-z0-9])" + re.escape(old) + r"(?![A-Za-z0-9])"), new)
+            for old, new in renames.items()]
+
+    def sub(text: str) -> str:
+        for pat, new in pats:
+            text = pat.sub(new, text)
+        return text
+
+    for path in sorted(state.rglob("*"), key=lambda p: -len(p.parts)):
+        if path.is_file() and path.suffix in (".json", ".yaml", ".md"):
+            path.write_text(sub(path.read_text(encoding="utf-8")), encoding="utf-8")
+        new_name = sub(path.name)
+        if new_name != path.name:
+            path.rename(path.with_name(new_name))
+
+
+class AnonCodeLikeIdsTest(_Base):
+    """id людей сами вида `p01…`: коды `--anon` берут другую букву, group и reviewer пишутся."""
+
+    RENAMES = {"anna": "p01", "boris": "p02", "vera": "p03"}
+
+    def test_ids_like_codes_anon_writes_all_files(self):
+        from lib import anon
+        from lib.people import list_people
+        _rename_ids(self.ws, self.RENAMES)
+        out = self.base / "anon-out"
+        res = self.sr("report", "--group", "--reviewer", "--all-personal", "--anon",
+                      "--out-dir", str(out))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("чужие токены", res.stderr)
+        a = anon.Anonymizer(list_people(self.ws), [], "ru")
+        self.assertNotEqual(a.code_prefix, "p")
+        personal = sorted(p.name for p in (out / "personal").iterdir())
+        self.assertEqual(personal, sorted(f"{a.id_map[pid]}.html" for pid in self.RENAMES.values()))
+        people = [(new, dict(report_fixture.NAMES)[old]) for old, new in self.RENAMES.items()]
+        people.append(report_fixture.EXTRA)
+        pats = _leak_patterns(people)
+        files = [out / "group.html", out / "reviewer.html", *sorted((out / "personal").glob("*.html"))]
+        self.assertEqual(len(files), 5)
+        for path in files:
+            data = _data_without_i18n(path.read_text(encoding="utf-8"))
+            for label, pat in pats:
+                with self.subTest(file=path.name, token=label):
+                    self.assertIsNone(pat.search(data), f"{label}: {pat.search(data)}")
+
+
+class AnonDemoWorkspaceTest(_util.TempHome, unittest.TestCase):
+    """Демо-workspace плагина (id `p01…p15`): `--anon` пишет group и reviewer."""
+
+    def test_demo_anon_group_and_reviewer(self):
+        demo = _util.SCRIPTS.parent / "demo" / "workspace"
+        with tempfile.TemporaryDirectory(prefix="sr-demo-anon-") as tmp:
+            ws = Path(tmp) / "ws"
+            shutil.copytree(demo, ws)
+            out = Path(tmp) / "out"
+            res = run_sr("--workspace", str(ws), "report", "--group", "--reviewer", "--anon",
+                         "--out-dir", str(out), home=self.home, cwd=ws)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            for name in ("group.html", "reviewer.html"):
+                data = _data_without_i18n((out / name).read_text(encoding="utf-8"))
+                with self.subTest(file=name):
+                    self.assertIsNone(re.search(r"(?<![A-Za-z0-9])p\d{2}(?![A-Za-z0-9])", data))
+
+
 class GateHelpersTest(unittest.TestCase):
     ANNA = {"id": "anna", "name": "Анна Вершинина"}
     BORIS = {"id": "boris", "name": "Борис Каменев"}
@@ -334,6 +401,17 @@ class GateHelpersTest(unittest.TestCase):
         clean = {"meta": {"title": "Отчёт"}, "people": [{"text": "как у p02"}]}
         self.assertTrue(cmd_report._roster_hits(leak, self.cards(), []))
         self.assertEqual(cmd_report._roster_hits(clean, self.cards(), []), [])
+
+    def test_roster_gate_catches_code_like_real_ids(self):
+        from lib import anon, cmd_report
+        cards = {"p01": {"id": "p01", "name": "Анна Вершинина"},
+                 "p02": {"id": "p02", "name": "Борис Каменев"}}
+        a = anon.Anonymizer(list(cards.values()))
+        payload = a.payload({"meta": {"title": "Отчёт"}, "people": [{"id": "p01", "name": "x"}]})
+        self.assertEqual(cmd_report._roster_hits(payload, cards, []), [])
+        payload["people"][0]["text"] = "как у p02"  # настоящий id другого человека
+        self.assertTrue(cmd_report._roster_hits(payload, cards, []))
+        self.assertTrue(cmd_report._personal_hits(payload, "p01", cards, a, []))
 
     def test_workspace_title_is_gated_only_under_anon(self):
         from lib import anon, cmd_report

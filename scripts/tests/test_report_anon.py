@@ -78,6 +78,39 @@ class AnonymizerTest(unittest.TestCase):
         self.assertEqual(sorted(a.name_map), ["anna", "boris", "vera"])
         self.assertEqual(len(set(a.name_map.values())), 3)
 
+    def test_plain_ids_keep_p_prefix(self):
+        a = anon.Anonymizer(ROSTER)
+        self.assertEqual(a.code_prefix, "p")
+        self.assertEqual(sorted(a.id_map.values()), ["p01", "p02", "p03"])
+
+    def test_code_prefix_avoids_ids_that_look_like_codes(self):
+        roster = [{"id": "p02", "name": "Анна Вершинина"}, {"id": "p01", "name": "Борис Каменев"},
+                  {"id": "p03", "name": "Вера Ольховская"}]
+        a = anon.Anonymizer(roster)
+        self.assertNotEqual(a.code_prefix, "p")
+        ids = {p["id"].casefold() for p in roster}
+        self.assertFalse(ids & {c.casefold() for c in a.id_map.values()}, a.id_map)
+        for pid in ids:
+            self.assertNotRegex(pid, rf"(?i)^{re.escape(a.code_prefix)}\d+$")
+        for code in a.id_map.values():
+            self.assertRegex(code, rf"^{re.escape(a.code_prefix)}\d{{2}}$")
+        # замена id → код не каскадирует: у каждого человека свой код
+        out = a.text("p01, p02 и p03; REC-p02-001")
+        self.assertEqual(out, f"{a.id_map['p01']}, {a.id_map['p02']} и {a.id_map['p03']}; "
+                              f"REC-{a.id_map['p02']}-001")
+
+    def test_code_prefix_skips_every_taken_letter(self):
+        roster = [{"id": "p01", "name": "Анна Вершинина"}, {"id": "X7", "name": "Борис Каменев"},
+                  {"id": "team-q01", "name": "Вера Ольховская"}]
+        a = anon.Anonymizer(roster)
+        self.assertNotIn(a.code_prefix, ("p", "x", "q"))
+        self.assertEqual(a.code_prefix, anon.CODE_PREFIXES[3])
+
+    def test_code_prefix_list_exhausted_raises(self):
+        roster = [{"id": f"{prefix}01", "name": ""} for prefix in anon.CODE_PREFIXES]
+        with self.assertRaisesRegex(ValueError, "префикс"):
+            anon.Anonymizer(roster)
+
     def test_text_leaves_no_ids_words_or_stems(self):
         a = anon.Anonymizer(ROSTER)
         text = ("Анна Вершинина написала. С Анной Вершининой и Борису Каменеву, "

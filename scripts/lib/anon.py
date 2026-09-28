@@ -1,7 +1,8 @@
 """Обезличивание данных отчёта (`--anon`) и гейт чужих имён для личного файла.
 
 - `scrub_contacts(text)` — e-mail, ссылки на github, `@хэндлы` и домашние пути → плейсхолдеры.
-- `Anonymizer(people, extra_names, lang)` — id → `p01…` (по сортировке id), имя → вымышленное
+- `Anonymizer(people, extra_names, lang)` — id → `p01…` (по сортировке id; если токены ростера
+  сами вида `p01`, буква кода другая — `code_prefix`, см. `CODE_PREFIXES`), имя → вымышленное
   (детерминированно по sha256 от id, без пересечений с ростером); `.text(s)` и `.deep(v)`
   чистят строки: сначала id (длинные первыми), потом основы слов имён, потом контакты.
   Слово имени, общее у нескольких людей, и общая часть id → нейтральный плейсхолдер.
@@ -37,6 +38,10 @@ LANGS = ("ru", "en")
 # проверяют гейтом (иначе id или имя, похожее на код, ломало бы схему).
 ENUM_KEYS = frozenset({"axis", "status", "mode", "lang", "ie", "transitions", "verdict", "reason"})
 MIN_TOKEN = 3
+# Префиксы кодов людей по порядку: `p` (p01…), а если токены ростера сами вида `p01` — первый
+# свободный из остальных (см. `_code_prefix`).
+_CODE_LETTERS = ("p", "x", "q", "z", "k")
+CODE_PREFIXES = _CODE_LETTERS + tuple(a + b for a in _CODE_LETTERS for b in _CODE_LETTERS)
 EXTRA_PLACEHOLDER = {"ru": "[имя]", "en": "[name]"}
 
 # Вымышленные имена. Не пересекаются с именами синтетической фикстуры тестов (проверяется
@@ -167,6 +172,24 @@ def _pattern(token: str, kind: str, underscore: bool = False) -> re.Pattern:
     return _id_pattern(token) if kind == "id" else _name_pattern(token, underscore)
 
 
+def _code_prefix(people: list[dict], extra_words: list[str]) -> str:
+    """Первый префикс кодов из `CODE_PREFIXES`, с которого (плюс цифра) не начинается ни один
+    токен ростера: id целиком (любой длины), части id, слова имён, `sanitize.names`. Тогда код
+    одного человека не равен id или части id другого, замены не каскадируют, а гейт ростера не
+    принимает код за настоящий id. Все префиксы заняты → ValueError."""
+    tokens = list(extra_words)
+    for p in people:
+        tokens += [t for t, _kind in _person_tokens(p)] + [p["id"]]
+    for prefix in CODE_PREFIXES:
+        taken = re.compile(re.escape(prefix) + r"\d", re.IGNORECASE)
+        if not any(taken.match(t) for t in tokens):
+            return prefix
+    raise ValueError(
+        f"не удалось выбрать префикс кодов обезличивания: все {len(CODE_PREFIXES)} вариантов "
+        f"({', '.join(CODE_PREFIXES)}) заняты токенами ростера вида <префикс><цифры>"
+    )
+
+
 class Anonymizer:
     """Детерминированные коды и вымышленные имена; вычистка ростера из текстов."""
 
@@ -183,8 +206,9 @@ class Anonymizer:
             roster += [(t, _pattern(t, kind)) for t, kind in _person_tokens(p)]
         roster += [(w, _name_pattern(w)) for w in extra_words]
 
+        self.code_prefix = _code_prefix(people, extra_words)
         self.id_map: dict[str, str] = {
-            pid: f"p{i:02d}" for i, pid in enumerate(sorted(ids), start=1)
+            pid: f"{self.code_prefix}{i:02d}" for i, pid in enumerate(sorted(ids), start=1)
         }
         self.name_map: dict[str, str] = {}
         for pid in sorted(ids):
