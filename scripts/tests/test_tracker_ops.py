@@ -14,7 +14,8 @@ from _assess import payload
 from test_tracker import (FIX_ALEX, GROWN, KIM_RECS, LATER, LOGIN, NOW, OLD_RUN, RUN_P1, SHORT,
                           TrackerCase, _entry)
 
-from lib import batches, inventory, marks, tracker
+from lib import batches, inventory, marks, render_review, tracker
+from lib.config import load_config, save_config
 from lib.lock import file_lock
 from lib.workspace import SrError
 
@@ -26,7 +27,14 @@ FIX_KEY = "2026-09-08_14-00-00Z-fix-tests"
 
 class OpsCase(TrackerCase):
     def append_p2(self, **patch) -> dict:
+        """p2 после одобрения p1: при гейте ревьюера вердикт по черновику не пишется (B04)."""
+        self.approve_live()
         return self.append(self.p2(**patch), now=LATER, period_label="p2")
+
+    def append_p2_with_login(self) -> dict:
+        """p2 с сессией LOGIN после одобрения p1 (гейт ревьюера, B04)."""
+        self.approve_live()
+        return self.append(self.p2_with_login(), now=LATER, period_label="p2")
 
     def p2_with_login(self) -> dict:
         """p2, в котором снова оценена сессия LOGIN из p1: пометка переставляется."""
@@ -73,8 +81,10 @@ class RecStatusTest(OpsCase):
     def test_open_recs_items_and_next_number(self):
         self.append_p1()
         self.append_p2()
-        result = tracker.open_recs(self.tracker_doc(), "alex")
+        self.approve_live()
+        result = tracker.open_recs(self.tracker_doc(), "alex", gated=True)
         self.assertEqual(result["next_number"], 4)
+        self.assertEqual(result["pending_approval"], [])
         self.assertEqual([r["id"] for r in result["open"]], ["REC-alex-002", "REC-alex-003"])
         first = result["open"][0]
         self.assertEqual(first["axis"], "trust_calibration")
@@ -88,7 +98,7 @@ class RecStatusTest(OpsCase):
         self.append_p1()
         self.append_p2()
         tracker.retract(self.root, RUN_P2, "судья перепутал сессии", now=LATEST)
-        result = tracker.open_recs(self.tracker_doc(), "alex")
+        result = tracker.open_recs(self.tracker_doc(), "alex", gated=True)
         # вердикт followed отозванного прогона больше не закрывает REC-001, REC-003 ушла вместе с ним
         self.assertEqual([r["id"] for r in result["open"]], ["REC-alex-001", "REC-alex-002"])
         self.assertEqual(result["next_number"], 4)
@@ -96,8 +106,8 @@ class RecStatusTest(OpsCase):
     def test_retracted_first_run_empties_open_list(self):
         self.append_p1()
         tracker.retract(self.root, RUN_P1, "ошибка", now=LATER)
-        result = tracker.open_recs(self.tracker_doc(), "alex")
-        self.assertEqual(result, {"open": [], "next_number": 3})
+        result = tracker.open_recs(self.tracker_doc(), "alex", gated=True)
+        self.assertEqual(result, {"open": [], "pending_approval": [], "next_number": 3})
 
     def test_cli_open_recs_json_and_text(self):
         self.append_p1()
@@ -111,6 +121,118 @@ class RecStatusTest(OpsCase):
 
     def test_cli_open_recs_unknown_person_is_2(self):
         self.assertEqual(self.code("open-recs", "nobody"), 2)
+
+
+P1_RECS = ["REC-alex-001", "REC-alex-002"]
+
+
+class ReviewerGateRecsTest(OpsCase):
+    """B04: в team/course при `reviewer_gate` рекомендации черновика не идут судье до approve.
+
+    Человек получает текст только после одобрения; вердикт по совету, которого он не видел,
+    ложный. Фикстура workspace-min: `mode: team`, `reviewer_gate: true`.
+    """
+
+    def set_config(self, **fields) -> None:
+        cfg = load_config(self.root)
+        cfg.update(fields)
+        save_config(self.root, cfg)
+
+    def draft_p1(self) -> None:
+        """p1 записан и отрендерен, но не одобрен: `review_status: draft`."""
+        judge = self.write(payload(), name="judge-p1.json")
+        tracker.append(self.root, judge, "alex", now=NOW, period_label="p1")
+        render_review.write_review(self.root, judge, "alex", RUN_P1, now=NOW)
+
+    def p2_over_draft(self, **patch) -> dict:
+        """p2 без одобрения p1 (`append_p2` сначала одобряет)."""
+        return self.append(self.p2(**patch), now=LATER, period_label="p2")
+
+    def cli_recs(self) -> dict:
+        code, out, err = self.cli("open-recs", "alex", "--json")
+        self.assertEqual(code, 0, err)
+        return json.loads(out)
+
+    def test_gated_follows_config(self):
+        self.assertTrue(tracker.reviewer_gated(load_config(self.root)))
+        for mode, gate, expected in (("team", False, False), ("course", True, True),
+                                     ("self", True, False), ("self", False, False)):
+            with self.subTest(mode=mode, gate=gate):
+                self.assertEqual(tracker.reviewer_gated({"mode": mode, "reviewer_gate": gate}), expected)
+
+    def test_draft_recs_pending_not_open(self):
+        self.draft_p1()
+        self.assertEqual(self.tracker_doc()["runs"][0]["review_status"], "draft")
+        result = self.cli_recs()
+        self.assertEqual(result["open"], [])
+        self.assertEqual([r["id"] for r in result["pending_approval"]], P1_RECS)
+        first = result["pending_approval"][0]
+        self.assertEqual(set(first), {"id", "axis", "text", "period", "run_id"})
+        self.assertEqual(first["period"], "p1")
+        self.assertEqual(first["run_id"], RUN_P1)
+        # номер не переиспользуется: черновые REC заняты
+        self.assertEqual(result["next_number"], 3)
+
+    def test_verdict_on_draft_rec_rejected(self):
+        self.draft_p1()
+        before = tracker.tracker_path(self.root).read_bytes()
+        message = self.raises(1, self.p2_over_draft)
+        self.assertIn(f"REC-alex-001 из неодобренного черновика {RUN_P1}", message)
+        self.assertIn("вердикт откладывается до approve", message)
+        self.assertEqual(tracker.tracker_path(self.root).read_bytes(), before)
+
+    def test_after_approve_recs_open_and_verdict_passes(self):
+        self.draft_p1()
+        render_review.approve(self.root, "alex", RUN_P1, now=NOW + timedelta(hours=1))
+        result = self.cli_recs()
+        self.assertEqual([r["id"] for r in result["open"]], P1_RECS)
+        self.assertEqual(result["pending_approval"], [])
+        self.append_p2()
+        self.assertEqual(tracker.rec_statuses(self.tracker_doc(), "alex")["REC-alex-001"], "followed")
+
+    def test_p2_without_verdicts_passes_over_draft(self):
+        """Прогон следующего периода не блокируется: без вердиктов по черновику он пишется."""
+        self.draft_p1()
+        self.p2_over_draft(prev_recommendations=[])
+        result = tracker.open_recs(self.tracker_doc(), "alex", gated=True)
+        # p2 тоже черновик: его REC-003 ждёт одобрения вместе с рекомендациями p1
+        self.assertEqual([r["id"] for r in result["pending_approval"]], P1_RECS + ["REC-alex-003"])
+        self.assertEqual(result["open"], [])
+        self.assertEqual(result["next_number"], 4)
+
+    def test_self_mode_recs_open_at_once(self):
+        self.set_config(mode="self")
+        self.draft_p1()
+        self.assertEqual(self.tracker_doc()["runs"][0]["review_status"], "approved")
+        result = self.cli_recs()
+        self.assertEqual([r["id"] for r in result["open"]], P1_RECS)
+        self.assertEqual(result["pending_approval"], [])
+        self.append_p2()
+
+    def test_team_without_gate_like_self(self):
+        self.set_config(reviewer_gate=False)
+        self.append_p1()  # без render-review прогон ещё draft, гейта нет — REC выданы сразу
+        result = self.cli_recs()
+        self.assertEqual([r["id"] for r in result["open"]], P1_RECS)
+        self.assertEqual(result["pending_approval"], [])
+        self.append_p2()
+
+    def test_recorded_verdicts_on_draft_do_not_redden_validate(self):
+        """Трекер, записанный до исправления (вердикт по черновику), `validate` не краснит."""
+        self.set_config(reviewer_gate=False)
+        self.append_p1()
+        self.append_p2()
+        self.set_config(reviewer_gate=True)
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_cli_text_shows_both_groups(self):
+        self.draft_p1()
+        code, out, err = self.cli("open-recs", "alex")
+        self.assertEqual(code, 0, err)
+        self.assertIn("открытых рекомендаций у alex нет", out)
+        self.assertIn("ждут одобрения черновика", out)
+        self.assertIn("REC-alex-001", out)
+        self.assertIn("следующий номер: REC-alex-003", out)
 
 
 class RetractTest(OpsCase):
@@ -165,7 +287,7 @@ class RetractTest(OpsCase):
 
     def test_newer_mark_kept(self):
         self.append_p1()
-        self.append(self.p2_with_login(), now=LATER, period_label="p2")
+        self.append_p2_with_login()
         self.assertEqual(_entry(self.index(), LOGIN)["reviewed_in_run"], RUN_P2)
         result = tracker.retract(self.root, RUN_P1, "ошибка", now=LATEST)
         self.assertEqual(result["kept_newer"], [LOGIN_KEY])
@@ -174,7 +296,7 @@ class RetractTest(OpsCase):
 
     def test_dedup_cycle_retract_newer_then_older(self):
         self.append_p1()
-        self.append(self.p2_with_login(), now=LATER, period_label="p2")
+        self.append_p2_with_login()
         tracker.retract(self.root, RUN_P2, "ошибка", now=LATEST)
         login = _entry(self.index(), LOGIN)
         self.assertEqual(login["reviewed_in_run"], RUN_P1)
@@ -188,7 +310,7 @@ class RetractTest(OpsCase):
     def test_dedup_cycle_retract_older_then_newer_goes_back_to_new(self):
         """Прошлая пометка от уже отозванного прогона не возвращается: откат идёт дальше по цепочке."""
         self.append_p1()
-        self.append(self.p2_with_login(), now=LATER, period_label="p2")
+        self.append_p2_with_login()
         tracker.retract(self.root, RUN_P1, "ошибка", now=LATEST)
         tracker.retract(self.root, RUN_P2, "тоже ошибка", now=LATEST)
         login = _entry(self.index(), LOGIN)
@@ -337,7 +459,7 @@ class MarkLogsTest(OpsCase):
     def test_force_on_older_run_keeps_newer_mark(self):
         """p1 и p2 оценили LOGIN (штамп p2). mark-logs p1 --force его не перетирает; цепочка цела."""
         self.append_p1()
-        self.append(self.p2_with_login(), now=LATER, period_label="p2")
+        self.append_p2_with_login()
         result = tracker.mark_logs(self.root, RUN_P1, force=True, now=LATEST)
         self.assertEqual(result["kept_newer"], [LOGIN_KEY])
         self.assertEqual(result["coverage"], {"marked": 3, "expected": 3})
@@ -349,7 +471,7 @@ class MarkLogsTest(OpsCase):
     def test_older_run_without_marks_does_not_overwrite_newer(self):
         """Путь без --force: у p1 пометок не было (индекса не было), p2 уже поставил свой штамп."""
         self.append_without_index()
-        self.append(self.p2_with_login(), now=LATER, period_label="p2")
+        self.append_p2_with_login()
         result = tracker.mark_logs(self.root, RUN_P1, now=LATEST)
         self.assertEqual(result["kept_newer"], [LOGIN_KEY])
         self.assertEqual(result["coverage"], {"marked": 3, "expected": 3})
@@ -359,7 +481,7 @@ class MarkLogsTest(OpsCase):
 
     def test_replace_older_run_keeps_newer_mark(self):
         self.append_p1()
-        self.append(self.p2_with_login(), now=LATER, period_label="p2")
+        self.append_p2_with_login()
         result = self.append(payload(), now=LATEST, period_label="p1", replace=RUN_P1)
         self.assertEqual(result["logs_kept_newer"], [LOGIN_KEY])
         self.assertEqual(result["coverage"], {"marked": 3, "expected": 3})

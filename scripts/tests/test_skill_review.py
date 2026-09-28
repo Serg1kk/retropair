@@ -250,6 +250,14 @@ class SkillTest(unittest.TestCase):
         self.assertIn("метку не придумывай", first)
         self.assertIn("period_label", first)
 
+    def test_next_rec_number_to_judge_and_renumber_in_append(self) -> None:
+        """A07: `next_number` из `open-recs` идёт судье; перенумерация в `append` не повод перезапускать судью."""
+        self.assertIn("next_number", phases(self.body)[1])
+        self.assertIn("next_rec_number", phases(self.body)[6])
+        phase = phases(self.body)[7]
+        self.assertIn("перенумер", phase)
+        self.assertIn("не перезапускается", phase)
+
     def test_phase2_only_short_sessions_closed_without_run(self) -> None:
         """B03: пачек нет, короткие есть → `mark-logs --no-run` по всем коротким, агентов не звать."""
         phase = phases(self.body)[2]
@@ -264,6 +272,17 @@ class SkillTest(unittest.TestCase):
         for phrase in ("только короткие", "данных мало", "агентов не зови", "новых логов нет"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, phase)
+
+    def test_phase1_draft_recs_not_given_to_judge(self) -> None:
+        """B04: агентам только `open`; `pending_approval` — строка в сводке и предупреждение, прогон идёт."""
+        phase = phases(self.body)[1]
+        for phrase in ("`open`", "pending_approval", "из неодобренного черновика", "вердикт отложен",
+                       "неодобренный черновик прошлого периода", "--no-ask", "не блокируется"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, phase)
+        summary = phases(self.body)[12]
+        self.assertIn("вердикт отложен", summary)
+        self.assertIn("неодобренный черновик прошлого периода", summary)
 
     def test_phase3_recorded_judge_output_is_not_asked_about(self) -> None:
         """Записанный выход судьи прошлого прогона не повод для вопроса: незаписанный называет `verify`."""
@@ -350,6 +369,33 @@ class OrchestrationTest(unittest.TestCase):
         judge = self.text.split("## Бриф судьи", 1)[1].split("\n## ", 1)[0]
         self.assertIn("не закрываются", judge)
 
+    def test_open_recs_only_open_and_pending_in_summary(self) -> None:
+        """B04: во вход агентов идёт только `open`; `pending_approval` — в сводку, вердикта нет."""
+        brief = self.text.split("## Бриф коллектора", 1)[1].split("\n## ", 1)[0]
+        row = next(ln for ln in brief.splitlines() if ln.startswith("| `open_recs`"))
+        self.assertIn("только `open`", row)
+        self.assertIn("pending_approval", row)
+        summary = self.text.split("## Сводка", 1)[1]
+        for phrase in ("из неодобренного черновика", "вердикт отложен", "неодобренный черновик прошлого периода"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, summary)
+        section = self.text.split("## Коды выхода", 1)[1].split("\n## ", 1)[0]
+        append_row = next(ln for ln in section.splitlines() if ln.startswith("| `append`"))
+        self.assertIn("неодобренного черновика", append_row)
+
+    def test_judge_brief_carries_next_rec_number(self) -> None:
+        """A07: судья получает следующий свободный номер, `append` всё равно перенумерует."""
+        judge = self.text.split("## Бриф судьи", 1)[1].split("\n## ", 1)[0]
+        row = next(ln for ln in judge.splitlines() if ln.startswith("| `next_rec_number`"))
+        self.assertIn("next_number", row)
+        self.assertIn("open-recs", row)
+        self.assertIn("номер новой рекомендации начинать с REC-<person>-<NNN>", judge)
+        self.assertIn("перенумер", judge)
+        codes = self.text.split("## Коды выхода", 1)[1].split("\n## ", 1)[0]
+        append_row = next(ln for ln in codes.splitlines() if ln.startswith("| `append`"))
+        self.assertIn("уже выдан", append_row)
+        self.assertIn("не перезапускать", append_row)
+
     def test_recorded_judge_output_reset_to_stub(self) -> None:
         section = self.text.split("## Стабы", 1)[1].split("\n## ", 1)[0]
         self.assertIn("Записанный выход судьи", section)
@@ -392,6 +438,13 @@ class UserPagesTest(unittest.TestCase):
         for phrase in ("режим `run`", "run-<ГГГГММДД>", "`-2`", "отдельными периодами"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
+
+    def test_review_page_recs_count_after_approve(self) -> None:
+        """B04: в team и course рекомендации начинают учитываться после одобрения текста."""
+        text = _read(REVIEW_DOC)
+        self.assertIn("рекомендации", text)
+        self.assertIn("после одобрения", text)
+        self.assertIn("pending_approval", text)
 
     def test_pages_clean(self) -> None:
         for path in (HOW, REVIEW_DOC):

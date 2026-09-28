@@ -112,6 +112,15 @@ class AssessSamplesTest(TempHome, unittest.TestCase):
         shutil.copyfile(SAMPLE, target)
         self.assertEqual(tracker.validate_file(root), [])
 
+    def test_verdicts_only_on_approved_texts(self):
+        """B04: фикстура — team с гейтом ревьюера; вердикты только по рекомендациям одобренных прогонов."""
+        for run in self.live:
+            with self.subTest(run=run["run_id"]):
+                self.assertEqual(tracker.draft_verdict_problems(run, self.doc["runs"], True), [])
+        earlier = [r for r in self.live if r["period"]["label"] != LABELS[-1]]
+        self.assertTrue(earlier)
+        self.assertTrue(all(r["review_status"] == "approved" for r in earlier))
+
     def test_three_people_three_live_periods(self):
         periods = {p: [r["period"]["label"] for r in self.live if r["person_id"] == p] for p in PEOPLE}
         self.assertEqual(periods, {p: LABELS for p in PEOPLE})

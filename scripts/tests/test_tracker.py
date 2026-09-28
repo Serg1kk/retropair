@@ -87,6 +87,16 @@ class TrackerCase(TempHome, unittest.TestCase):
     def p2(self, **patch) -> dict:
         return payload("judge-alex-p2.json", **patch)
 
+    def approve_live(self, person: str = "alex") -> None:
+        """Одобрить живые прогоны человека (`review_status: approved`), как ревьюер перед следующим периодом.
+
+        Фикстура workspace-min — team с `reviewer_gate: true`: вердикт по рекомендации
+        неодобренного черновика `append` не пишет (человек текст не получал).
+        """
+        for run in tracker.live_runs(tracker.load(self.root), person):
+            if run.get("review_status") != "approved":
+                tracker.update_run(self.root, run["run_id"], review_status="approved")
+
 
 class CoreFunctionsTest(TrackerCase):
     def test_tracker_path_in_runs(self):
@@ -351,19 +361,41 @@ class AppendTest(TrackerCase):
         obj["data"]["recommendations"][1]["id"] = "REC-alex-001"
         self.assertIn("REC-alex-001", self.rejected(obj))
 
-    def test_rec_id_not_next_number(self):
+    def test_rec_id_not_next_number_renumbered(self):
+        """A07: номер с пропуском `append` перенумеровывает в следующий свободный и предупреждает."""
         self.append_p1()
+        self.approve_live()  # фикстура — team с гейтом: вердикты только по одобренным
         obj = self.p2()
         obj["data"]["recommendations"][0]["id"] = "REC-alex-005"
-        message = self.rejected(obj, now=LATER)
-        self.assertIn("REC-alex-005", message)
-        self.assertIn("003", message)
+        result = self.append(obj, now=LATER, period_label="p2")
+        self.assertEqual([r["id"] for r in self.tracker_doc()["runs"][1]["recommendations"]], ["REC-alex-003"])
+        self.assertTrue(any("перенумерованы" in w and "REC-alex-005 → REC-alex-003" in w
+                            for w in result["warnings"]), result["warnings"])
 
-    def test_rec_id_reused_from_earlier_run(self):
+    def test_rec_id_reused_from_earlier_run_renumbered(self):
+        """A07: занятый номер живого прогона тоже перенумеровывается, а не рвёт запись."""
         self.append_p1()
+        self.approve_live()  # фикстура — team с гейтом: вердикты только по одобренным
         obj = self.p2()
         obj["data"]["recommendations"][0]["id"] = "REC-alex-002"
-        self.assertIn("REC-alex-002", self.rejected(obj, now=LATER))
+        result = self.append(obj, now=LATER, period_label="p2")
+        self.assertEqual([r["id"] for r in self.tracker_doc()["runs"][1]["recommendations"]], ["REC-alex-003"])
+        self.assertTrue(any("REC-alex-002 → REC-alex-003" in w for w in result["warnings"]), result["warnings"])
+
+    def test_rec_id_out_of_order_in_file_still_caught_by_validate(self):
+        """Правка трекера руками мимо `append`: номер не по порядку и занятый ловит `validate`."""
+        self.append_p1()
+        self.approve_live()  # фикстура — team с гейтом: вердикты только по одобренным
+        self.append(self.p2(), now=LATER, period_label="p2")
+        doc = self.tracker_doc()
+        doc["runs"][1]["recommendations"][0]["id"] = "REC-alex-005"
+        self.save_doc(doc)
+        problems = "\n".join(tracker.validate_file(self.root))
+        self.assertIn("REC-alex-005", problems)
+        self.assertIn("003", problems)
+        doc["runs"][1]["recommendations"][0]["id"] = "REC-alex-002"
+        self.save_doc(doc)
+        self.assertIn("уже выдан", "\n".join(tracker.validate_file(self.root)))
 
     def test_rec_axis_outside_axes(self):
         obj = payload()
@@ -382,12 +414,15 @@ class AppendTest(TrackerCase):
     def test_prev_recommendation_status_on_the_fly(self):
         """followed закрывает, not_observable оставляет открытой: третий прогон видит это."""
         self.append_p1()
+        self.approve_live()
         self.append(self.p2(), now=LATER, period_label="p2")
+        self.approve_live()
         p3 = self.p2(recommendations=[{"id": "REC-alex-004", "axis": "context_engineering",
                                        "text": "Давать агенту выдержку из лога.", "status": "open"}],
                      prev_recommendations=[{"id": "REC-alex-002", "verdict": "partial",
                                             "evidence": None, "note": None}])
         self.append(p3, now=LATER + timedelta(days=7), period_label="p3")
+        self.approve_live()
         p4 = self.p2(recommendations=[{"id": "REC-alex-005", "axis": "context_engineering",
                                        "text": "Давать агенту только упавший шаг.", "status": "open"}],
                      prev_recommendations=[{"id": "REC-alex-001", "verdict": "followed",
@@ -489,6 +524,7 @@ class AppendTest(TrackerCase):
         self.append_p1()
         doc = self.tracker_doc()
         doc["runs"][0]["axes"][0]["evidence"] = []
+        doc["runs"][0]["review_status"] = "approved"
         self.save_doc(doc)
         result = self.append(self.p2(), now=LATER, period_label="p2")
         self.assertEqual(len(self.tracker_doc()["runs"]), 2)
@@ -518,6 +554,7 @@ class ContractConditionsTest(TrackerCase):
     # условие 2: для context_engineering законно числовое доказательство без хода
     def test_c2_context_numeric_evidence_without_turn(self):
         self.append_p1()
+        self.approve_live()
         obj = self.p2()
         obj["data"]["axes"][4]["evidence"] = [{"session_id": None, "turn_index": None,
                                                "quote": "пик заполнения окна 92%, два компакта",
@@ -682,6 +719,7 @@ class ReplaceTest(TrackerCase):
     def test_replace_older_run_in_place_keeps_order_and_rec_statuses(self):
         """Замена не последнего прогона с теми же REC-id: место в списке, статусы и validate прежние."""
         self.append_p1()
+        self.approve_live()
         run_p2 = self.append(self.p2(), now=LATER, period_label="p2")["run_id"]
         statuses = tracker.rec_statuses(self.tracker_doc(), "alex")
         result = self.append(payload(), now=LATER + timedelta(days=7), period_label="p1", replace=RUN_P1)
@@ -701,6 +739,107 @@ class ReplaceTest(TrackerCase):
         obj = payload(recommendations=KIM_RECS)
         kim_run = self.append(obj, person="kim", period_label="p1")["run_id"]
         self.assertIn(kim_run, self.rejected(payload(), now=LATER, replace=kim_run))
+
+
+class RecRenumberTest(TrackerCase):
+    """A07: `append` перенумеровывает новые рекомендации с `next_rec_number`, в том числе после `retract`."""
+
+    def append(self, obj, person: str = "alex", **kw) -> dict:
+        # фикстура — team с `reviewer_gate`: вердикты только по одобренным прогонам (B04)
+        self.approve_live(person)
+        return super().append(obj, person, **kw)
+
+    def retracted_p2(self) -> None:
+        """p1 выдаёт REC-alex-001/002, p2 — REC-alex-003, p2 отозван: номер 003 занят навсегда."""
+        self.append_p1()
+        run_p2 = self.append(self.p2(), now=LATER, period_label="p2")["run_id"]
+        tracker.retract(self.root, run_p2, "оценщик перепутал сессии", now=LATER + timedelta(hours=1))
+        self.approve_live()
+
+    @staticmethod
+    def renumber_warnings(result: dict) -> list[str]:
+        return [w for w in result["warnings"] if "перенумерованы" in w]
+
+    def test_a07_after_retract_judge_number_renumbered(self):
+        self.retracted_p2()
+        self.assertEqual(tracker.open_recs(self.tracker_doc(), "alex", gated=True)["next_number"], 4)
+        result = self.append(self.p2(), now=LATER + timedelta(days=1), period_label="p2")
+        run = tracker.find_run(self.tracker_doc(), result["run_id"])
+        self.assertEqual([r["id"] for r in run["recommendations"]], ["REC-alex-004"])
+        warns = self.renumber_warnings(result)
+        self.assertEqual(len(warns), 1, result["warnings"])
+        self.assertIn("REC-alex-003 → REC-alex-004", warns[0])
+        self.assertEqual(tracker.validate_file(self.root), [])
+        self.assertEqual(tracker.open_recs(self.tracker_doc(), "alex", gated=True)["next_number"], 5)
+
+    def test_a07_cli_append_after_retract_is_0_with_warning(self):
+        self.retracted_p2()
+        code, out, err = self.cli("append", str(self.write(self.p2())), "--person", "alex",
+                                  "--period-label", "p2")
+        self.assertEqual(code, 0, err)
+        self.assertIn("REC-alex-003 → REC-alex-004", err)
+        self.assertIn("перенумерованы", json.loads(out)["warnings"][0])
+
+    def test_correct_number_no_warning(self):
+        self.append_p1()
+        result = self.append(self.p2(), now=LATER, period_label="p2")
+        self.assertEqual(self.renumber_warnings(result), [])
+        self.assertEqual([r["id"] for r in self.tracker_doc()["runs"][1]["recommendations"]], ["REC-alex-003"])
+
+    def test_two_recs_renumbered_in_same_order(self):
+        self.append_p1()
+        self.append(self.p2(), now=LATER, period_label="p2")
+        obj = payload()
+        obj["data"]["recommendations"][0]["id"] = "REC-alex-002"
+        obj["data"]["recommendations"][1]["id"] = "REC-alex-003"
+        texts = [r["text"] for r in obj["data"]["recommendations"]]
+        result = self.append(obj, now=LATER + timedelta(days=7), period_label="p3")
+        recs = tracker.find_run(self.tracker_doc(), result["run_id"])["recommendations"]
+        self.assertEqual([r["id"] for r in recs], ["REC-alex-004", "REC-alex-005"])
+        self.assertEqual([r["text"] for r in recs], texts)
+        warns = self.renumber_warnings(result)
+        self.assertEqual(len(warns), 1, result["warnings"])
+        self.assertIn("REC-alex-002 → REC-alex-004, REC-alex-003 → REC-alex-005", warns[0])
+
+    def test_replace_keeps_own_numbers(self):
+        """`--replace` не последнего и последнего прогона: номера заменяемого доступны замене."""
+        self.append_p1()
+        run_p2 = self.append(self.p2(), now=LATER, period_label="p2")["run_id"]
+        first = self.append(payload(), now=LATER + timedelta(days=7), period_label="p1", replace=RUN_P1)
+        self.assertEqual(self.renumber_warnings(first), [])
+        second = self.append(self.p2(), now=LATER + timedelta(days=7), period_label="p2", replace=run_p2)
+        self.assertEqual(self.renumber_warnings(second), [])
+        doc = self.tracker_doc()
+        self.assertEqual([r["id"] for r in doc["runs"][0]["recommendations"]], ["REC-alex-001", "REC-alex-002"])
+        self.assertEqual([r["id"] for r in doc["runs"][1]["recommendations"]], ["REC-alex-003"])
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_bad_form_or_other_person_or_duplicate_still_1(self):
+        self.retracted_p2()
+        for bad in ("REC-alex-3", "REC-sam-004", "rec-alex-004"):
+            with self.subTest(bad=bad):
+                obj = self.p2()
+                obj["data"]["recommendations"][0]["id"] = bad
+                self.assertIn(bad, self.rejected(obj, now=LATER + timedelta(days=1), period_label="p2"))
+        obj = payload()
+        obj["data"]["recommendations"][1]["id"] = obj["data"]["recommendations"][0]["id"]
+        self.assertIn("повторён", self.rejected(obj, now=LATER + timedelta(days=1), period_label="p3"))
+        self.assertEqual(len(self.tracker_doc()["runs"]), 2)
+
+    def test_render_review_after_renumber_sha_matches(self):
+        """Выход судьи на диске не переписывается: sha совпадает, в досье — новый номер."""
+        self.retracted_p2()
+        judge = self.write(self.p2())
+        before = judge.read_bytes()
+        result = tracker.append(self.root, judge, "alex", period_label="p2", now=LATER + timedelta(days=1))
+        self.assertEqual(judge.read_bytes(), before)
+        run = tracker.find_run(self.tracker_doc(), result["run_id"])
+        self.assertEqual(run["source"]["sha256"], hashlib.sha256(before).hexdigest())
+        path = render_review.write_review(self.root, judge, "alex", result["run_id"],
+                                          now=LATER + timedelta(days=1))
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("REC-alex-004", text)
+        self.assertNotIn("REC-alex-003", text)
 
 
 class OtherPeriodTest(TrackerCase):
@@ -844,6 +983,7 @@ class RunModeLabelTest(TrackerCase):
     def test_two_runs_same_day_get_distinct_labels(self):
         """Регрессия: второй прогон за сутки не ревизия первого, вердикт по рекомендации первого находит её."""
         first = self.append(payload())
+        self.approve_live()
         second = self.append(self.p2_partial(), now=SAME_DAY)
         self.assertEqual(first["period_label"], DAY_LABEL)
         self.assertEqual(second["period_label"], DAY_LABEL + "-2")
@@ -853,7 +993,7 @@ class RunModeLabelTest(TrackerCase):
         self.assertEqual([r["period"]["label"] for r in tracker.live_runs(tr, "alex")],
                          [DAY_LABEL, DAY_LABEL + "-2"])
         self.assertEqual(second["revision"], 1)
-        opened = {item["id"]: item for item in tracker.open_recs(tr, "alex")["open"]}
+        opened = {item["id"]: item for item in tracker.open_recs(tr, "alex", gated=True)["open"]}
         self.assertIn("REC-alex-001", opened)
         self.assertEqual(opened["REC-alex-001"]["period"], DAY_LABEL)
         self.assertEqual(tracker.validate_file(self.root), [])
@@ -861,6 +1001,7 @@ class RunModeLabelTest(TrackerCase):
     def test_suffix_skips_label_of_retracted_run(self):
         """Метка отозванного прогона занята: новая берёт следующий свободный суффикс."""
         self.append(payload())
+        self.approve_live()
         second = self.append(self.p2(), now=SAME_DAY)
         tracker.retract(self.root, second["run_id"], "повтор по ошибке", now=SAME_DAY + timedelta(minutes=5))
         third = self.append(self.p2(recommendations=[dict(self.p2()["data"]["recommendations"][0],
@@ -929,6 +1070,7 @@ class RunModeLabelTest(TrackerCase):
             judge = self.write(obj, name=name)
             result = tracker.append(self.root, judge, "alex", now=moment)
             render_review.write_review(self.root, judge, "alex", result["run_id"], now=moment)
+            render_review.approve(self.root, "alex", result["run_id"], now=moment)
             runs.append(result["run_id"])
         res = run_sr("report", "--personal", "alex", "--json", home=self.home, cwd=self.root)
         self.assertEqual(res.returncode, 0, res.stderr)
@@ -958,6 +1100,7 @@ class RegistryLastRunTest(TrackerCase):
     def test_second_append_moves_last_run_at(self):
         self.registered()
         self.append_p1()
+        self.approve_live()
         result = self.append(self.p2(), now=LATER, period_label="p2")
         runs = self.tracker_doc()["runs"]
         self.assertEqual(registry.find_by_path(self.root)["last_run_at"], runs[-1]["reviewed_at"])

@@ -37,6 +37,8 @@ LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 PLACE_VERDICTS = {"first_place_above": 1, "second_place_above": 2, "third_place_above": 3}
 CLOSING_VERDICTS = ("followed", "ignored")
 REVIEWED_STATUS = "reviewed"
+APPROVED_STATUS = "approved"
+GATED_MODES = ("team", "course")
 MAX_LEVERS_PER_ACTION = 2
 INSUFFICIENT_LEVEL = "insufficient"
 # Ось, где под балл законно числовое доказательство из context_report без хода (схема judge).
@@ -568,6 +570,32 @@ def validate_run(run: dict, tr: dict, *, length: str | None = None, address: str
     return problems
 
 
+def draft_verdict_problems(run: dict, runs: list, gated: bool) -> list[str]:
+    """Вердикты `run` по рекомендациям неодобренных прогонов при гейте ревьюера (проверка `append`).
+
+    Прошлые прогоны — те, что стоят в `runs` раньше `run`. Проверяется только новый прогон:
+    вердикты, записанные раньше, `validate_file` не трогает, чтобы старые трекеры не краснели.
+    """
+    if not gated:
+        return []
+    pos = next((i for i, r in enumerate(runs) if r is run), len(runs))
+    prior = [r for r in runs[:pos] if isinstance(r, dict)]
+    by_id = {r.get("run_id"): r for r in prior}
+    issued = issued_recs(prior, run.get("person_id") or "")
+    where = str(run.get("run_id") or "run")
+    problems = []
+    for verdict in run.get("prev_recommendations") or []:
+        item = issued.get(verdict.get("id")) if isinstance(verdict, dict) else None
+        if item is None or not _awaits_approval(by_id.get(item["run_id"]) or {}, gated):
+            continue
+        problems.append(
+            f"{where}: {verdict['id']} из неодобренного черновика {item['run_id']}: вердикт откладывается "
+            f"до approve (человек этот текст не получал); уберите вердикт из prev_recommendations или "
+            f"одобрите черновик командой approve {run.get('person_id')} {item['run_id']}"
+        )
+    return problems
+
+
 def _card_feedback(root: Path, person_id: str) -> dict:
     return people.load_person(root, person_id).get("feedback") or {}
 
@@ -697,6 +725,37 @@ def _build_run(obj: dict, *, run_id: str, ws_id: str, person_id: str, label: str
     }
 
 
+def _renumber_recs(run: dict, runs: list) -> list[str]:
+    """Перенумеровать новые рекомендации `run` подряд со следующего свободного номера; вернуть предупреждения.
+
+    Судья знает номера только из `open_recs`, а номера отозванных и закрытых рекомендаций заняты
+    навсегда: взятый им номер может оказаться выданным. Первый номер — следующий после всех
+    прогонов человека, стоящих в `runs` раньше `run` (при `--replace` номера заменяемого остаются
+    замене, как в `validate_run`). Перенумеровываются только id формы `REC-<person>-NNN` без
+    повторов внутри прогона: чужой person_id, другая форма или дубль остаются как есть, их
+    отклоняет `validate_run`. Порядок рекомендаций не меняется (связь с пунктами — по индексу).
+    Выход судьи на диске не трогается: меняется только прогон, который пишется в трекер.
+    """
+    pid = run.get("person_id") or ""
+    recs = run.get("recommendations")
+    if not isinstance(recs, list) or not recs:
+        return []
+    ids = [rec.get("id") if isinstance(rec, dict) else None for rec in recs]
+    if any(_rec_number(rid, pid) is None for rid in ids) or len(set(ids)) != len(ids):
+        return []
+    pos = next((i for i, r in enumerate(runs) if r is run), len(runs))
+    start = _next_number(runs[:pos], pid)
+    new_ids = [f"REC-{pid}-{start + i:03d}" for i in range(len(recs))]
+    if new_ids == ids:
+        return []
+    run["recommendations"] = [dict(rec, id=new) for rec, new in zip(recs, new_ids)]
+    pairs = ", ".join(f"{old} → {new}" for old, new in zip(ids, new_ids) if old != new)
+    return [
+        f"рекомендации перенумерованы: {pairs} (судья взял занятый или не следующий номер, "
+        f"следующий свободный REC-{pid}-{start:03d}; выход судьи на диске не изменён)"
+    ]
+
+
 def _lookup(index: dict, person_id: str, session: dict) -> dict | None:
     for ref in (session.get("session_id"), session.get("path")):
         if isinstance(ref, str) and ref.strip():
@@ -778,7 +837,8 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
     """Записать прогон из выхода судьи и пометить его сессии в индексе логов.
 
     Порядок: карточка (нет → 2) → метка (2) → файл (нет → 2) → JSON (1) → стаб (1) → схема judge
-    (1) → `status.ok` и `data` (1) → `validate_run` и `check_practices` (1) → трекер → индекс. `--replace`: тот же
+    (1) → `status.ok` и `data` (1) → перенумерация новых рекомендаций (`_renumber_recs`, строка в
+    `warnings`) → `validate_run` и `check_practices` (1) → трекер → индекс. `--replace`: тот же
     человек, `run_id` сохраняется, прогон встаёт на место заменяемого, `revision + 1`,
     `operator_override` переносится, пометки заменяемого снимаются. Нет индекса или сессии в нём →
     прогон пишется, в итоге `logs_unmatched`. Метки нет и `config.period.mode == "run"` → метку
@@ -836,16 +896,18 @@ def append(root: Path, payload_path, person_id: str, *, period_label: str | None
         # замена встаёт на место заменяемого: номера REC и статусы считаются по прогонам до него
         runs = [run if r is victim else r for r in tr["runs"]] if victim is not None else tr["runs"] + [run]
         work = dict(tr, runs=runs)
+        renumbered = _renumber_recs(run, runs)
 
         feedback = card.get("feedback") or {}
         problems = validate_run(run, work, length=feedback.get("length"), address=feedback.get("address"))
         problems += check_practices(run, obj["data"].get("best_practices"))
+        problems += draft_verdict_problems(run, work["runs"], reviewer_gated(load_config(root)))
         if any(isinstance(r, dict) and r.get("run_id") == run_id for r in others):
             problems.append(f"{run_id}: дубликат run_id: прогон с таким id уже есть")
         if problems:
             raise SrError("прогон не записан, инварианты трекера не сошлись:\n  " + "\n  ".join(problems), 1)
 
-        warnings: list[str] = []
+        warnings: list[str] = list(renumbered)
         with marks.index_lock(root):
             index = marks.load_index(root)
             unmatched: list[str] = []
@@ -930,26 +992,42 @@ def rec_statuses(tr: dict, person_id: str) -> dict[str, str]:
     return {rid: item["status"] for rid, item in issued_recs(tr.get("runs") or [], person_id).items()}
 
 
-def open_recs(tr: dict, person_id: str) -> dict:
-    """`{open: [{id, axis, text, period, run_id}], next_number}`: открытые рекомендации и следующий номер.
+def reviewer_gated(cfg: dict) -> bool:
+    """Текст уходит человеку только после approve: режим `team`/`course` и `reviewer_gate: true`.
 
+    Тогда рекомендации неодобренного прогона человек не получал, и вердикт по ним не выносится.
+    """
+    return cfg.get("mode") in GATED_MODES and cfg.get("reviewer_gate") is True
+
+
+def _awaits_approval(run: dict, gated: bool) -> bool:
+    return gated and run.get("review_status") != APPROVED_STATUS
+
+
+def open_recs(tr: dict, person_id: str, *, gated: bool) -> dict:
+    """`{open, pending_approval, next_number}`: рекомендации `{id, axis, text, period, run_id}`.
+
+    `gated` (`reviewer_gated(config)`) → в `open` только рекомендации одобренных прогонов,
+    открытые рекомендации живых неодобренных прогонов — в `pending_approval`: человек их не
+    получал, вердикт по ним откладывается до approve. Без гейта `pending_approval` пуст.
     `period` — метка периода прогона, выдавшего рекомендацию. Номер считается по всем прогонам,
-    включая отозванные: их номера заняты навсегда.
+    включая отозванные и черновики: их номера заняты навсегда.
     """
     by_id = {r.get("run_id"): r for r in tr.get("runs") or [] if isinstance(r, dict)}
-    items = []
+    opened, pending = [], []
     for rid, item in issued_recs(tr.get("runs") or [], person_id).items():
         if item["status"] != "open":
             continue
         run = by_id.get(item["run_id"]) or {}
-        items.append({
+        target = pending if _awaits_approval(run, gated) else opened
+        target.append({
             "id": rid,
             "axis": item["rec"].get("axis"),
             "text": item["rec"].get("text"),
             "period": (run.get("period") or {}).get("label"),
             "run_id": item["run_id"],
         })
-    return {"open": items, "next_number": next_rec_number(tr, person_id)}
+    return {"open": opened, "pending_approval": pending, "next_number": next_rec_number(tr, person_id)}
 
 
 # --- правка прогона ----------------------------------------------------------

@@ -4,8 +4,9 @@
 Во временном workspace (копия `workspace-min` + карточка `kim`) строит свой индекс логов,
 собирает девять выходов судьи (три человека `alex`, `sam`, `kim` × три периода `p1`–`p3`)
 и прогоняет их настоящим движком: `append` → правка ревьюера → `level` → `retract` и новый
-прогон вместо отозванного → `render-review` последнего периода каждого → `approve` двоим из
-трёх. На выходе:
+прогон вместо отозванного → `render-review` и `approve` каждого живого прогона `p1`–`p2` до
+следующего периода (гейт ревьюера: вердикт выносится только по одобренному тексту) →
+`render-review` последнего периода каждого → `approve` двоим из трёх. На выходе:
 
     <out>/process-reviews.sample.json
     <out>/reviews/<person>/<run_id>.md   (три файла, один черновик)
@@ -519,6 +520,12 @@ def build(out_dir: Path, now: datetime) -> dict:
                 tracker.retract(root, run_id, spec["retract"], now=moment + timedelta(hours=1))
                 continue
             last[person] = (run_id, judge)
+            if label != LABELS[-1]:
+                # team с reviewer_gate: рекомендации черновика человек не получал, вердикт по ним
+                # следующий период не выносит; текст одобряется до следующего прогона
+                review_at = moment + timedelta(hours=1)
+                render_review.write_review(root, judge, person, run_id, now=review_at)
+                render_review.approve(root, person, run_id, now=review_at + timedelta(minutes=30))
 
         reviews = []
         for person in PEOPLE:
