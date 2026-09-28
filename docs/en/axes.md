@@ -190,8 +190,8 @@ shows this." It is not a reproach.
 | What | Does the person see it |
 |---|---|
 | The text with actions and the walk through the eight axes | yes |
-| Axis scores | no; in self mode only if `show_scores` is on in `config.json` |
-| Overall level | no; in self mode with the same flag |
+| Axis scores | not in the text; in the personal HTML report yes, on the charts per axis, unless the "dynamics only" view is chosen (`show_scores: false`, `report --trend`) |
+| Overall level | not in the text; in the personal report by the same rule as the scores |
 | A gate that fired, safety flags, the judge's doubts | no, this is the service part for the reviewer |
 | Comparison with other people | never, in any mode |
 

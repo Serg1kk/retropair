@@ -27,7 +27,7 @@
 `build_payload(model, mode=…)` строит из модели данные одного HTML-файла **белым списком**
 полей для режима: `personal` (один человек, только то, что можно показать адресату, в
 виде `scores` — баллы и уровень, или `trend` — переходы между периодами без баллов),
-`group` (баллы и уровни всех; с `details` — ещё карточка человека: только одобренные
+`group` (баллы и уровни всех по одобренным прогонам; с `details` — ещё карточка человека: только одобренные
 отправленные тексты ревью и рекомендации с историей вердиктов, без баллов) и `reviewer` (всё). Фильтрация идёт здесь, до встраивания в HTML: то, что спрятано только
 скриптом страницы, увидит любой читатель файла.
 """
@@ -704,8 +704,10 @@ def _group_details(person: dict) -> dict:
 
 
 def _group_person(person: dict, axes: list[str], details: bool) -> dict:
+    """Строка человека в групповом отчёте — только по одобренным прогонам (`approved_points`):
+    черновик, которого адресат не получал, в теплокарту, распределение и плитки не идёт."""
     points = []
-    for point in person["points"]:
+    for point in approved_points(person):
         points.append({
             "period_key": point["period_key"], "period": point["period"], "date": point["date"],
             "level": point["level"], "gate": point["gate"],
@@ -764,6 +766,9 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
     сколько последних периодов человека в reviewer несут цитаты, досье и черновик фидбэка
     (`None` — все); в старших точках `evidence` пуст, `quote` антипаттернов и гейта и
     `feedback_draft` пустые, досье заменено на `dossier_ref`, у точки `trimmed: true`.
+    `group` строится только из одобренных прогонов (`approved_points`): точки, уровни,
+    даты шапки; человек без одобренных прогонов строкой не идёт — он в счётчике
+    `meta.awaiting_approval`.
     Только в `reviewer` у человека `card_suggestions` — pending-предложения к карточке
     (`model.card_suggestions`, пусто — `[]`).
     Модель не меняется.
@@ -788,8 +793,10 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
         people = [_personal_person(found[0], axes, scores, show_dynamics)]
         dated = approved_points(found[0])
     elif mode == "group":
-        people = [_group_person(p, axes, details) for p in model["people"]]
-        dated = [pt for p in model["people"] for pt in p["points"]]
+        shown = [p for p in model["people"] if approved_points(p)]
+        people = [_group_person(p, axes, details) for p in shown]
+        dated = [pt for p in shown for pt in approved_points(p)]
+        awaiting = len(model["people"]) - len(shown)
     else:
         people = [_reviewer_person(p, axes, quote_periods,
                                    scores_view(p, show_scores, scores_cli))
@@ -813,6 +820,7 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
     }
     if mode == "group":
         meta["details"] = bool(details)
+        meta["awaiting_approval"] = awaiting
     if mode == "reviewer":
         meta["reviews_of_retracted"] = len(model.get("retracted_reviews") or [])
     return {"meta": meta, "axes": axes, "people": people}

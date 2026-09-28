@@ -551,8 +551,8 @@ class SharedDocsTest(unittest.TestCase):
 
     # начало раздела: заголовок `## …` (раздел до следующего `## `) или пункт CHANGELOG (одна строка)
     SECTION_START = {
-        "README.md": "## Running a review",
-        "README.ru.md": "## Как запустить ревью",
+        "README.md": "## The full cycle",
+        "README.ru.md": "## Полный цикл",
         "TESTING.md": "## Движок оценки",
         "CHANGELOG.md": "- Движок оценки и скилл `review`",
     }

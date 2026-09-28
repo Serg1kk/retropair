@@ -505,6 +505,45 @@ class AnonDemoWorkspaceTest(_util.TempHome, unittest.TestCase):
                     self.assertIsNone(re.search(r"(?<![A-Za-z0-9])p\d{2}(?![A-Za-z0-9])", data))
 
 
+class DemoDraftGroupTest(_util.TempHome, unittest.TestCase):
+    """Демо-workspace с гейтом ревьюера: черновики — в reviewer.html, но не в group.html."""
+
+    def test_group_has_no_draft_runs_reviewer_keeps_them(self):
+        demo = _util.SCRIPTS.parent / "demo" / "workspace"
+        with tempfile.TemporaryDirectory(prefix="sr-demo-drafts-") as tmp:
+            ws = Path(tmp) / "ws"
+            shutil.copytree(demo, ws)
+            path = ws_paths(ws)["runs"] / "process-reviews.json"
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            drafts = []
+            for run in doc["runs"]:
+                if run.get("retracted"):
+                    continue
+                if run["period"]["label"] == "P6" or run["person_id"] == "p07":
+                    run["review_status"] = "draft"
+                    drafts.append(run)
+            self.assertGreater(len(drafts), 2)
+            p6_from = min(r["period"]["from"] for r in drafts if r["period"]["label"] == "P6")
+            path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+            out = Path(tmp) / "out"
+            res = run_sr("--workspace", str(ws), "report", "--group", "--reviewer",
+                         "--out-dir", str(out), home=self.home, cwd=ws)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            group_json = _data_without_i18n((out / "group.html").read_text(encoding="utf-8"))
+            group = json.loads(group_json)
+            for run in drafts:
+                self.assertNotIn(run["run_id"], group_json)
+            periods = {pt["period"] for p in group["people"] for pt in p["points"]}
+            self.assertNotIn("P6", periods)
+            self.assertNotIn("p07", [p["id"] for p in group["people"]])
+            self.assertEqual(group["meta"]["awaiting_approval"], 1)
+            self.assertLess(group["meta"]["date_to"], p6_from)
+            reviewer = _data((out / "reviewer.html").read_text(encoding="utf-8"))
+            shown = {pt["run_id"]: pt["approved"] for p in reviewer["people"] for pt in p["points"]}
+            for run in drafts:
+                self.assertIs(shown.get(run["run_id"]), False, run["run_id"])
+
+
 class GateHelpersTest(unittest.TestCase):
     ANNA = {"id": "anna", "name": "Анна Вершинина"}
     BORIS = {"id": "boris", "name": "Борис Каменев"}

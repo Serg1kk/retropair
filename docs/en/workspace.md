@@ -295,7 +295,7 @@ affect the layout and are not given to the judge.
 | `avoid` | list | what not to do in the text (comparisons, slang, emoji…) |
 | `value_focus` | `finding` · `full` | where the value of the text lies: in findings the person did not see, or in a full pass over all axes |
 | `show_dynamics` | `true` · `false` | whether to show changes since the previous period |
-| `channel` | `file` · `telegram` · `slack` · `email` | where the text goes; affects line breaks (layout) |
+| `channel` | `file` · `telegram` · `slack` · `email` | where the text goes; only a label for now (layout): in 0.1.13 the text is built the same way for every channel |
 | `template` | `default` · `workspace` · file name | which text template to use (layout) |
 | `prefix` | string | what to put before the text, for example a greeting (layout) |
 
@@ -344,7 +344,7 @@ sanitizer misses: [privacy.md](privacy.md).
 ## More
 
 - [Privacy](privacy.md): where the data lives, what the models see, what goes over the network.
-- [Reports: what each one shows](../ru/reports.md) (Russian): group, reviewer, personal and the page
+- [Reports: what each one shows](reports.md): group, reviewer, personal and the page
   of all workspaces.
 - [How state is stored](../../STATE.md) (Russian): rules for those who work on the plugin.
 - [Setup: first and repeated run](setup.md): the questions, the hook, `setup-apply` for scripts.

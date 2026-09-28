@@ -127,7 +127,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex <run_id>
 ```
 
 Without `<run_id>` the person's latest active run is approved. `/sessionretro:review --approve
-alex` does the same.
+alex` does the same and then runs `sr.py people suggestions alex --refresh`, which recomputes the
+card suggestions from approved runs. The bare `sr.py approve` only changes the status: after it,
+run `people suggestions alex --refresh` yourself.
 
 In team and course with `reviewer_gate: true` the recommendations from the text start to count only
 after approval: while the text is a draft, the person has not received them, and the next review

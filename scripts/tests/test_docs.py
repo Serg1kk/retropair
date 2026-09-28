@@ -165,24 +165,30 @@ SWITCHER = ('<p align="center"><a href="README.md">English</a> | '
             '<a href="README.ru.md">Русский</a></p>')
 # Разделы `##` обоих README по порядку: правишь один — правишь второй тем же PR.
 README_SECTIONS = [
+    ("Who it is for", "Для кого"),
     ("Quick start", "Быстрый старт"),
-    ("What it does", "Что умеет"),
     ("How it works", "Как работает"),
-    ("Three modes", "Три режима"),
-    ("Setup", "Настройка"),
-    ("Collecting session logs", "Сбор логов сессий"),
-    ("Running a review", "Как запустить ревью"),
+    ("The full cycle", "Полный цикл"),
+    ("The eight axes", "Восемь осей"),
+    ("How a score is given", "Как ставится оценка"),
+    ("Next steps and the follow-up loop", "Рекомендации и петля"),
+    ("Personalization", "Персонализация"),
     ("Reports", "Отчёты"),
-    ("Demo", "Демо"),
+    ("Collecting logs", "Сбор логов"),
     ("Privacy", "Приватность"),
-    ("Quality and cost", "Качество и стоимость"),
-    ("Configuration", "Конфигурация"),
+    ("Configuration", "Настройка"),
+    ("Cost, time and quality", "Стоимость, время и качество"),
+    ("Demo", "Демо"),
+    ("FAQ", "Частые вопросы"),
     ("How it differs", "Чем отличается"),
     ("Documentation", "Документация"),
     ("Roadmap", "Планы"),
     ("Contributing", "Как помочь"),
     ("License", "Лицензия"),
 ]
+QUICK_START_SECTION = ("Quick start", "Быстрый старт")
+HOW_IT_WORKS_SECTION = ("How it works", "Как работает")
+REPORTS_SECTION = ("Reports", "Отчёты")
 QUICK_START = [
     "/plugin marketplace add Serg1kk/sessionretro",
     "/plugin install sessionretro@sessionretro",
@@ -317,22 +323,30 @@ class ReadmePairTest(unittest.TestCase):
         self.assertEqual(h2_headings(self.ru), [ru for _, ru in README_SECTIONS])
 
     def test_quick_start_is_exactly_three_commands(self) -> None:
-        for text, heading in ((self.en, README_SECTIONS[0][0]), (self.ru, README_SECTIONS[0][1])):
+        for text, heading in ((self.en, QUICK_START_SECTION[0]), (self.ru, QUICK_START_SECTION[1])):
             with self.subTest(heading=heading):
                 self.assertEqual(first_code_block(section(text, heading)), QUICK_START)
 
     def test_screenshots_per_language(self) -> None:
-        cases = (("README.md", self.en, "docs/images/group.png", "docs/images/personal.png"),
-                 ("README.ru.md", self.ru, "docs/images/group.ru.png", "docs/images/personal.ru.png"))
-        for name, text, hero, card in cases:
+        """Галерея: герой до первого `##`, пара «ревьюер / адресат» в «Отчётах», каждая картинка
+        галереи существует и на языке своего README."""
+        cases = (("README.md", self.en, "en", "ru", REPORTS_SECTION[0]),
+                 ("README.ru.md", self.ru, "ru", "en", REPORTS_SECTION[1]))
+        for name, text, lang, other, reports in cases:
             with self.subTest(readme=name):
-                self.assertIn(hero, text.split("\n## ", 1)[0])
-                blocks = re.findall(r"<details>.*?</details>", text, re.S)
-                self.assertTrue(any(card in block for block in blocks), card)
+                self.assertIn(f"docs/images/gallery/group-heatmap.{lang}.png", text.split("\n## ", 1)[0])
+                body = section(text, reports)
+                for frame in ("reviewer-dossier", "personal-scores"):
+                    self.assertIn(f"docs/images/gallery/{frame}.{lang}.png", body)
+                shots = re.findall(r"docs/images/gallery/[\w-]+\.(\w+)\.png", text)
+                self.assertTrue(shots)
+                self.assertNotIn(other, shots)
+                for path in re.findall(r"docs/images/gallery/[\w.-]+\.png", text):
+                    self.assertTrue((PLUGIN / path).is_file(), path)
 
     def test_how_it_works_gif_and_text_version(self) -> None:
-        cases = ((self.en, README_SECTIONS[2][0], "docs/images/how-it-works.en.gif", "Text version"),
-                 (self.ru, README_SECTIONS[2][1], "docs/images/how-it-works.ru.gif", "Текстовая версия"))
+        cases = ((self.en, HOW_IT_WORKS_SECTION[0], "docs/images/how-it-works.en.gif", "Text version"),
+                 (self.ru, HOW_IT_WORKS_SECTION[1], "docs/images/how-it-works.ru.gif", "Текстовая версия"))
         for text, heading, gif, summary in cases:
             with self.subTest(heading=heading):
                 body = section(text, heading)

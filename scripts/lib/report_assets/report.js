@@ -260,6 +260,8 @@ function overview() {
   };
   tiles.appendChild(tile(t('tile_people'), DATA.people.length));
   tiles.appendChild(tile(t('tile_runs'), allPts.length));
+  // group: людей без одобренных прогонов нет в строках — только их число
+  if (GROUP && META.awaiting_approval) tiles.appendChild(tile(t('tile_awaiting_approval'), META.awaiting_approval));
   if (REVIEWER) tiles.appendChild(tile(t('sessions_assessed'), sum(allPts, x => x.sessions)));
   const dl = dateLabels(META);
   tiles.appendChild(tile(dl.tile, META.date_from ? fmtDate(META.date_from) + ' – ' + fmtDate(META.date_to) : '—', true));

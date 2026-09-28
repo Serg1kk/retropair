@@ -83,7 +83,7 @@ the workspace; if it finds any, the file is not written. This check skips the wo
 the title is shown in every personal file: do not put names in it. If the title contains words from
 person cards, `report` prints a warning with the ids of those cards and still writes the file.
 `--anon` builds a copy of the reports with codes and made-up names; there the title is anonymized
-and checked together with the rest of the text ([reports.md](../ru/reports.md), Russian).
+and checked together with the rest of the text ([reports.md](reports.md)).
 
 A personal report is the person card from the reviewer report minus the reviewer-only parts: the
 judge's notes under the charts, the run summary, log quotes, the dossier, drafts, run warnings and
@@ -91,12 +91,13 @@ the "reviewer override" mark are not in the file at all. Its data is built from 
 fields, not hidden in the browser. Axis scores and the level are shown in the personal report by
 default. The "dynamics only" view (`report --trend`, `feedback.show_scores: false` in the person
 card or `"show_scores": false` in the config) removes them from the file data too, not only from
-the screen ([reports, in Russian](../ru/reports.md#баллы-и-уровень)).
+the screen ([reports](reports.md#scores-and-level)).
 
 The addressee also sees the explanations of the verdicts on their recommendations in the personal
 report; the same explanations are in the person card of the group report (`group.html`). The group
 report with person cards is one file with the approved review texts and recommendations of all
-participants: show it rather than forward it; to show the group numbers only, use `--no-details` or
+participants: show it rather than forward it; to hide the texts and recommendations and keep
+numbers and charts only, use `--no-details` or
 `"report": {"group_details": false}`, and hand out the `--anon` copy. Before a verdict explanation
 reaches a reader it is cleaned: machine paths (macOS, Linux and Windows home folders, `/tmp/…`)
 become the file name, a path inside `.sessionretro/` becomes `logs/<id>/<file>`, the OS login,
@@ -146,7 +147,7 @@ handled first.
 
 - [Collecting logs and the sanitizer](collect.md)
 - [Workspace: where sessionretro keeps its data](workspace.md)
-- [Reports: what each one shows](../ru/reports.md) (Russian)
+- [Reports: what each one shows](reports.md)
 - [FAQ](faq.md)
 - [How the assessment works](how-it-works.md)
 - [Customizing: person cards, the text template and project agents](customize.md)

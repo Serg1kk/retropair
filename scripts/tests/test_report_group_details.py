@@ -289,22 +289,22 @@ class GroupDetailsPayloadTest(_Model):
         self.assertEqual([pt["period"] for pt in anna["periods"]], ["P1", "P2", "P3"])
         self.assertIsNone(anna["periods"][2]["review"])
 
-    def test_person_without_approved_runs_has_empty_card(self):
+    def test_person_without_approved_runs_not_shown_but_counted(self):
         root = self.fresh()
         _edit_runs(root, _all_drafts("boris"))
         model = rd.collect(root, lambda _m: None)
-        people = {p["id"]: p for p in self.group(model)["people"]}
-        self.assertEqual(sorted(people), ["anna", "boris", "vera"])
-        self.assertEqual(people["boris"]["details"], {"periods": [], "recs": []})
-        self.assertTrue(people["boris"]["points"], "графики остаются")
+        payload = self.group(model)
+        self.assertEqual(sorted(p["id"] for p in payload["people"]), ["anna", "vera"])
+        self.assertEqual(payload["meta"]["awaiting_approval"], 1)
 
     def test_nobody_approved_is_not_an_error(self):
         root = self.fresh()
         _edit_runs(root, _all_drafts())
         model = rd.collect(root, lambda _m: None)
         payload = self.group(model)
-        self.assertTrue(all(p["details"] == {"periods": [], "recs": []}
-                            for p in payload["people"]))
+        self.assertEqual(payload["people"], [])
+        self.assertEqual(payload["meta"]["awaiting_approval"], 3)
+        self.assertIsNone(payload["meta"]["date_from"])
 
     def test_verdict_comment_cleaned_reviewer_keeps_note(self):
         root = self.fresh()
@@ -516,13 +516,30 @@ class GroupCardRenderTest(_Model):
 
     def test_person_without_texts_shows_empty_cards(self):
         root = self.fresh()
-        _edit_runs(root, _all_drafts("vera"))
+
+        def no_recs(doc):
+            for run in doc["runs"]:
+                if run["person_id"] == "vera":
+                    run["recommendations"] = []
+                    run["prev_recommendations"] = []
+        _edit_runs(root, no_recs)
+        shutil.rmtree(ws_paths(root)["reviews"] / "vera")
         model = rd.collect(root, lambda _m: None)
         got = run_page(self.payload(model=model), "p-vera")
         self.assertEqual(got["warn"], [])
         self.assertIn(self.ru["no_reviews"]["ru"], got["first"])
         self.assertIn(self.ru["no_recs"]["ru"], got["first"])
         self.assertIn(self.ru["charts"]["ru"], got["first"])
+
+    def test_awaiting_approval_tile_only_when_someone_waits(self):
+        label = self.ru["tile_awaiting_approval"]["ru"]
+        self.assertNotIn(label, run_page(self.payload())["first"])
+        root = self.fresh()
+        _edit_runs(root, _all_drafts("boris"))
+        got = run_page(self.payload(model=rd.collect(root, lambda _m: None)))
+        self.assertEqual(got["warn"], [])
+        self.assertRegex(got["first"], re.escape(label) + r'</div><div class="value tnum">1<')
+        self.assertNotIn("Борис", got["first"])
 
     def test_english_strings(self):
         got = run_page(self.payload(lang="en"), "p-anna")

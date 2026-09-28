@@ -62,7 +62,7 @@ Change it here and it changes for everyone, except those who have their own valu
 | `avoid` | list of strings | empty | what not to do in the text: comparisons, slang, emoji |
 | `value_focus` | `finding` · `full` | `finding` | value in findings the person did not see, or a full pass over all axes |
 | `show_dynamics` | `true` · `false` | `true` | whether to show changes since the previous period |
-| `channel` | `file` · `telegram` · `slack` · `email` | `file` | where the text goes; affects line breaks |
+| `channel` | `file` · `telegram` · `slack` · `email` | `file` | where the text goes; only a label for now: stored and validated, but in 0.1.13 the text is built the same way for every channel |
 | `template` | `default` · `workspace` · file name | `default` | which text template to use (below) |
 | `prefix` | string | `""` | what to put before the text, for example a greeting |
 | `show_scores` | `true` · `false` | none (follows `show_scores` in `config.json`) | the view of the personal report: scores and level, or dynamics only ↑ → ↓ ◇; the `report --scores`/`--trend` flag wins; a line in `_default.yaml` applies to everyone and beats `config.json`. Not given to the judge |
@@ -100,8 +100,9 @@ Where suggestions come from (approved runs only, retracted runs do not count):
   suggest an edit to a `profile` field with a reason and a quote. The other `feedback` fields
   (tone, length, channel) are edited by hand only.
 
-The `review` skill recalculates suggestions at the end of a run and lists them in its summary with
-the commands, but never applies them. The same by hand:
+The `review` skill recalculates suggestions at the end of a run and after `--approve`, and lists
+them in its summary with the commands, but never applies them. The bare `sr.py approve` does not
+recalculate them: after it, run `people suggestions --refresh` yourself. The same by hand:
 
 ```bash
 # pending suggestions for everyone; --refresh recalculates from approved runs

@@ -171,6 +171,7 @@
     "theme_dark": {"ru": "тёмная", "en": "dark"},
     "tile_people": {"ru": "людей", "en": "people"},
     "tile_runs": {"ru": "прогонов", "en": "runs"},
+    "tile_awaiting_approval": {"ru": "ещё нет одобренных", "en": "not approved yet"},
     "sessions_assessed": {"ru": "сессий оценено", "en": "sessions reviewed"},
     "sessions_skipped": {"ru": "отсеяно", "en": "skipped"},
     "sessions_skipped_tip": {"ru": "сессии, отсеянные до оценки: пустой или слишком короткий лог, лог субагента, дубль, другой период, исключённые", "en": "sessions left out before review: empty or too short log, subagent log, duplicate, other period, excluded"},

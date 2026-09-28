@@ -89,8 +89,8 @@ and reports stay, and the output advises you to check the groups and cards.
 
    Models: `sonnet`, `opus`, `haiku`, `inherit`; effort: `low`, `medium`, `high`, `max`. From
    this answer the project agents are written into the project; see [customize.md](customize.md).
-7. **Scores**: whether to show axis scores in personal reports. Off by default: the person sees a
-   text, not numbers.
+7. **Scores**: the view of personal reports. Recommended: `true`, scores and the level, like the
+   reviewer's card; `false` shows the dynamics only ↑ → ↓ ◇. The review text never has scores.
 8. **Periods**: how to split the work into periods: by run date (each run is its own period
    labelled `run-YYYYMMDD`) or by date windows (`sprint-1: 2026-09-01 — 2026-09-14`). The config
    accepts a third option, `labels`, but in 0.1 the `review` skill does not ask for the label: runs

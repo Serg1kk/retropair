@@ -18,8 +18,9 @@ shows a warning. The path for them is SpecStory.
 
 ## How much does it cost and how long does it take?
 
-With the default models (opus judge, sonnet collectors) it is about $2 and 5–15 minutes per
-session; a live run of 4 sessions took about $3.30 and 13 minutes. You pay through your Claude
+With the default models (opus judge, sonnet collectors) one period of one person costs about
+$3–4 and takes 10–15 minutes; a period made only of short sessions costs $0.3–0.6. These are the
+figures of the end-to-end check on real work. You pay through your Claude
 Code: a subscription or an API key. The "Economy" preset in `/sessionretro:setup` is cheaper, but
 you get fewer quotes and subtle points ([setup.md](setup.md), the "Models and effort" question).
 
@@ -40,8 +41,11 @@ data", and it never turns into a low score. A low score needs positive evidence.
 
 ## Why don't I see scores?
 
-By default the person sees a text, not numbers. In self mode you can turn scores on for yourself:
-`show_scores: true` in `config.json` or the "Scores" question in `/sessionretro:setup`.
+There are never scores in the review text: the person reads what to change, not numbers. In the
+personal HTML report axis scores and the level are shown by default. They are absent if the report
+was built in the "dynamics only" view: `show_scores: false` in `config.json` or in the person card,
+or `report --trend`. Rebuild with `report --scores` or change the setting; see
+[reports.md](reports.md#scores-and-level).
 
 ## Can I compare people in a team?
 
@@ -77,7 +81,7 @@ Russian for now, and the judge's English text has not been checked on the refere
 Before a personal file is written, it is checked for names and ids of other people in the
 workspace. If any are found, the file is not written, and the error says what was found. Rewrite
 the approved review or the recommendation without the other person's name and rebuild the report
-([reports.md](../ru/reports.md), Russian). This check skips the workspace title: if it contains
+([reports.md](reports.md)). This check skips the workspace title: if it contains
 words from the cards, `report` only warns (`workspace title contains name tokens of: <id>`), and the
 title goes into every personal file. Remove the names from `workspace.title` in
 `.sessionretro/config.json`.

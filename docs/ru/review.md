@@ -127,7 +127,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex <run_id>
 ```
 
 Без `<run_id>` одобряется последний действующий прогон человека. То же делает
-`/sessionretro:review --approve alex`.
+`/sessionretro:review --approve alex`, а затем запускает `sr.py people suggestions alex --refresh`
+— пересчёт предложений правок карточки по одобренным прогонам. Голая `sr.py approve` меняет только
+статус: после неё запустите `people suggestions alex --refresh` сами.
 
 В team и course при `reviewer_gate: true` рекомендации из текста начинают учитываться только
 после одобрения: пока текст черновик, человек их не получал, и следующее ревью не спрашивает,

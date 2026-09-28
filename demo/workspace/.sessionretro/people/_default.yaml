@@ -12,6 +12,6 @@ feedback:
   avoid:                     # чего не делать в тексте
   value_focus: finding       # finding | full
   show_dynamics: true
-  channel: file              # file | telegram | slack | email (влияет на переносы строк)
+  channel: file              # file | telegram | slack | email (пока только метка, текст не меняет)
   template: default          # default | workspace | <имя файла в templates/>
   prefix: ""                 # строка перед текстом (например, приветствие)

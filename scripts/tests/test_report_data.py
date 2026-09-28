@@ -276,6 +276,50 @@ class TestPayload(_Base):
         # дата логов (period.from первого периода), не дата запуска оценки
         self.assertEqual(meta["date_from"], "2026-01-05")
 
+    def test_group_only_approved_points(self) -> None:
+        # гейт ревьюера: у anna P1, P2 одобрены, P3 — черновик последнего периода
+        anna_model = self.person["anna"]["points"]
+        self.assertEqual([pt["approved"] for pt in anna_model], [True, True, False])
+        payload = rd.build_payload(self.model, mode="group")
+        people = {p["id"]: p for p in payload["people"]}
+        anna = people["anna"]
+        self.assertEqual([pt["period"] for pt in anna["points"]], ["P1", "P2"])
+        self.assertEqual(anna["points"][-1]["level"], anna_model[1]["level"])
+        # ни у кого нет точки черновика: распределение и «последний прогон» — из одобренных
+        for pid, person in people.items():
+            approved = [pt["period"] for pt in rd.approved_points(self.person[pid])]
+            self.assertEqual([pt["period"] for pt in person["points"]], approved, pid)
+        text = json.dumps(payload, ensure_ascii=False)
+        for p in self.model["people"]:
+            for pt in p["points"]:
+                if not pt["approved"]:
+                    self.assertNotIn(pt["run_id"], text)
+        shown = [pt for p in self.model["people"] for pt in rd.approved_points(p)]
+        self.assertEqual(payload["meta"]["date_to"],
+                         max(pt["logs_to"] or pt["logs_from"] for pt in shown))
+        self.assertLess(payload["meta"]["date_to"],
+                        max(pt["logs_to"] or pt["logs_from"] for pt in anna_model))
+        self.assertEqual(payload["meta"]["awaiting_approval"], 0)
+
+    def test_group_person_without_approved_runs_counted_not_shown(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        for run in doc["runs"]:
+            if run["person_id"] == "boris":
+                run["review_status"] = "draft"
+        _write_tracker(root, doc)
+        model, _warnings = _collect(root)
+        payload = rd.build_payload(model, mode="group", details=True)
+        self.assertEqual([p["id"] for p in payload["people"]], ["anna", "vera"])
+        self.assertEqual(payload["meta"]["awaiting_approval"], 1)
+        self.assertNotIn("boris", json.dumps(payload, ensure_ascii=False))
+
+    def test_group_self_without_gate_keeps_every_point(self) -> None:
+        model, _warnings = _collect(self.fresh(mode="self"))
+        payload = rd.build_payload(model, mode="group")
+        self.assertEqual(len(payload["people"][0]["points"]), len(model["people"][0]["points"]))
+        self.assertEqual(payload["meta"]["awaiting_approval"], 0)
+
     def test_reviewer_carries_everything(self) -> None:
         payload = rd.build_payload(self.model, mode="reviewer")
         anna = [p for p in payload["people"] if p["id"] == "anna"][0]
@@ -602,11 +646,12 @@ class TestLogDates(_Base):
         anna = {p["id"]: p for p in model["people"]}["anna"]
         self.assertEqual([pt["date"] for pt in anna["points"]],
                          ["2026-08-10", "2026-08-17", "2026-08-24"])
-        for mode in ("group", "reviewer"):
+        # group — только одобренные прогоны: черновики P3 в диапазон не входят
+        for mode, date_to in (("group", "2026-08-19"), ("reviewer", "2026-08-26")):
             with self.subTest(mode=mode):
                 meta = rd.build_payload(model, mode=mode)["meta"]
                 self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
-                                 ("2026-08-10", "2026-08-26", "logs"))
+                                 ("2026-08-10", date_to, "logs"))
                 pts = rd.build_payload(model, mode=mode)["people"][0]["points"]
                 self.assertTrue(all(pt["date"].startswith("2026-08-") for pt in pts))
 
@@ -658,7 +703,7 @@ class TestLogDates(_Base):
         self.assertEqual((first["date"], first["date_source"]), ("2026-09-21", "run"))
         meta = rd.build_payload(model, mode="group")["meta"]
         self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
-                         ("2026-08-10", "2026-08-26", "logs"))
+                         ("2026-08-10", "2026-08-19", "logs"))
 
     def test_no_log_dates_at_all_is_run_mode(self) -> None:
         def mutate(doc):
@@ -666,11 +711,11 @@ class TestLogDates(_Base):
             for run in doc["runs"]:
                 run["period"]["from"] = run["period"]["to"] = None
         model = self.logs_model(mutate)
-        for mode in ("group", "reviewer"):
+        for mode, date_to in (("group", "2026-09-22"), ("reviewer", "2026-09-23")):
             with self.subTest(mode=mode):
                 meta = rd.build_payload(model, mode=mode)["meta"]
                 self.assertEqual((meta["date_from"], meta["date_to"], meta["date_source"]),
-                                 ("2026-09-21", "2026-09-23", "run"))
+                                 ("2026-09-21", date_to, "run"))
 
     def test_broken_log_date_is_an_error(self) -> None:
         for field, bad in (("from", "13.08.2026 13:47"), ("to", "2026-8-14"), ("from", 20260813),
