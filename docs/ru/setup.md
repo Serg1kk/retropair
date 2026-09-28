@@ -195,7 +195,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
   "models": {"collector": {"model": "sonnet", "effort": "medium"},
              "judge": {"model": "opus", "effort": "high"},
              "critic": {"model": "sonnet", "effort": "medium"}},
-  "show_scores": false,
+  "show_scores": true,
   "period": {"mode": "dates", "windows": [{"label": "sprint-1", "from": "2026-09-01", "to": "2026-09-14"}]},
   "template": "default",
   "cleanup_period_days": {"value": 90, "write": false},
@@ -289,7 +289,7 @@ improvements_pending: 0
 sources_found: 1/2 папок найдено; нет: .specstory/history
 project_agents: 3/3 совпадают с config.models
 gitignore: да
-show_scores: нет
+show_scores: да
 period_mode: run
 template: default
 ```
@@ -301,7 +301,7 @@ template: default
 | `sources_found` | у скольких локальных источников (`claude-jsonl`, `specstory`, `dir`) из конфига и карточек `people/<id>.yaml` есть папка и каких нет; источники `git` не проверяются, только считаются. Папки нет, пока не было первой сессии или выгрузки, — это не ошибка |
 | `project_agents` | проектные агенты: `3/3 совпадают с config.models` — всё хорошо; `нет` — файлов нет, работают агенты плагина; `расходятся: judge` — сверьте командой `agents check` ([customize.md](customize.md)) |
 | `gitignore` | все ли пять строк sessionretro из вопроса 11 есть в `.gitignore` проекта: `да` — все; иначе `нет — добавьте: sr.py setup-apply с {"gitignore": true}` |
-| `show_scores` | показываются ли баллы в личных отчётах |
+| `show_scores` | вид личных отчётов по умолчанию: `да` — с баллами и уровнем, `нет` — только динамика |
 | `period_mode` | как делятся периоды: `run`, `dates` или `labels` (в 0.1 — прогоны без метки) |
 | `template` | какой шаблон текста выбран при настройке |
 

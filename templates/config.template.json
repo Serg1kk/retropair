@@ -14,7 +14,7 @@
              "judge": {"model": "opus", "effort": "high"},
              "critic": {"model": "sonnet", "effort": "medium"}},
   "batches": {"max_bytes": 100000, "max_user_turns": 150, "min_turns": 4},
-  "show_scores": false,
+  "show_scores": true,
   "reviewer_gate": true,
   "template": "default",
   "extensions": {"artifact": null}

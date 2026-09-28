@@ -775,6 +775,73 @@
                 "type": "string"
               }
             }
+          },
+          "card_suggestions": {
+            "type": "array",
+            "description": "Необязательно: data.card_suggestions выхода судьи, append переносит как есть и только если поле есть (нет в выходе — нет и здесь; при --replace берётся из нового выхода). Форма и ограничения — как в схеме judge. Источник предложений правок карточки (people suggestions); на оценку, уровень и текст не влияет.",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "required": [
+                "field",
+                "value",
+                "reason",
+                "evidence"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "Ключ блока profile карточки.",
+                  "enum": [
+                    "role",
+                    "grade",
+                    "years",
+                    "stack",
+                    "tools",
+                    "constraints"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Предлагаемое значение поля целиком (years — целое число строкой)."
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Одна строка: чем карточка расходится с логами."
+                },
+                "evidence": {
+                  "type": "object",
+                  "required": [
+                    "session_id",
+                    "turn_index",
+                    "quote"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "session_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "turn_index": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 400,
+                      "description": "Дословно из хода человека или из команды или вывода инструмента, без пересказа."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

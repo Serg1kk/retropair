@@ -15,7 +15,8 @@
 - i=2: пропущен P2; в P1 `level_computed: null`, есть только `level_judge`;
 - рекомендация `REC-<id>-NNN` в каждом живом периоде; в следующем живом периоде — вердикт
   по предыдущей: для первой `followed` / `not_observable` / `ignored` у i=0/1/2, дальше по кругу;
-- ревью последнего периода человека `status: draft`, остальные `approved`.
+- ревью последнего периода человека `status: draft`, остальные `approved`;
+- `suggestions=True` (по умолчанию выключено): `people/<первый>.suggestions.json`, см. `SUGGEST_*`.
 
 CLI: `python3 report_fixture.py --out <dir> [--people N] [--periods M]
 [--mode team|course|self] [--lang ru|en] [--realistic]` — печатает путь корня.
@@ -510,9 +511,53 @@ class _Builder:
         return self.root
 
 
+# Предложения к карточке (`people/<id>.suggestions.json`, опция `suggestions`): две pending —
+# правка `profile.tools` с `<img onerror>` в основании и добавление в `feedback.skip_basics`, и
+# по одной applied / rejected (их основания в отчёт попадать не должны).
+SUGGEST_PROPOSED = "claude-code, SuggestTool"
+SUGGEST_REASON = "Новые агенты в прогоне: SuggestTool " + XSS_QUOTE
+SUGGEST_APPEND = "SkipBasicsMark"
+SUGGEST_APPEND_2 = "SkipBasicsSecond"  # append-предложение — список: одно на прогон
+SUGGEST_DECIDED = ("AppliedReasonMark", "RejectedReasonMark")
+
+
+def write_suggestions(root: Path, pid: str) -> Path:
+    """Пишет `people/<pid>.suggestions.json` (см. SUGGEST_*); run_id — последний живой прогон."""
+    state = Path(root) / STATE_DIR
+    doc = json.loads((state / "runs" / "process-reviews.json").read_text(encoding="utf-8"))
+    run_id = [r["run_id"] for r in doc["runs"]
+              if r["person_id"] == pid and not r.get("retracted")][-1]
+
+    def item(n, field, op, current, proposed, reason, source, status):
+        decided = status != "pending"
+        return {"id": f"S-{pid}-{n:03d}", "field": field, "op": op, "current": current,
+                "proposed": proposed, "reason": reason,
+                "evidence": [{"run_id": run_id, "session_id": None, "turn_index": None,
+                              "quote": None}],
+                "source": source, "run_id": run_id, "created_at": "2026-02-20T10:00:00Z",
+                "status": status, "decided_at": "2026-02-21T10:00:00Z" if decided else None,
+                "decided_by": "cli" if decided else None, "reject_reason": None}
+
+    items = [
+        item(1, "profile.tools", "set", "claude-code", SUGGEST_PROPOSED, SUGGEST_REASON,
+             "script:agent_stack", "pending"),
+        item(2, "feedback.skip_basics", "append", [], [SUGGEST_APPEND, SUGGEST_APPEND_2],
+             "stable axis", "script:stable_axis", "pending"),
+        item(3, "profile.role", "set", None, "AppliedValue", SUGGEST_DECIDED[0], "judge",
+             "applied"),
+        item(4, "profile.grade", "set", None, "RejectedValue", SUGGEST_DECIDED[1], "judge",
+             "rejected"),
+    ]
+    path = state / "people" / f"{pid}.suggestions.json"
+    write_json_atomic(path, {"version": 1, "person_id": pid, "items": items})
+    return path
+
+
 def make_workspace(dst: Path, *, people: int = 3, periods: int = 3, mode: str = "team",
-                   lang: str = "ru", realistic: bool = False) -> Path:
-    """Пишет синтетический workspace в `dst` (корень проекта) и возвращает его путь."""
+                   lang: str = "ru", realistic: bool = False, suggestions: bool = False) -> Path:
+    """Пишет синтетический workspace в `dst` (корень проекта) и возвращает его путь.
+
+    `suggestions` — ещё файл предложений к карточке первого человека (`write_suggestions`)."""
     if mode not in MODES:
         raise ValueError(f"неизвестный режим {mode!r}, ожидается один из {MODES}")
     if lang not in LANGS:
@@ -529,7 +574,10 @@ def make_workspace(dst: Path, *, people: int = 3, periods: int = 3, mode: str = 
     if (root / STATE_DIR).exists():
         raise FileExistsError(f"в папке уже есть {STATE_DIR}: {root}")
     root.mkdir(parents=True, exist_ok=True)
-    return _Builder(root, roster, periods, mode, lang, realistic).write()
+    root = _Builder(root, roster, periods, mode, lang, realistic).write()
+    if suggestions:
+        write_suggestions(root, roster[0][0])
+    return root
 
 
 def main(argv: list[str] | None = None) -> int:

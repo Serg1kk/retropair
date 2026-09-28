@@ -114,6 +114,15 @@ class RenderHtmlTest(_Base):
                 self.assertEqual(report["tile_period_logs"]["ru"], "период логов")
                 self.assertEqual(report["run_range"]["ru"], "оценка")
 
+    def test_personal_html_carries_verdict_history_and_strings(self):
+        data = _data(render.render_html(self.payload("personal", person="anna"), self.i18n))
+        recs = {r["given_in"]: r for r in data["people"][0]["recs"]}
+        self.assertEqual(recs["P1"]["verdicts"],
+                         [{"period": "P2", "verdict": "followed", "comment": ""}])
+        report = data["i18n"]["report"]
+        self.assertEqual(report["rec_not_checked"]["ru"], "ещё не проверялась")
+        self.assertTrue(report["rec_not_checked"]["en"])
+
     def test_no_network_resources(self):
         html_text = render.render_html(self.payload("reviewer"), self.i18n)
         for pat in NETWORK:
@@ -197,8 +206,7 @@ REQUIRED_UI_KEYS = {
     "no_data_share", "override", "gate", "charts", "recs", "reviews", "copy_sent",
     "copied", "copy_failed", "service_header", "reviewer_only", "dossier", "dossier_ref",
     "evidence", "antipatterns", "flags", "feedback_draft", "as_person", "as_reviewer",
-    "hide_scores", "show_scores", "transitions", "trans_up", "trans_down", "trans_flat",
-    "trans_none", "theme", "theme_auto", "theme_light", "theme_dark", "lang",
+    "transitions", "trans_up", "trans_down", "trans_flat", "trans_none", "trend_first", "theme", "theme_auto", "theme_light", "theme_dark", "lang",
     "reason_other", "run_trimmed", "filters",
 }
 
@@ -281,6 +289,7 @@ class ReportJsBehaviourTest(unittest.TestCase):
         script = (
             "const DATA = {axes: ['a']}; const META = {show_scores: false};\n"
             "const recStatus = r => r.status || 'open';\n"
+            + _js_function(self.js, "personScores") + "\n"
             + _js_function(self.js, "personTransitions") + "\n"
             + _js_function(self.js, "asPersonModel")
             + f"\nprocess.stdout.write(JSON.stringify(asPersonModel({json.dumps(person)}).points));"
@@ -327,12 +336,16 @@ class ReportJsBehaviourTest(unittest.TestCase):
                   "recs": [
                       {"id": "r1", "axis": "a", "text": "old", "given_in": "w1", "open": False,
                        "pending_approval": False,
-                       "verdicts": [{"period": "w2", "verdict": "followed", "approved": False}]},
+                       "verdicts": [{"period": "w1", "verdict": "partial", "note": "n1",
+                                     "approved": True},
+                                    {"period": "w2", "verdict": "followed", "note": "n2",
+                                     "approved": False}]},
                       {"id": "r2", "axis": "a", "text": "draft", "given_in": "w2", "open": True,
                        "pending_approval": True, "verdicts": []}]}
         script = (
             "const DATA = {axes: ['a']}; const META = {show_scores: false};\n"
             + _js_function(self.js, "recStatus") + "\n"
+            + _js_function(self.js, "personScores") + "\n"
             + _js_function(self.js, "personTransitions") + "\n"
             + _js_function(self.js, "asPersonModel")
             + f"\nprocess.stdout.write(JSON.stringify(asPersonModel({json.dumps(person)})));"
@@ -341,7 +354,42 @@ class ReportJsBehaviourTest(unittest.TestCase):
         self.assertEqual([p["period"] for p in got["points"]], ["w1", "w3"])
         self.assertEqual([p["transitions"]["a"] for p in got["points"]], ["none", "down"])
         self.assertEqual(got["recs"], [{"text": "old", "axis": "a", "given_in": "w1",
-                                        "status": "open"}])
+                                        "status": "open", "verdicts": [
+                                            {"period": "w1", "verdict": "partial",
+                                             "comment": "n1"}]}])
+
+    def _chips(self, verdicts: list) -> str:
+        script = (
+            "const t = k => 'T:' + k; const recVerdictName = v => 'V:' + v;\n"
+            + _js_function(self.js, "esc") + "\n"
+            + "\n".join(ln for ln in self.js.splitlines()
+                        if ln.startswith(("const CHIP_CLASS", "const CHIP_GLYPH"))) + "\n"
+            + _js_function(self.js, "verdictChips")
+            + f"\nprocess.stdout.write(JSON.stringify(verdictChips({json.dumps(verdicts)})));"
+        )
+        return _run_node(script)
+
+    def test_verdict_chips_period_glyph_label_and_tip(self):
+        html_text = self._chips([
+            {"period": "P2", "verdict": "partial", "comment": "мало <тестов>"},
+            {"period": "P3", "verdict": "followed", "comment": ""},
+        ])
+        chips = re.findall(r'<span class="chip ([a-z]+)"([^>]*)>([^<]*)</span>', html_text)
+        self.assertEqual([(c, label) for c, _attrs, label in chips],
+                         [("warn", "P2 ◐ V:partial"), ("good", "P3 ✓ V:followed")])
+        self.assertIn('data-tip="мало &lt;тестов&gt;"', chips[0][1])
+        self.assertIn('tabindex="0"', chips[0][1])
+        self.assertNotIn("data-tip", chips[1][1])
+        self.assertLess(html_text.index("P2"), html_text.index("P3"))
+
+    def test_verdict_chips_reviewer_note_is_tip_too(self):
+        html_text = self._chips([{"period": "P2", "verdict": "ignored", "note": "n", "approved": False}])
+        self.assertIn('data-tip="n"', html_text)
+
+    def test_verdict_chips_empty_is_not_checked(self):
+        html_text = self._chips([])
+        self.assertEqual(re.findall(r'<span class="chip[^"]*">([^<]*)</span>', html_text),
+                         ["T:rec_not_checked"])
 
     def test_open_recs_counters_skip_draft_recs(self):
         tile = [ln for ln in self.js.splitlines() if "t('tile_open_recs')" in ln]
@@ -425,12 +473,12 @@ class ReportJsBehaviourTest(unittest.TestCase):
         self.assertIn("overflow: hidden", rule.group(1))
 
     def test_person_heads_count_assessed_sessions(self):
-        for name in ("personView", "personalView"):
-            with self.subTest(function=name):
-                body = _js_function(self.js, name)
-                self.assertIn("t('sessions_assessed')", body)
-                self.assertNotIn("t('tile_sessions')", body)
-        self.assertIn("t('sessions_skipped')", _js_function(self.js, "personView"))
+        # одна карточка на ревьюера, адресата и группу
+        body = _js_function(self.js, "personCard")
+        self.assertIn("t('sessions_assessed')", body)
+        self.assertNotIn("t('tile_sessions')", body)
+        self.assertIn("t('sessions_skipped')", body)
+        self.assertNotIn("function personalView", self.js)
 
     def test_retracted_reviews_shown_small_not_as_warning_chip(self):
         body = _js_function(self.js, "topbar")
@@ -445,6 +493,161 @@ class ReportJsBehaviourTest(unittest.TestCase):
         self.assertIn("run.trimmed", body)
         self.assertIn("t('run_trimmed')", body)
         self.assertNotIn("quote_periods", body, "пометка — по флагу точки, а не по пересчёту лимита")
+
+
+class NarrowScreenCssTest(unittest.TestCase):
+    """Таблица в тексте ревью на узком экране (390 px) прокручивается в своём контейнере, а
+    страница остаётся без горизонтального скролла: и в обёртке `.tbl`, и без неё."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.css = (SCRIPTS / "lib" / "report_assets" / "report.css").read_text(encoding="utf-8")
+
+    def rules(self, selector: str) -> str:
+        found = re.findall(rf"^{re.escape(selector)} \{{([^}}]*)\}}", self.css, re.M)
+        self.assertTrue(found, f"нет правила {selector}")
+        return " ".join(found)
+
+    def test_wrapped_table_scrolls_in_wrapper(self):
+        body = self.rules(".md .tbl")
+        self.assertIn("overflow-x: auto", body)
+        self.assertIn("max-width: 100%", body)
+        self.assertIn("display: table", self.rules(".md .tbl table"))
+
+    def test_bare_table_scrolls_itself(self):
+        body = self.rules(".md table")
+        for decl in ("display: block", "overflow-x: auto", "max-width: 100%"):
+            with self.subTest(decl=decl):
+                self.assertIn(decl, body)
+
+    def test_text_block_can_shrink(self):
+        self.assertIn("min-width: 0", self.rules(".md"))
+
+
+@unittest.skipUnless(shutil.which("node"), "node не установлен")
+class PersonalRecsRenderTest(unittest.TestCase):
+    """Личная страница, отрисованная report.js в node-заглушке DOM: история вердиктов видна."""
+
+    def test_personal_page_draws_verdict_chips_with_comment_tip(self):
+        import subprocess
+        from test_report_group_details import NODE_HARNESS
+        with tempfile.TemporaryDirectory() as tmp:
+            root = report_fixture.make_workspace(Path(tmp) / "ws")
+            path = ws_paths(root)["runs"] / "process-reviews.json"
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            run = [r for r in doc["runs"] if r["person_id"] == "anna"
+                   and r["period"]["label"] == "P2" and not r.get("retracted")][0]
+            run["prev_recommendations"][0]["note"] = "Тесты теперь пишутся до правки."
+            path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+            model = rd.collect(root, lambda _m: None)
+            payload = rd.attach_html(rd.build_payload(model, mode="personal", person="anna",
+                                                      title="Отчёт"))
+            i18n = rd.load_i18n()
+            data_path = Path(tmp) / "data.json"
+            data_path.write_text(_data_segment(render.render_html(payload, i18n)),
+                                 encoding="utf-8")
+            js_path = SCRIPTS / "lib" / "report_assets" / "report.js"
+            res = subprocess.run(["node", "-e", NODE_HARNESS, str(js_path), str(data_path)],
+                                 capture_output=True, text=True, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        got = json.loads(res.stdout)
+        self.assertEqual(got["warn"], [])
+        first = got["first"]
+        self.assertIn(i18n["report"]["verdict_history"]["ru"], first)
+        followed = i18n["rec_verdicts"]["followed"]["ru"]
+        chip = re.search(r'<span class="chip good"([^>]*)>P2 ✓ ' + followed + '</span>', first)
+        self.assertIsNotNone(chip, first)
+        self.assertIn('data-tip="Тесты теперь пишутся до правки."', chip.group(1))
+        # рекомендация P2 проверялась только в черновике P3: чип «ещё не проверялась»
+        self.assertIn(i18n["report"]["rec_not_checked"]["ru"], first)
+
+
+@unittest.skipUnless(shutil.which("node"), "node не установлен")
+class CardSuggestionsRenderTest(unittest.TestCase):
+    """Блок «Предложения к карточке»: только карточка человека в отчёте ревьюера."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        root = report_fixture.make_workspace(Path(cls._tmp.name) / "ws", suggestions=True)
+        cls.model = rd.collect(root, lambda _m: None)
+        cls.i18n = rd.load_i18n()
+        cls.title = cls.i18n["report"]["sugg_title"]
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def page(self, mode: str, hash_: str, lang: str = "ru", actions=None, **kw) -> dict:
+        from test_report_group_details import run_page
+        payload = rd.attach_html(rd.build_payload(self.model, mode=mode, title="T", lang=lang,
+                                                  **kw))
+        got = run_page(payload, hash_, actions)
+        self.assertEqual(got["warn"], [], "нет строк интерфейса")
+        return got
+
+    def test_reviewer_card_shows_pending_lines_and_commands(self):
+        first = self.page("reviewer", "p-anna")["first"]
+        self.assertIn(self.title["ru"], first)
+        self.assertEqual(first.count('class="sugg"'), 2, first)
+        for sid in ("S-anna-001", "S-anna-002"):
+            self.assertIn(f"sr.py people apply anna {sid}", first)
+            self.assertIn(f"sr.py people reject anna {sid}", first)
+        rep = self.i18n["report"]
+        self.assertIn(rep["sugg_f_tools"]["ru"], first)
+        self.assertIn(rep["sugg_f_skip_basics"]["ru"], first)
+        self.assertIn(rep["sugg_src_agent_stack"]["ru"], first)
+        self.assertIn("claude-code", first)
+        self.assertIn(report_fixture.SUGGEST_PROPOSED, first)
+        self.assertIn(f"+ {report_fixture.SUGGEST_APPEND}, {report_fixture.SUGGEST_APPEND_2}", first)
+        self.assertIn("→", first)
+        for mark in report_fixture.SUGGEST_DECIDED:
+            self.assertNotIn(mark, first)
+
+    def test_reason_is_escaped(self):
+        first = self.page("reviewer", "p-anna")["first"]
+        self.assertIn("SuggestTool &lt;img src=x onerror=alert(1)&gt;", first)
+        self.assertNotIn(report_fixture.XSS_QUOTE, first)
+
+    def test_english_title(self):
+        first = self.page("reviewer", "p-anna", lang="en")["first"]
+        self.assertIn(self.title["en"], first)
+
+    def test_no_pending_no_block(self):
+        first = self.page("reviewer", "p-boris")["first"]
+        self.assertNotIn(self.title["ru"], first)
+        self.assertNotIn("sr.py people", first)
+
+    def test_overview_and_as_person_have_no_block(self):
+        self.assertNotIn(self.title["ru"], self.page("reviewer", "")["first"])
+        label = self.i18n["report"]["as_person"]["ru"]
+        snaps = self.page("reviewer", "p-anna", actions=[["button", label]])["snaps"]
+        self.assertIn(self.title["ru"], snaps[0]["html"])
+        self.assertNotIn(self.title["ru"], snaps[1]["html"])
+
+    def test_personal_and_group_pages_have_no_block(self):
+        for mode, kw in (("personal", {"person": "anna"}), ("group", {"details": True})):
+            with self.subTest(mode=mode):
+                first = self.page(mode, "p-anna", **kw)["first"]
+                self.assertNotIn(self.title["ru"], first)
+                self.assertNotIn("SuggestTool", first)
+
+    def test_single_call_site_in_reviewer_branch(self):
+        js = (SCRIPTS / "lib" / "report_assets" / "report.js").read_text(encoding="utf-8")
+        self.assertEqual(len(re.findall(r"(?<![\w.$])suggestionsCard\(", js)), 2,
+                         "определение и один вызов")
+        call = [ln for ln in js.splitlines()
+                if "suggestionsCard(" in ln and not ln.startswith("function ")]
+        self.assertEqual(len(call), 1)
+        self.assertIn("REVIEWER", call[0])
+        for name in ("personView", "recsCard", "personCard"):
+            self.assertNotIn("suggestionsCard", _js_function(js, name))
+
+    def test_css_block_wraps_long_commands(self):
+        css = (SCRIPTS / "lib" / "report_assets" / "report.css").read_text(encoding="utf-8")
+        rule = re.search(r"^\.sugg-cmd code \{([^}]*)\}", css, re.M)
+        self.assertIsNotNone(rule)
+        self.assertIn("overflow-wrap: anywhere", rule.group(1))
 
 
 class RenderIndexTest(_Base):

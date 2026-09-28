@@ -44,7 +44,8 @@ INTERNAL_LINKS = re.compile(
 
 PLACEHOLDER = re.compile(r"\{\{[^{}]*\}\}")
 
-CLEAN_DIRS = ["agents", "references", "templates", "skills/review/references", "docs/ru/axes.md"]
+CLEAN_DIRS = ["agents", "references", "templates", "skills/review/references", "docs/ru/axes.md",
+              "docs/en/axes.md"]
 SUFFIXES = (".md", ".json")
 
 # Агент-заглушка каркаса: тело из одной строки о будущей реализации. Такие файлы

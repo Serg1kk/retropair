@@ -183,7 +183,8 @@ class ApplyRerun(_Proj):
         card = card_path(self.proj, "alex")
         before_cfg = self.cfg()
         before_card = (card.read_bytes(), card.stat().st_mtime_ns)
-        report = self.apply({"show_scores": True, "people": TEAM["people"]})
+        # дефолт шаблона — true (вид scores), меняется на false (вид trend)
+        report = self.apply({"show_scores": False, "people": TEAM["people"]})
         after_cfg = self.cfg()
         diff = [k for k in after_cfg if after_cfg[k] != before_cfg[k]]
         self.assertEqual(diff, ["show_scores"])

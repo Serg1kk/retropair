@@ -5,12 +5,16 @@
 
     model = {workspace:{id,title,mode,lang,show_scores}, axes:[id], unbound_reviews:[run_id],
              retracted_reviews:[run_id], warnings:[str],
-             people:[{id, name, group, show_dynamics, points:[P], recs:[R]}]}
+             people:[{id, name, group, show_dynamics, show_scores, points:[P], recs:[R]}],
+             card_suggestions:{id:[pending-предложение к карточке]}}
+
+`show_scores` человека — `feedback.show_scores` его карточки (true/false) или None: карточка
+вид личного отчёта не задаёт. Вид выбирает `scores_view`: флаг запуска > карточка > конфиг.
 
 У точки `approved`, у рекомендации `pending_approval`, у вердикта `approved`: при гейте
 ревьюера (`tracker.reviewer_gated`) прогон без `review_status: approved` человек не получал.
-Личный payload строится только из одобренных прогонов: точки, переходы, даты, рекомендации
-и их статусы; ревьюер видит всё с этими пометками.
+Личный payload строится только из одобренных прогонов: точки, переходы, даты, рекомендации,
+их статусы и история вердиктов (период, код, пояснение); ревьюер видит всё с этими пометками.
 
 Поля, которые показываются как коды (`reason`, `axis` рекомендации), сверяются со словарём:
 неизвестная причина → `other`, рекомендация с чужой осью пропускается — свободный текст
@@ -21,9 +25,11 @@
 оценённые сессии (`status: reviewed`), отсеянные до оценки — в `sessions_skipped`.
 
 `build_payload(model, mode=…)` строит из модели данные одного HTML-файла **белым списком**
-полей для режима: `personal` (один человек, только то, что можно показать адресату),
-`group` (баллы и уровни всех, без текстов) и `reviewer` (всё). Фильтрация идёт здесь, до
-встраивания в HTML: то, что спрятано только скриптом страницы, увидит любой читатель файла.
+полей для режима: `personal` (один человек, только то, что можно показать адресату, в
+виде `scores` — баллы и уровень, или `trend` — переходы между периодами без баллов),
+`group` (баллы и уровни всех; с `details` — ещё карточка человека: только одобренные
+отправленные тексты ревью и рекомендации с историей вердиктов, без баллов) и `reviewer` (всё). Фильтрация идёт здесь, до встраивания в HTML: то, что спрятано только
+скриптом страницы, увидит любой читатель файла.
 """
 
 from __future__ import annotations
@@ -35,9 +41,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from lib import md
+from lib import card_suggestions, md
 from lib.config import load_config
 from lib.people import list_people
+from lib.sanitize import Sanitizer, local_user_names
 from lib.tracker import APPROVED_STATUS, reviewer_gated
 from lib.workspace import SrError, ws_paths
 
@@ -49,16 +56,37 @@ KEEP_MD = ("feedback_draft",)
 # Ключ ручной правки баллов в прогоне трекера.
 OVERRIDE_KEY = "operator_override"
 
+# Личный отчёт — карточка человека из отчёта ревьюера минус служебное: ни в одном виде нет
+# пояснений судьи, главного по прогону, доказательств, досье, черновиков, служебной шапки,
+# предупреждений, гейта и пометки ручной правки (балл — итоговый).
 PERSONAL_FORBIDDEN_KEYS = frozenset({
     "gate", "summary", "antipatterns", "flags", "evidence", "note", "feedback_draft",
     "warnings", "reviewer", "service_md", "service_html", "dossier_md", "dossier_html",
-    "run_id", "agent_stack", "gating_evidence", "period_key", "reviewed_at", "dossier_ref",
-    "path", "sessions_skipped", "reviews_of_retracted",
+    "run_id", "gating_evidence", "period_key", "reviewed_at", "dossier_ref",
+    "path", "sessions_skipped", "reviews_of_retracted", "overridden", "trimmed", "warning",
+    "recognized", "approved", "pending_approval",
 })
+# Баллы и уровень: в личном — только в виде `scores`; в виде `trend` их в файле нет.
 SCORE_KEYS = frozenset({"score", "level"})
+# Карточка человека в групповом отчёте (`people[].details`): всё закрытое личному отчёту, баллы
+# и уровни (всегда, без show_scores), а ещё оси точек, динамика, счётчики сессий, агенты и
+# модели, группы и служебные пометки одобрения.
+FEEDBACK_FORBIDDEN_KEYS = PERSONAL_FORBIDDEN_KEYS | SCORE_KEYS | frozenset({
+    "transitions", "sessions", "ie", "reason", "overridden", "group", "approved",
+    "pending_approval", "open", "recognized", "warning", "trimmed", "agent_stack",
+})
 # Статус сессии прогона, вошедшей в оценку; остальные статусы — причины отсева.
 REVIEWED_SESSION = "reviewed"
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+# Пояснение вердикта для адресата (`addressee_comment`). Путь до `.sessionretro/` включительно:
+# абсолютный (сегменты могут содержать пробелы: «Local Documents /…») или относительный.
+_TO_STATE_DIR_RE = re.compile(
+    r"(?<![\w.~])(?:(?:[A-Za-z]:)?[\\/](?:[^\\/\n`'\"<>()]*[\\/])*?)?\.sessionretro[\\/]")
+# Прочий путь машины: корни домашних и системных каталогов macOS/Linux, диск Windows, UNC.
+_MACHINE_PATH_RE = re.compile(
+    r"(?<![\w.~/\\:-])(?:/(?:Users|home|root|mnt|private|var|tmp|opt|srv|Volumes)/"
+    r"|[A-Za-z]:[\\/]|\\\\)[^\s`'\"<>()]*")
 
 _I18N_SKIP_SECTIONS = ("cli",)
 _I18N_PATH = Path(__file__).resolve().parents[2] / "references" / "i18n.json"
@@ -180,7 +208,8 @@ def _is_score(value) -> bool:
 
 def _check_run_types(run: dict, tracker_path: Path) -> None:
     """Типы полей, по которым считается модель: `score` и балл ручной правки — int 0–4
-    или null, `revision` — int ≥ 1 или отсутствует. Иначе `SrError(1)` с run_id и полем."""
+    или null, `revision` — int ≥ 1 или отсутствует, `agent_stack` — список строк или
+    отсутствует. Иначе `SrError(1)` с run_id и полем."""
     rid = run["run_id"]
 
     def bad(field: str, expected: str, value) -> SrError:
@@ -191,6 +220,10 @@ def _check_run_types(run: dict, tracker_path: Path) -> None:
     if revision is not None and not (isinstance(revision, int) and not isinstance(revision, bool)
                                      and revision >= 1):
         raise bad("revision", "целым ≥ 1 или отсутствовать", revision)
+    stack = run.get("agent_stack")
+    if stack is not None and not (isinstance(stack, list)
+                                  and all(isinstance(item, str) for item in stack)):
+        raise bad("agent_stack", "списком строк", stack)
     for i, axis in enumerate(run.get("axes") or []):
         if not isinstance(axis, dict):
             raise bad(f"axes[{i}]", "объектом", axis)
@@ -275,7 +308,10 @@ def _session_counts(run: dict) -> tuple[int, int]:
 
 
 def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str], None],
-           reasons: frozenset[str], gated: bool) -> dict:
+           reasons: frozenset[str], gated: bool, sanitizer: Sanitizer) -> dict:
+    """Точка графика по прогону. `agent_stack` — свободные строки коллектора и судьи, уходят
+    адресату в личный отчёт: чистятся как пояснения вердиктов (`addressee_comment`), в модели
+    сразу, чтобы «Как видит адресат» у ревьюера совпадал с личным."""
     reviewed = run.get("reviewed_at") or ""
     logs_from, logs_to = _log_range(run)
     sessions, skipped = _session_counts(run)
@@ -294,7 +330,8 @@ def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str]
         "sessions_skipped": skipped,
         "level": _level(run, warn),
         "gate": bool(run.get("gating_triggered")),
-        "agent_stack": list(run.get("agent_stack") or []),
+        "agent_stack": [addressee_comment(item, sanitizer)
+                        for item in run.get("agent_stack") or []],
         "summary": run.get("summary") or "",
         "axes": _axes(run, axes, warn, reasons),
         "antipatterns": copy.deepcopy(run.get("antipatterns") or []),
@@ -308,13 +345,17 @@ def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str]
 
 
 def _recs(runs: list[dict], axes: list[str], warn: Callable[[str], None],
-          gated: bool) -> list[dict]:
+          gated: bool, verdict_codes: frozenset[str], sanitizer: Sanitizer) -> list[dict]:
     """Рекомендации человека по его прогонам (в порядке точек) с поздними вердиктами.
 
     Рекомендация с осью не из `axes` пропускается с предупреждением (ось — код, свободный
-    текст в этом поле адресату не показывается); вердикты по ней тоже пропускаются.
+    текст в этом поле адресату не показывается); вердикты по ней тоже пропускаются. Вердикт
+    с кодом не из `verdict_codes` (секция `rec_verdicts` словаря) пропускается с
+    предупреждением по той же причине: код не обезличивается и не проверяется гейтом.
     `pending_approval` у рекомендации и `approved: false` у вердикта — выданы в неодобренном
     прогоне (`run_approved`); `open` считается по всем вердиктам, как в трекере.
+    У вердикта `note` — пояснение как в трекере (видит ревьюер), `comment` — оно же для
+    адресата (`addressee_comment`: без путей машины и логина ОС).
     """
     recs: dict[str, dict] = {}
     skipped: set[str] = set()
@@ -329,8 +370,14 @@ def _recs(runs: list[dict], axes: list[str], warn: Callable[[str], None],
                 warn(f"прогон {run['run_id']}: вердикт по неизвестной рекомендации "
                      f"{verdict.get('id')!r}")
                 continue
+            if verdict.get("verdict") not in verdict_codes:
+                warn(f"прогон {run['run_id']}: вердикт по рекомендации {verdict.get('id')!r} "
+                     f"с кодом {verdict.get('verdict')!r} не из известных кодов, пропущен")
+                continue
+            text = verdict.get("note") or ""
             rec["verdicts"].append({"period": label, "verdict": verdict.get("verdict"),
-                                    "note": verdict.get("note") or "", "approved": approved})
+                                    "note": text, "comment": addressee_comment(text, sanitizer),
+                                    "approved": approved})
         for item in run.get("recommendations") or []:
             rid = item.get("id")
             if not rid or rid in recs or rid in skipped:
@@ -366,6 +413,9 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
     i18n = load_i18n()
     axes = list(i18n["axes"])
     reasons = reason_codes(i18n)
+    verdict_codes = frozenset(i18n.get("rec_verdicts") or {})
+    if not verdict_codes:
+        raise SrError(f"в словаре интерфейса нет секции rec_verdicts ({_I18N_PATH})", 1)
     tracker_path = paths["runs"] / "process-reviews.json"
     tracker = load_tracker(tracker_path)
     for i, run in enumerate(tracker["runs"]):
@@ -378,7 +428,9 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
         raise SrError(f"нет прогонов для отчёта: в трекере {len(runs)} прогонов, живых нет "
                       f"({tracker_path})", 1)
     cards = {c["id"]: c for c in list_people(root)}
+    sanitizer = Sanitizer(local_users=local_user_names())
     show_dynamics = {pid: _show_dynamics(card) for pid, card in cards.items()}
+    card_scores = {pid: _card_show_scores(card) for pid, card in cards.items()}
 
     latest: dict[tuple[str, str], dict] = {}
     for run in live:
@@ -432,10 +484,13 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
             review = _bound_review(reviews.get(run["run_id"]), pid, note)
             if run["run_id"] in reviews and review is None:
                 unbound.append(run["run_id"])
-            points.append(_point(run, axes, review, note, reasons, gated))
+            points.append(_point(run, axes, review, note, reasons, gated, sanitizer))
         people.append({"id": pid, "name": card.get("name") or pid, "group": card.get("group"),
                        "show_dynamics": show_dynamics[pid],
-                       "points": points, "recs": _recs(person_runs, axes, note, gated)})
+                       "show_scores": card_scores[pid],
+                       "points": points,
+                       "recs": _recs(person_runs, axes, note, gated, verdict_codes,
+                                     sanitizer)})
     skipped = len(cards) - len(people)
     if skipped:
         note(f"людей без прогонов: {skipped}, в отчёт не попадают")
@@ -450,7 +505,33 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
         "unbound_reviews": sorted(unbound),
         "retracted_reviews": of_retracted,
         "warnings": warnings,
+        "card_suggestions": _card_suggestions(root, [p["id"] for p in people], note),
     }
+
+
+# Поля pending-предложения к карточке, которые видит ревьюер (`reason` → `rationale`: ключ
+# `reason` — код перечисления, его обезличивание и гейт пропускают, а здесь свободный текст).
+_SUGGESTION_FIELDS = ("id", "field", "op", "current", "proposed", "source", "run_id")
+
+
+def _card_suggestions(root: Path, ids: list[str], note: Callable[[str], None]) -> dict:
+    """{id: [pending-предложение]} из `people/<id>.suggestions.json` без пересчёта.
+
+    Файл не читается или не той формы — предупреждение с причиной и путём, у человека пусто:
+    блок только для ревьюера и не должен останавливать сборку остальных отчётов."""
+    out = {}
+    for pid in ids:
+        try:
+            items = card_suggestions.load_items(root, pid)
+        except (SrError, OSError, UnicodeDecodeError) as err:
+            reason = err.message if isinstance(err, SrError) else f"{err} ({type(err).__name__})"
+            note(f"предложения к карточке {pid!r} не прочитаны, блок пуст: {reason}")
+            continue
+        pending = [{**{k: item.get(k) for k in _SUGGESTION_FIELDS}, "rationale": item.get("reason")}
+                   for item in items if item.get("status") == "pending"]
+        if pending:
+            out[pid] = pending
+    return out
 
 
 def _show_dynamics(card: dict) -> bool:
@@ -460,6 +541,29 @@ def _show_dynamics(card: dict) -> bool:
         raise SrError(f"people/{card.get('id')}.yaml: feedback.show_dynamics должно быть "
                       f"true/false, получено {value!r}", 1)
     return value
+
+
+def _card_show_scores(card: dict) -> bool | None:
+    """`feedback.show_scores` карточки: true/false или None (нет — вид из конфига); не bool →
+    `SrError(1)` (карточку проверяет и схема, это страховка для модели из чужого кода)."""
+    value = (card.get("feedback") or {}).get("show_scores")
+    if value is not None and not isinstance(value, bool):
+        raise SrError(f"people/{card.get('id')}.yaml: feedback.show_scores должно быть "
+                      f"true/false, получено {value!r}", 1)
+    return value
+
+
+def scores_view(person: dict, default: bool, cli: bool | None = None) -> bool:
+    """Вид личного отчёта человека: True — `scores`, False — `trend`.
+
+    Приоритет: флаг запуска (`cli`: `--scores`/`--trend`, не None) > `feedback.show_scores`
+    карточки (`person["show_scores"]`, не None) > `default` (`config.show_scores`)."""
+    if cli is not None:
+        return bool(cli)
+    card = person.get("show_scores")
+    if card is not None:
+        return bool(card)
+    return bool(default)
 
 
 def _bound_review(review: dict | None, pid: str, note: Callable[[str], None]) -> dict | None:
@@ -512,13 +616,57 @@ def _approved_status(rec: dict) -> str:
     return status
 
 
+def addressee_comment(text: str, sanitizer: Sanitizer) -> str:
+    """Пояснение вердикта для адресата: правила санитайзера (логин ОС в домашних путях и голый,
+    почта, телефоны, секреты), затем путь до `.sessionretro/` срезается (`logs/<id>/<file>`),
+    а прочий путь машины (домашний каталог macOS, `/home/…`, `/tmp/…`, диск Windows) сводится к
+    имени файла.
+    Относительные пути, ссылки и остальной текст — как есть."""
+    if not text:
+        return text
+    text, _hits = sanitizer.sanitize_text(text)
+    text = _TO_STATE_DIR_RE.sub("", text)
+    return _MACHINE_PATH_RE.sub(lambda m: re.split(r"[\\/]", m.group(0).rstrip("\\/"))[-1],
+                                text)
+
+
+def _approved_history(rec: dict) -> list[dict]:
+    """История вердиктов для адресата: только одобренные прогоны, от старого периода к новому.
+
+    Пояснение вердикта идёт под ключом `comment` (не `note`: `note` оси адресату закрыт,
+    `PERSONAL_FORBIDDEN_KEYS`) и уже очищено от путей машины (`addressee_comment`); метка
+    периода и пояснение — текст, их обезличивает `--anon` и проверяет гейт личного файла.
+    """
+    return [{"period": v["period"], "verdict": v["verdict"], "comment": v["comment"]}
+            for v in rec["verdicts"] if v["approved"]]
+
+
 def approved_points(person: dict) -> list[dict]:
     """Точки одобренных прогонов человека — всё, что может попасть в его личный отчёт."""
     return [pt for pt in person["points"] if pt["approved"]]
 
 
+def _sent_review(point: dict) -> dict | None:
+    """Отправленный блок одобренного ревью точки (`{sent_md}`) или None: ревью нет, оно
+    черновик или отправляемого блока в нём нет."""
+    review = point["review"]
+    sent = (review.get("sent_md") if review and review.get("status") == "approved"
+            else None)
+    return {"sent_md": sent} if sent else None
+
+
+def _addressee_recs(person: dict) -> list[dict]:
+    """Рекомендации одобренных прогонов со статусом и историей вердиктов одобренных прогонов."""
+    return [{"text": r["text"], "axis": r["axis"], "given_in": r["given_in"],
+             "status": _approved_status(r), "verdicts": _approved_history(r)}
+            for r in person["recs"] if not r["pending_approval"]]
+
+
 def _personal_person(person: dict, axes: list[str], show_scores: bool,
                      show_dynamics: bool) -> dict:
+    """Карточка адресата. `show_scores` — вид `scores`: итоговый балл оси и уровень, переходов
+    нет (их заменяют графики); иначе вид `trend`: переходы (при `show_dynamics`), баллов и
+    уровня нет. В обоих — агенты и модели точки, одобренный отправляемый блок, рекомендации."""
     shown = approved_points(person)
     if not shown:
         raise SrError(f"личный отчёт {person['id']!r}: нет одобренных прогонов — все "
@@ -533,22 +681,29 @@ def _personal_person(person: dict, axes: list[str], show_scores: bool,
             if show_scores:
                 item["score"] = src["score"]
             out_axes[axis] = item
-        review = point["review"]
-        sent = (review.get("sent_md") if review and review.get("status") == "approved"
-                else None)
         out = {"period": point["period"], "date": point["date"], "sessions": point["sessions"],
-               "axes": out_axes, "review": {"sent_md": sent} if sent else None}
-        if show_dynamics:
-            out["transitions"] = dict(tr)
+               "axes": out_axes, "review": _sent_review(point),
+               "agent_stack": list(point["agent_stack"])}
         if show_scores:
             out["level"] = point["level"]
+        elif show_dynamics:
+            out["transitions"] = dict(tr)
         points.append(out)
-    recs = [{"text": r["text"], "axis": r["axis"], "given_in": r["given_in"],
-             "status": _approved_status(r)} for r in person["recs"] if not r["pending_approval"]]
-    return {"id": person["id"], "name": person["name"], "points": points, "recs": recs}
+    return {"id": person["id"], "name": person["name"], "points": points,
+            "recs": _addressee_recs(person)}
 
 
-def _group_person(person: dict, axes: list[str]) -> dict:
+def _group_details(person: dict) -> dict:
+    """Карточка человека в групповом отчёте: одобренные периоды (`review` — тот же отправленный
+    блок, что в личном отчёте, или None) и рекомендации — как в личном отчёте. Нет одобренных
+    прогонов — пустые списки. Ключи — только из белого списка (`FEEDBACK_FORBIDDEN_KEYS` —
+    проверка тестом)."""
+    periods = [{"period": point["period"], "date": point["date"], "review": _sent_review(point)}
+               for point in approved_points(person)]
+    return {"periods": periods, "recs": _addressee_recs(person)}
+
+
+def _group_person(person: dict, axes: list[str], details: bool) -> dict:
     points = []
     for point in person["points"]:
         points.append({
@@ -558,12 +713,18 @@ def _group_person(person: dict, axes: list[str]) -> dict:
                          "overridden": point["axes"][a]["overridden"]} for a in axes},
             "review": None,
         })
-    return {"id": person["id"], "name": person["name"], "group": person["group"],
-            "points": points, "recs": []}
+    out = {"id": person["id"], "name": person["name"], "group": person["group"],
+           "points": points, "recs": []}
+    if details:
+        out["details"] = _group_details(person)
+    return out
 
 
-def _reviewer_person(person: dict, axes: list[str], quote_periods: int | None) -> dict:
+def _reviewer_person(person: dict, axes: list[str], quote_periods: int | None,
+                     show_scores: bool) -> dict:
+    """Всё о человеке; `show_scores` — вид его личного отчёта (для «Как видит адресат»)."""
     out = copy.deepcopy(person)
+    out["show_scores"] = show_scores
     trans = transitions(out["points"], axes)
     cut = 0 if quote_periods is None else max(len(out["points"]) - quote_periods, 0)
     for i, (point, tr) in enumerate(zip(out["points"], trans)):
@@ -588,14 +749,23 @@ def _reviewer_person(person: dict, axes: list[str], quote_periods: int | None) -
 def build_payload(model: dict, *, mode: str, person: str | None = None,
                   show_scores: bool = False, lang: str = "ru", title: str = "",
                   generated_at: str = "", quote_periods: int | None = 3,
-                  show_dynamics: bool = True) -> dict:
-    """Данные одного HTML-файла для режима `group|reviewer|personal` (белые списки полей).
+                  show_dynamics: bool = True, details: bool = False,
+                  scores_cli: bool | None = None) -> dict:
+    """Данные одного HTML-файла для режима `group|reviewer|personal` (белые списки).
 
     `personal` требует `person` (id из модели), иначе `SrError(2)`; строится только из
-    одобренных прогонов (`approved_points`), нет ни одного — `SrError(1)`. `quote_periods` —
+    одобренных прогонов (`approved_points`), нет ни одного — `SrError(1)`. Вид личного
+    (`scores_view`): `scores_cli` (флаг запуска, None — не задан) > `feedback.show_scores`
+    карточки > `show_scores` (конфиг); итог — в `meta.show_scores` личного и в `show_scores`
+    каждого человека отчёта ревьюера. `details` (только
+    `group`, иначе `SrError(2)`) добавляет каждому человеку карточку `details` (`_group_details`:
+    одобренные тексты и рекомендации, баллов и уровней нет при любом `show_scores`), у меты —
+    `details: true|false`. `quote_periods` —
     сколько последних периодов человека в reviewer несут цитаты, досье и черновик фидбэка
     (`None` — все); в старших точках `evidence` пуст, `quote` антипаттернов и гейта и
     `feedback_draft` пустые, досье заменено на `dossier_ref`, у точки `trimmed: true`.
+    Только в `reviewer` у человека `card_suggestions` — pending-предложения к карточке
+    (`model.card_suggestions`, пусто — `[]`).
     Модель не меняется.
     """
     if mode not in MODES:
@@ -603,6 +773,9 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
     if quote_periods is not None and (not isinstance(quote_periods, int)
                                       or isinstance(quote_periods, bool) or quote_periods < 0):
         raise SrError(f"quote_periods должно быть целым ≥ 0 или None, получено {quote_periods!r}", 2)
+    if details and mode != "group":
+        raise SrError(f"карточка человека (details) — только для группового отчёта, "
+                      f"режим {mode!r}", 2)
     axes = list(model["axes"])
     if mode == "personal":
         if not person:
@@ -611,25 +784,35 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
         if not found:
             known = ", ".join(p["id"] for p in model["people"])
             raise SrError(f"человек {person!r} не найден среди людей с прогонами ({known})", 2)
-        people = [_personal_person(found[0], axes, show_scores, show_dynamics)]
+        scores = scores_view(found[0], show_scores, scores_cli)
+        people = [_personal_person(found[0], axes, scores, show_dynamics)]
         dated = approved_points(found[0])
     elif mode == "group":
-        people = [_group_person(p, axes) for p in model["people"]]
+        people = [_group_person(p, axes, details) for p in model["people"]]
         dated = [pt for p in model["people"] for pt in p["points"]]
     else:
-        people = [_reviewer_person(p, axes, quote_periods) for p in model["people"]]
+        people = [_reviewer_person(p, axes, quote_periods,
+                                   scores_view(p, show_scores, scores_cli))
+                  for p in model["people"]]
+        # предложения к карточке — только ревьюеру: в personal и group их нет (тест по JSON)
+        suggestions = model.get("card_suggestions") or {}
+        for p in people:
+            p["card_suggestions"] = copy.deepcopy(suggestions.get(p["id"], []))
         dated = [pt for p in model["people"] for pt in p["points"]]
     meta = {
         "title": title,
         "mode": mode,
         "lang": lang,
-        "show_scores": bool(show_scores),
+        "show_scores": (scores if mode == "personal"
+                        else scores_view({}, show_scores, scores_cli)),
         "generated_at": generated_at,
         "workspace_title": model["workspace"]["title"],
         **_date_meta(dated, with_runs=mode == "reviewer"),
         "reviews_unbound": 0 if mode == "personal" else len(model["unbound_reviews"]),
         "quote_periods": quote_periods,
     }
+    if mode == "group":
+        meta["details"] = bool(details)
     if mode == "reviewer":
         meta["reviews_of_retracted"] = len(model.get("retracted_reviews") or [])
     return {"meta": meta, "axes": axes, "people": people}

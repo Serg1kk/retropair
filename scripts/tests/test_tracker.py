@@ -741,6 +741,63 @@ class ReplaceTest(TrackerCase):
         self.assertIn(kim_run, self.rejected(payload(), now=LATER, replace=kim_run))
 
 
+CARD_SUGGESTION = {"field": "tools", "value": "Claude Code, Cursor", "reason": "в логах правки идут в Cursor",
+                   "evidence": {"session_id": LOGIN, "turn_index": 3, "quote": "открыл это в Cursor"}}
+
+
+class CardSuggestionsTest(TrackerCase):
+    """Необязательное `card_suggestions` судьи: `append` переносит как есть, нет в выходе → нет в прогоне."""
+
+    def test_append_carries_field_as_is(self):
+        self.append(payload(card_suggestions=[CARD_SUGGESTION]), period_label="p1")
+        run = self.tracker_doc()["runs"][0]
+        self.assertEqual(run["card_suggestions"], [CARD_SUGGESTION])
+        self.assertEqual(tracker.validate_file(self.root), [])
+
+    def test_absent_field_not_written(self):
+        self.append_p1()
+        self.assertNotIn("card_suggestions", self.tracker_doc()["runs"][0])
+
+    def test_empty_list_written_as_is(self):
+        self.append(payload(card_suggestions=[]), period_label="p1")
+        self.assertEqual(self.tracker_doc()["runs"][0]["card_suggestions"], [])
+
+    def test_replace_takes_new_output_not_victim(self):
+        self.append(payload(card_suggestions=[CARD_SUGGESTION]), period_label="p1")
+        self.append(payload(), now=LATER, period_label="p1", replace=RUN_P1)
+        self.assertNotIn("card_suggestions", self.tracker_doc()["runs"][0])
+        other = dict(CARD_SUGGESTION, field="constraints", value="нет сети")
+        self.append(payload(card_suggestions=[other]), now=LATER + timedelta(days=1), period_label="p1",
+                    replace=RUN_P1)
+        run = self.tracker_doc()["runs"][0]
+        self.assertEqual((run["revision"], run["card_suggestions"]), (3, [other]))
+
+    def test_tracker_schema_field_optional_and_bounded(self):
+        self.append(payload(card_suggestions=[CARD_SUGGESTION]), period_label="p1")
+        doc = self.tracker_doc()
+        self.assertEqual(schema.validate(doc, "tracker"), [])
+        old = json.loads(json.dumps(doc))
+        del old["runs"][0]["card_suggestions"]
+        self.assertEqual(schema.validate(old, "tracker"), [], "старый трекер без поля валиден")
+        bad = json.loads(json.dumps(doc))
+        bad["runs"][0]["card_suggestions"] = [dict(CARD_SUGGESTION, field="skip_basics")] + [CARD_SUGGESTION] * 3
+        problems = schema.validate(bad, "tracker")
+        self.assertTrue(any("элементов 4" in p for p in problems), problems)
+        self.assertTrue(any("вне списка допустимых" in p for p in problems), problems)
+        long_quote = json.loads(json.dumps(doc))
+        long_quote["runs"][0]["card_suggestions"][0]["evidence"]["quote"] = "я" * 401
+        self.assertTrue(any("длиннее 400" in p for p in schema.validate(long_quote, "tracker")))
+        extra = json.loads(json.dumps(doc))
+        extra["runs"][0]["card_suggestions"][0]["evidence"]["reading"] = "x"
+        self.assertTrue(any("'reading'" in p for p in schema.validate(extra, "tracker")))
+
+    def test_judge_schema_violation_stops_append(self):
+        message = self.rejected(payload(card_suggestions=[dict(CARD_SUGGESTION, field="tone")]),
+                                period_label="p1")
+        self.assertIn("card_suggestions", message)
+        self.assertFalse(tracker.tracker_path(self.root).exists())
+
+
 class GrownTailTest(TrackerCase):
     """У выросшей сессии `turns_total` и начало периода считаются по хвосту, а не по всей сессии.
 

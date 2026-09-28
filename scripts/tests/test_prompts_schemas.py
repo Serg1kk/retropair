@@ -358,6 +358,78 @@ class Samples(unittest.TestCase):
         self.assertInvalid(bad, "judge", "$.data.artifact: тип dict")
 
 
+CARD_FIELDS = ["role", "grade", "years", "stack", "tools", "constraints"]
+
+
+def card_suggestion(**patch) -> dict:
+    """Элемент `data.card_suggestions` судьи: расхождение карточки с логами и цитата-адрес."""
+    item = {"field": "tools", "value": "Claude Code, Cursor", "reason": "в логах работа идёт в Cursor",
+            "evidence": {"session_id": "s-1", "turn_index": 4, "quote": "открыл это в Cursor"}}
+    item.update(patch)
+    return item
+
+
+class JudgeCardSuggestions(unittest.TestCase):
+    """Необязательное `data.card_suggestions`: до трёх расхождений карточки (только profile) с логами."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.judge = _sample("judge")
+        cls.prop = load_schema("judge")["properties"]["data"]["properties"]["card_suggestions"]
+
+    def with_items(self, items) -> dict:
+        obj = copy.deepcopy(self.judge)
+        obj["data"]["card_suggestions"] = items
+        return obj
+
+    def assertInvalid(self, obj, expected: str) -> None:
+        problems = validate(obj, "judge")
+        self.assertTrue(any(expected in p for p in problems),
+                        f"порченая копия: нет проблемы с {expected!r}, есть {problems}")
+
+    def test_optional_and_shape(self) -> None:
+        data = load_schema("judge")["properties"]["data"]
+        self.assertNotIn("card_suggestions", data["required"])
+        self.assertNotIn("card_suggestions", self.judge["data"])
+        self.assertEqual((self.prop["type"], self.prop["maxItems"]), ("array", 3))
+        item = self.prop["items"]
+        self.assertIs(item["additionalProperties"], False)
+        self.assertEqual(item["properties"]["field"]["enum"], CARD_FIELDS)
+        self.assertIs(item["properties"]["evidence"]["additionalProperties"], False)
+        self.assertEqual(item["properties"]["evidence"]["properties"]["quote"]["maxLength"], 400)
+
+    def test_valid_items_accepted(self) -> None:
+        items = [card_suggestion(), card_suggestion(field="constraints", value="нет сети"),
+                 card_suggestion(field="years", value="5", evidence={"session_id": None,
+                                                                     "turn_index": None, "quote": "x"})]
+        self.assertEqual(validate(self.with_items(items), "judge"), [])
+        self.assertEqual(judge_invariant_problems(self.with_items(items)), [])
+
+    def test_feedback_field_rejected(self) -> None:
+        for field in ("skip_basics", "profile.tools", "tone"):
+            with self.subTest(field=field):
+                self.assertInvalid(self.with_items([card_suggestion(field=field)]), "вне списка допустимых")
+
+    def test_four_items_rejected(self) -> None:
+        self.assertInvalid(self.with_items([card_suggestion()] * 4), "элементов 4")
+
+    def test_extra_key_rejected(self) -> None:
+        self.assertInvalid(self.with_items([card_suggestion(op="set")]), "лишнее поле 'op'")
+        ev = dict(card_suggestion()["evidence"], reading="x")
+        self.assertInvalid(self.with_items([card_suggestion(evidence=ev)]), "лишнее поле 'reading'")
+
+    def test_quote_limit(self) -> None:
+        ev = dict(card_suggestion()["evidence"], quote="я" * 401)
+        self.assertInvalid(self.with_items([card_suggestion(evidence=ev)]), "строка длиннее 400 знаков")
+        ev["quote"] = "я" * 400
+        self.assertEqual(validate(self.with_items([card_suggestion(evidence=ev)]), "judge"), [])
+
+    def test_missing_evidence_rejected(self) -> None:
+        item = card_suggestion()
+        del item["evidence"]
+        self.assertInvalid(self.with_items([item]), "нет обязательного поля 'evidence'")
+
+
 class JudgeSampleInvariants(unittest.TestCase):
     """Образец судьи держит условия «Проверок скриптом»; порченые копии их нарушают."""
 

@@ -36,6 +36,7 @@
         "avoid": {"type": "array", "items": {"type": "string"}},
         "value_focus": {"type": "string", "enum": ["finding", "full"]},
         "show_dynamics": {"type": "boolean"},
+        "show_scores": {"type": "boolean"},
         "channel": {"type": "string", "enum": ["file", "telegram", "slack", "email"]},
         "template": {"type": "string", "minLength": 1},
         "prefix": {"type": "string"}

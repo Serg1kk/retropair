@@ -234,7 +234,7 @@ class TestPayload(_Base):
 
     def test_personal_recs_with_status(self) -> None:
         recs = {r["given_in"]: r for r in self.personal()["people"][0]["recs"]}
-        self.assertEqual(set(recs["P1"]), {"text", "axis", "given_in", "status"})
+        self.assertEqual(set(recs["P1"]), {"text", "axis", "given_in", "status", "verdicts"})
         self.assertEqual(recs["P1"]["status"], "followed")
         # у vera вердикт `ignored` вынесен в черновике P3: адресату статус не меняется
         vera = {r["given_in"]: r for r in self.personal("vera")["people"][0]["recs"]}
@@ -702,11 +702,14 @@ class TestPersonalKeys(_Base):
         self.assertEqual(set(payload), {"meta", "axes", "people"})
         person = payload["people"][0]
         self.assertEqual(set(person), {"id", "name", "points", "recs"})
-        point_keys = {"period", "date", "sessions", "axes", "review", "transitions"}
+        # вид scores: баллы и уровень без переходов; вид trend: переходы без баллов и уровня
+        point_keys = {"period", "date", "sessions", "axes", "review", "agent_stack"}
         axis_keys = {"ie", "reason"}
         if show_scores:
             point_keys |= {"level"}
             axis_keys |= {"score"}
+        else:
+            point_keys |= {"transitions"}
         reviews = 0
         for pt in person["points"]:
             self.assertEqual(set(pt), point_keys)
@@ -717,8 +720,13 @@ class TestPersonalKeys(_Base):
                 self.assertEqual(set(pt["review"]), {"sent_md"})
         self.assertTrue(reviews)
         self.assertTrue(person["recs"])
+        verdicts = 0
         for rec in person["recs"]:
-            self.assertEqual(set(rec), {"text", "axis", "given_in", "status"})
+            self.assertEqual(set(rec), {"text", "axis", "given_in", "status", "verdicts"})
+            for verdict in rec["verdicts"]:
+                verdicts += 1
+                self.assertEqual(set(verdict), {"period", "verdict", "comment"})
+        self.assertTrue(verdicts)
 
 
 class TestReviewerTrim(_Base):
@@ -789,7 +797,8 @@ class TestUnapprovedRuns(_Base):
         model, _draft = self.gated_model()
         anna = [p for p in model["people"] if p["id"] == "anna"][0]
         approved = anna["points"][:2]
-        payload = rd.build_payload(model, mode="personal", person="anna", show_scores=True)
+        # переходы — в виде trend (без баллов); в виде scores их заменяют графики
+        payload = rd.build_payload(model, mode="personal", person="anna", show_scores=False)
         pts = payload["people"][0]["points"]
         self.assertEqual([pt["period"] for pt in pts], ["P1", "P2"])
         self.assertEqual(sum(pt["sessions"] for pt in pts), sum(pt["sessions"] for pt in approved))
@@ -833,6 +842,155 @@ class TestUnapprovedRuns(_Base):
         recs = {r["given_in"]: r["status"] for r in payload["people"][0]["recs"]}
         self.assertEqual(recs["P2"], "followed")
         self.assertIn(DRAFT_REC_TEXT, json.dumps(payload, ensure_ascii=False))
+
+
+NOTE_P2 = "Тесты появились только в новом коде, старые файлы без проверок."
+NOTE_P3 = "Каждое изменение закрыто тестом до коммита."
+NOTE_DRAFT = "Черновой вердикт, адресат его не получал."
+
+
+class TestPersonalVerdictHistory(_Base):
+    """История вердиктов под рекомендацией в личном отчёте: только одобренные прогоны.
+
+    Фикстура team: у anna P1 и P2 одобрены, P3 — черновик; REC-anna-001 (P1) получает
+    вердикт в P2, REC-anna-002 (P2) — только в черновике P3.
+    """
+
+    def history(self, payload: dict) -> dict:
+        return {r["given_in"]: r["verdicts"] for r in payload["people"][0]["recs"]}
+
+    def four_periods(self) -> tuple[dict, list[str]]:
+        """anna, P1–P3 одобрены, P4 черновик; по REC-anna-001 вердикты в P2, P3 и черновом P4.
+        Прогоны в трекере переставлены задом наперёд: порядок — по периодам, не по файлу."""
+        root = self.fresh(people=1, periods=4)
+        doc = _tracker(root)
+        verdicts = {"P2": ("partial", NOTE_P2), "P3": ("followed", NOTE_P3),
+                    "P4": ("ignored", NOTE_DRAFT)}
+        for label, (verdict, note) in verdicts.items():
+            _run_of(doc, "anna", label)["prev_recommendations"] = [
+                {"id": "REC-anna-001", "verdict": verdict, "evidence": None, "note": note}]
+        self.assertEqual(_run_of(doc, "anna", "P4")["review_status"], "draft")
+        doc["runs"].reverse()
+        _write_tracker(root, doc)
+        return _collect(root)
+
+    def test_default_history_fields(self) -> None:
+        hist = self.history(rd.build_payload(self.model, mode="personal", person="anna"))
+        self.assertEqual(hist["P1"], [{"period": "P2", "verdict": "followed", "comment": ""}])
+        # вердикт по REC-anna-002 вынесен только в черновике P3: истории нет
+        self.assertEqual(hist["P2"], [])
+
+    def test_history_ordered_by_period_with_comments_only_approved(self) -> None:
+        model, _warnings = self.four_periods()
+        payload = rd.build_payload(model, mode="personal", person="anna")
+        self.assertEqual(self.history(payload)["P1"], [
+            {"period": "P2", "verdict": "partial", "comment": NOTE_P2},
+            {"period": "P3", "verdict": "followed", "comment": NOTE_P3},
+        ])
+        self.assertNotIn(NOTE_DRAFT, json.dumps(payload, ensure_ascii=False))
+        # ревьюер видит и черновой вердикт — с пометкой
+        reviewer = rd.build_payload(model, mode="reviewer")["people"][0]
+        rec = [r for r in reviewer["recs"] if r["id"] == "REC-anna-001"][0]
+        self.assertEqual([(v["period"], v["approved"]) for v in rec["verdicts"]],
+                         [("P2", True), ("P3", True), ("P4", False)])
+
+    def test_history_does_not_depend_on_show_scores(self) -> None:
+        model, _warnings = self.four_periods()
+        plain = rd.build_payload(model, mode="personal", person="anna")
+        scored = rd.build_payload(model, mode="personal", person="anna", show_scores=True)
+        self.assertEqual(plain["people"][0]["recs"], scored["people"][0]["recs"])
+        self.assertFalse(_keys(plain["people"][0]["recs"]) & (rd.SCORE_KEYS | rd.PERSONAL_FORBIDDEN_KEYS))
+
+    def test_draft_verdict_absent_in_gated_self_present(self) -> None:
+        root = self.fresh(mode="self")
+        model, _warnings = _collect(root)
+        hist = self.history(rd.build_payload(model, mode="personal", person="me"))
+        # self без гейта ревьюера: вердикт последнего периода показывается
+        self.assertEqual([v["period"] for v in hist["P2"]], ["P3"])
+
+    def test_unknown_verdict_code_skipped_with_warning(self) -> None:
+        root = self.fresh()
+        doc = _tracker(root)
+        run = _run_of(doc, "anna", "P2")
+        run["prev_recommendations"][0]["verdict"] = "у Бориса получилось"
+        _write_tracker(root, doc)
+        model, warnings = _collect(root)
+        payload = rd.build_payload(model, mode="personal", person="anna")
+        self.assertNotIn("Бориса", json.dumps(payload, ensure_ascii=False))
+        self.assertEqual(self.history(payload)["P1"], [])
+        self.assertTrue(any(run["run_id"] in w and "вердикт" in w for w in warnings), warnings)
+
+
+SUGGESTION_KEYS = {"id", "field", "op", "current", "proposed", "rationale", "source", "run_id"}
+SUGGESTION_MARKS = (report_fixture.SUGGEST_PROPOSED, "SuggestTool", report_fixture.SUGGEST_APPEND,
+                    "S-anna-00")
+
+
+class TestCardSuggestions(unittest.TestCase):
+    """Предложения к карточке: pending — только в payload ревьюера (`card_suggestions`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = report_fixture.make_workspace(Path(cls._tmp.name) / "ws", suggestions=True)
+        cls.model = rd.collect(cls.root, lambda _m: None)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def people(self, mode: str, **kw) -> dict:
+        payload = rd.build_payload(self.model, mode=mode, title="T", **kw)
+        return {p["id"]: p for p in payload["people"]}
+
+    def test_reviewer_person_carries_pending_only(self):
+        got = self.people("reviewer")
+        items = got["anna"]["card_suggestions"]
+        self.assertEqual([i["id"] for i in items], ["S-anna-001", "S-anna-002"])
+        for item in items:
+            self.assertEqual(set(item), SUGGESTION_KEYS)
+        first = items[0]
+        self.assertEqual((first["field"], first["op"], first["current"], first["proposed"]),
+                         ("profile.tools", "set", "claude-code", report_fixture.SUGGEST_PROPOSED))
+        self.assertEqual(first["rationale"], report_fixture.SUGGEST_REASON)
+        self.assertEqual(first["source"], "script:agent_stack")
+        self.assertTrue(first["run_id"])
+        self.assertEqual(got["boris"]["card_suggestions"], [])
+        text = json.dumps(got, ensure_ascii=False)
+        for mark in report_fixture.SUGGEST_DECIDED:
+            self.assertNotIn(mark, text, "applied/rejected в отчёт не идут")
+
+    def test_personal_and_group_have_no_key_and_no_text(self):
+        cases = [("personal", {"person": "anna"}), ("group", {}), ("group", {"details": True})]
+        for mode, kw in cases:
+            with self.subTest(mode=mode, **kw):
+                payload = rd.attach_html(rd.build_payload(self.model, mode=mode, title="T", **kw))
+                self.assertNotIn("card_suggestions", _keys(payload))
+                text = json.dumps(payload, ensure_ascii=False)
+                for mark in SUGGESTION_MARKS + (report_fixture.SUGGEST_REASON,):
+                    self.assertNotIn(mark, text)
+
+    def test_model_people_do_not_carry_suggestions(self):
+        for person in self.model["people"]:
+            self.assertNotIn("card_suggestions", person)
+
+    def test_no_file_gives_empty_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = report_fixture.make_workspace(Path(tmp) / "ws")
+            model = rd.collect(root, lambda _m: None)
+        payload = rd.build_payload(model, mode="reviewer")
+        self.assertTrue(all(p["card_suggestions"] == [] for p in payload["people"]))
+
+    def test_broken_file_warns_and_report_still_builds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = report_fixture.make_workspace(Path(tmp) / "ws")
+            path = ws_paths(root)["people"] / "anna.suggestions.json"
+            path.write_text("{not json", encoding="utf-8")
+            warnings: list[str] = []
+            model = rd.collect(root, warnings.append)
+        self.assertTrue(any("anna.suggestions.json" in w for w in warnings), warnings)
+        payload = rd.build_payload(model, mode="reviewer")
+        self.assertEqual({p["id"]: p["card_suggestions"] for p in payload["people"]}["anna"], [])
 
 
 SAMPLE = FIXTURES / "process-reviews.sample.json"

@@ -22,6 +22,7 @@ profile:
 #   avoid:                   # чего не делать в тексте
 #   value_focus: finding     # finding | full
 #   show_dynamics: true
+#   show_scores: true        # вид личного отчёта: true — баллы, false — только динамика; нет строки — из config.json
 #   channel: file            # file | telegram | slack | email (влияет на переносы строк)
 #   template: default        # default | workspace | <имя файла в templates/>
 #   prefix: ""               # строка перед текстом (например, приветствие)

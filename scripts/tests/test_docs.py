@@ -327,8 +327,19 @@ class ReadmePairTest(unittest.TestCase):
         for name, text, hero, card in cases:
             with self.subTest(readme=name):
                 self.assertIn(hero, text.split("\n## ", 1)[0])
-                details = text[text.index("<details>"):text.index("</details>")]
-                self.assertIn(card, details)
+                blocks = re.findall(r"<details>.*?</details>", text, re.S)
+                self.assertTrue(any(card in block for block in blocks), card)
+
+    def test_how_it_works_gif_and_text_version(self) -> None:
+        cases = ((self.en, README_SECTIONS[2][0], "docs/images/how-it-works.en.gif", "Text version"),
+                 (self.ru, README_SECTIONS[2][1], "docs/images/how-it-works.ru.gif", "Текстовая версия"))
+        for text, heading, gif, summary in cases:
+            with self.subTest(heading=heading):
+                body = section(text, heading)
+                self.assertIn(gif, body)
+                self.assertTrue((PLUGIN / gif).is_file(), gif)
+                self.assertIn(f"<summary>{summary}</summary>", body)
+                self.assertLess(body.index(gif), body.index("<details>"))
 
     def test_no_internal_eval_links(self) -> None:
         for path in markdown_files(PLUGIN):

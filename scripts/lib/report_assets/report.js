@@ -11,13 +11,17 @@ const MODE = META.mode;
 const PERSONAL = MODE === 'personal';
 const GROUP = MODE === 'group';
 const REVIEWER = MODE === 'reviewer';
+// Вкладка «все» текстов ревью и пункт «все периоды» селектора карточки группы.
+const ALL = 'all';
 const LANGS = ['ru', 'en'];
 const STORE_KEY = 'sessionretro-ui';
 const S = {
   lang: LANGS.indexOf(META.lang) >= 0 ? META.lang : 'ru', theme: 'auto',
-  view: PERSONAL ? 'person' : 'overview', person: PERSONAL && DATA.people[0] ? DATA.people[0].id : null,
-  axis: 'all', period: 'last', search: '', run: -1, review: null,
-  asPerson: PERSONAL, showScores: !!META.show_scores, filtersOpen: false,
+  view: PERSONAL ? 'person' : 'overview',
+  person: PERSONAL && DATA.people[0] ? DATA.people[0].id : null,
+  // review — выбранная вкладка текстов (номер точки или ALL); gperiod — селектор периода карточки группы.
+  axis: 'all', period: 'last', search: '', run: -1, review: null, gperiod: ALL,
+  asPerson: PERSONAL, filtersOpen: false,
 };
 
 try {
@@ -190,7 +194,8 @@ function topbar() {
   if (m.generated_at) bits.push(`${esc(t('generated'))} <span class="tnum">${esc(fmtDate(m.generated_at))}</span>`);
   brand.appendChild(el('div', 'meta', bits.join(' · ')));
   const flags = el('div', 'chips');
-  if (GROUP) flags.appendChild(el('span', 'banner', esc(t('not_for_distribution'))));
+  // Обезличенную копию (--anon) можно раздавать: вместо «не для рассылки» — «обезличено».
+  if (GROUP) flags.appendChild(el('span', 'banner', esc(m.anon ? t('anon_banner') : t('not_for_distribution'))));
   if (REVIEWER) flags.appendChild(el('span', 'banner', esc(t('reviewer_banner'))));
   if (REVIEWER && m.reviews_unbound) {
     const u = el('span', 'chip warn', `${esc(t('unbound_reviews'))}: <b class="tnum">${esc(m.reviews_unbound)}</b>`);
@@ -349,13 +354,15 @@ function histSVG(counts, title) {
   return s + '</svg>';
 }
 function openPerson(id) {
-  S.person = id; S.view = 'person'; S.run = -1; S.review = null; S.asPerson = false; S.showScores = !!META.show_scores;
+  S.person = id; S.view = 'person'; S.run = -1; S.review = null; S.gperiod = ALL; S.asPerson = false;
   location.hash = 'p-' + encodeURIComponent(id);
   render(); window.scrollTo(0, 0);
 }
 
-// --- small multiples ---
-function chartsCard(pts, selected, withNotes) {
+// --- small multiples: баллы 0–4 по осям (вид scores) ---
+// withNotes — пояснения судьи под графиками, withMark — легенда пометки ручной правки балла
+// (обе — только у ревьюера и в группе; в данных адресата ни пояснений, ни пометки нет).
+function chartsCard(pts, selected, withNotes, withMark) {
   const card = el('section', 'card');
   card.appendChild(head(t('charts'), t('scale_hint')));
   const grid = el('div', 'charts');
@@ -380,11 +387,11 @@ function chartsCard(pts, selected, withNotes) {
   const lg = el('div', 'legend');
   lg.innerHTML = `<span><svg width="16" height="12" aria-hidden="true"><circle cx="8" cy="6" r="4.5" style="fill:var(--series)"/></svg>${esc(t('legend_score'))}</span>` +
     `<span><svg width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" transform="rotate(45 8 8)" fill="url(#hatch)" style="stroke:var(--muted)" stroke-width="1"/></svg>${esc(t('no_data'))}</span>` +
-    `<span><svg width="18" height="16" aria-hidden="true"><circle cx="9" cy="8" r="4" style="fill:var(--series)"/><circle cx="9" cy="8" r="7" fill="none" style="stroke:var(--series)" stroke-width="1.5"/></svg>${esc(t('override'))}</span>` +
+    (withMark ? `<span><svg width="18" height="16" aria-hidden="true"><circle cx="9" cy="8" r="4" style="fill:var(--series)"/><circle cx="9" cy="8" r="7" fill="none" style="stroke:var(--series)" stroke-width="1.5"/></svg>${esc(t('override'))}</span>` : '') +
     `<span><svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" style="stroke:var(--series)" stroke-width="2" stroke-dasharray="4 3"/></svg>${esc(t('legend_gap'))}</span>` +
     (run ? `<span><svg width="16" height="14" aria-hidden="true"><rect x="1" y="1" width="14" height="12" rx="2" style="fill:var(--accent-soft)"/></svg>${esc(t('legend_selected'))}</span>` : '');
   card.appendChild(lg);
-  CHARTS = { pts, selected };
+  CHARTS = { pts, selected, draw: lineSVG };
   requestAnimationFrame(drawCharts);
   return card;
 }
@@ -393,7 +400,7 @@ function drawCharts() {
   if (!CHARTS) return;
   document.querySelectorAll('.plot[data-axis]').forEach(host => {
     const w = Math.max(220, host.clientWidth || 300);
-    host.innerHTML = lineSVG(CHARTS.pts, host.getAttribute('data-axis'), w, CHARTS.selected);
+    host.innerHTML = CHARTS.draw(CHARTS.pts, host.getAttribute('data-axis'), w, CHARTS.selected);
   });
 }
 // Подпись периода под осью X: метка вида run-ГГГГММДД[-N] → «№<номер точки>» (в метке дата
@@ -455,37 +462,71 @@ function lineSVG(pts, a, W, selected) {
   return s + '</svg>';
 }
 
-// --- переходы ↑↓→◇ ---
-function transitionsCard(pts) {
+// --- вид trend: та же сетка «по осям», вместо баллов переходы ↑ → ↓ ◇ ---
+// Переход точки — против предыдущей точки списка (`transitions` посчитаны при сборке); первая
+// точка — «сравнивать не с чем», без данных в точке или в предыдущей — ◇ с причиной.
+function trendCard(pts, selected) {
   const card = el('section', 'card');
   card.appendChild(head(t('transitions'), t('transitions_hint')));
-  if (pts.length < 2) { card.appendChild(el('div', 'empty', esc(t('transitions_single')))); return card; }
-  const kinds = {
-    up: ['good', '↑', t('trans_up')], down: ['bad', '↓', t('trans_down')],
-    flat: ['neutral', '→', t('trans_flat')], none: ['nd', '◇', t('trans_none')],
-  };
-  let h = `<div class="tbl-scroll"><table class="trend"><thead><tr><th scope="col">${esc(t('filter_axis'))}</th>`;
-  for (let i = 1; i < pts.length; i++) h += `<th scope="col">${esc(pts[i - 1].period)} → ${esc(pts[i].period)}<br><span class="muted">${esc(fmtDate(pts[i].date))}</span></th>`;
-  h += '</tr></thead><tbody>';
+  if (pts.length < 2) card.appendChild(el('p', 'muted small', esc(t('transitions_single'))));
+  const grid = el('div', 'charts');
   DATA.axes.forEach(a => {
-    h += `<tr${S.axis === a ? ' class="hl"' : ''}><th scope="row" class="ax">${esc(axName(a))}</th>`;
-    for (let i = 1; i < pts.length; i++) {
-      const kind = (pts[i].transitions || {})[a] || 'none';
-      const [cls, glyph, label] = kinds[kind] || kinds.none;
-      if (kind === 'none') {
-        const cur = pts[i].axes[a] || {}, prev = pts[i - 1].axes[a] || {};
-        const why = cur.ie ? reasonName(cur.reason) : prev.ie ? reasonName(prev.reason) : '';
-        const tipText = esc(`${axName(a)}: ${t('no_data')}` + (why ? '\n' + why : ''));
-        h += `<td><span class="chip ${cls}" tabindex="0" data-tip="${tipText}" aria-label="${tipText}">${glyph} ${esc(label)}</span></td>`;
-      } else {
-        h += `<td><span class="chip ${cls}">${glyph} ${esc(label)}</span></td>`;
-      }
-    }
-    h += '</tr>';
+    const c = el('div', 'chart' + (S.axis === a ? ' hl' : S.axis !== 'all' ? ' dim' : ''));
+    c.appendChild(el('h4', null, esc(axName(a))));
+    const plot = el('div', 'plot trend'); plot.setAttribute('data-axis', a); c.appendChild(plot);
+    grid.appendChild(c);
   });
-  h += '</tbody></table></div>';
-  card.insertAdjacentHTML('beforeend', h);
+  card.appendChild(grid);
+  const mark = (cls, glyph) => `<svg width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="8" style="fill:var(--${cls}-soft);stroke:var(--${cls})" stroke-width="1.2"/><text x="9" y="12.5" text-anchor="middle" font-size="10" font-weight="700" style="fill:var(--${cls})">${glyph}</text></svg>`;
+  const lg = el('div', 'legend');
+  lg.innerHTML = `<span>${mark('good', '↑')}${esc(t('trans_up'))}</span>` +
+    `<span>${mark('neutral', '→')}${esc(t('trans_flat'))}</span>` +
+    `<span>${mark('bad', '↓')}${esc(t('trans_down'))}</span>` +
+    `<span><svg width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" transform="rotate(45 8 8)" fill="url(#hatch)" style="stroke:var(--muted)" stroke-width="1"/></svg>${esc(t('trans_none'))}</span>` +
+    `<span><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="none" style="stroke:var(--muted)" stroke-width="1.5"/></svg>${esc(t('trend_first'))}</span>` +
+    (selected >= 0 ? `<span><svg width="16" height="14" aria-hidden="true"><rect x="1" y="1" width="14" height="12" rx="2" style="fill:var(--accent-soft)"/></svg>${esc(t('legend_selected'))}</span>` : '');
+  card.appendChild(lg);
+  CHARTS = { pts, selected, draw: trendSVG };
+  requestAnimationFrame(drawCharts);
   return card;
+}
+const TREND_KINDS = { up: ['good', '↑'], down: ['bad', '↓'], flat: ['neutral', '→'] };
+function trendSVG(pts, a, W, selected) {
+  const n = pts.length;
+  const padL = 16, padR = 16, rowY = 30, H = rowY + 58;
+  const step = n > 1 ? (W - padL - padR) / (n - 1) : 0;
+  const X = i => (n > 1 ? padL + i * step : padL + (W - padL - padR) / 2);
+  const label = { up: t('trans_up'), down: t('trans_down'), flat: t('trans_flat') };
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(axName(a))}">`;
+  if (selected >= 0 && selected < n) {
+    const bw = n > 1 ? Math.min(step, 64) : 64;
+    s += `<rect x="${X(selected) - bw / 2}" y="4" width="${bw}" height="${H - 6}" rx="6" style="fill:var(--accent-soft)"/>`;
+  }
+  s += `<line x1="${padL}" y1="${rowY}" x2="${W - padR}" y2="${rowY}" style="stroke:var(--hairline)" stroke-width="1"/>`;
+  pts.forEach((pt, i) => {
+    const x = X(i);
+    const cur = pt.axes[a] || { ie: true }; const prev = i ? (pts[i - 1].axes[a] || { ie: true }) : null;
+    const kind = (pt.transitions || {})[a] || 'none';
+    const where = `${axName(a)} · ${pt.period} · ${fmtDate(pt.date)}`;
+    const hit = tipText => `<g class="hit" tabindex="0" role="img" aria-label="${tipText}" data-tip="${tipText}"><circle cx="${x}" cy="${rowY}" r="14" fill="transparent"/>`;
+    if (TREND_KINDS[kind]) {
+      const [cls, glyph] = TREND_KINDS[kind];
+      s += hit(esc(`${where}\n${glyph} ${label[kind]}`)) +
+        `<circle cx="${x}" cy="${rowY}" r="11" style="fill:var(--${cls}-soft);stroke:var(--${cls})" stroke-width="1.5"/>` +
+        `<text class="glyph" x="${x}" y="${rowY + 4.5}" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--${cls})">${glyph}</text></g>`;
+    } else if (!prev && !cur.ie) {
+      s += hit(esc(`${where}\n${t('trend_first')}`)) +
+        `<circle class="first-mark" cx="${x}" cy="${rowY}" r="5" fill="none" style="stroke:var(--muted)" stroke-width="1.5"/></g>`;
+    } else {
+      const why = cur.ie ? reasonName(cur.reason) : prev && prev.ie ? reasonName(prev.reason) : '';
+      s += hit(esc(`${where}\n◇ ${t('trans_none')}` + (why ? ': ' + why : ''))) +
+        `<rect class="nd-mark" x="${x - 6}" y="${rowY - 6}" width="12" height="12" rx="2" transform="rotate(45 ${x} ${rowY})" fill="url(#hatch)" style="stroke:var(--muted)" stroke-width="1"/></g>`;
+    }
+    const anchor = tickAnchor(i, n);
+    s += `<text class="tick-period" x="${x}" y="${H - 22}" text-anchor="${anchor}" font-size="11.5" style="fill:var(--ink-2)"><title>${esc(pt.period)}</title>${esc(periodTick(pt.period, i))}</text>`;
+    s += `<text class="tick-date" x="${x}" y="${H - 8}" text-anchor="${anchor}" font-size="10.5" style="fill:var(--muted)">${esc(fmtShort(pt.date))}</text>`;
+  });
+  return s + '</svg>';
 }
 
 // --- ревью по периодам ---
@@ -501,23 +542,37 @@ function copyText(text) {
     if (ok) resolve(); else reject(new Error('execCommand copy'));
   });
 }
-function reviewsCard(pts, selected, full) {
+// opts: title, hint — свои заголовок и подсказка (карточка группы); strict — выбранный период без
+// текста не подменяется последним (пустая вкладка). selected — номер точки или ALL. При двух и
+// больше текстах есть вкладка «все»: все тексты подряд с заголовком периода.
+function reviewsCard(pts, selected, full, opts) {
+  const o = opts || {};
   const card = el('section', 'card');
-  card.appendChild(head(t('reviews'), full ? t('reviews_hint') : t('reviews_hint_personal')));
+  card.appendChild(head(o.title || t('reviews'), o.hint || (full ? t('reviews_hint') : t('reviews_hint_personal'))));
   const list = pts.map((pt, i) => ({ pt, i })).filter(x => x.pt.review && (full || x.pt.review.sent_html));
   if (!list.length) { card.appendChild(el('div', 'empty', esc(t('no_reviews')))); return card; }
-  const active = list.find(x => x.i === S.review) || list.find(x => x.i === selected) || list[list.length - 1];
-  if (list.length > 1) {
+  const withAll = list.length > 1;
+  const want = S.review != null ? S.review : selected;
+  let active;
+  if (want === ALL) active = withAll ? ALL : list[0];
+  else active = list.find(x => x.i === want) || (o.strict && typeof want === 'number' ? null : list.find(x => x.i === selected) || list[list.length - 1]);
+  if (withAll) {
     const tabs = el('div', 'tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', t('reviews'));
+    const tab = (html, selectedTab, value) => {
+      const b = el('button', 'tab', html);
+      b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(selectedTab));
+      b.onclick = () => { S.review = value; render(); };
+      tabs.appendChild(b);
+    };
+    tab(esc(t('reviews_all')), active === ALL, ALL);
     list.forEach(x => {
       const draft = full && x.pt.review.status !== 'approved';
-      const b = el('button', 'tab', `${esc(x.pt.period)} <span class="d">${esc(fmtShort(x.pt.date))}</span>${draft ? ` <span class="draft-dot" aria-label="${esc(reviewStatusName('draft'))}">●</span>` : ''}`);
-      b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(x === active));
-      b.onclick = () => { S.review = x.i; render(); };
-      tabs.appendChild(b);
+      tab(`${esc(x.pt.period)} <span class="d">${esc(fmtShort(x.pt.date))}</span>${draft ? ` <span class="draft-dot" aria-label="${esc(reviewStatusName('draft'))}">●</span>` : ''}`, x === active, x.i);
     });
     card.appendChild(tabs);
   }
+  if (active === ALL) { list.forEach(x => card.appendChild(reviewAllBlock(x.pt, full))); return card; }
+  if (!active) { card.appendChild(el('div', 'empty', esc(t('sent_empty')))); return card; }
   const r = active.pt.review;
   const sent = el('div', 'md review-sent');
   if (r.sent_html) sent.innerHTML = r.sent_html;
@@ -563,33 +618,53 @@ function reviewsCard(pts, selected, full) {
   }
   return card;
 }
+// Один текст во вкладке «все»: заголовок «период · дата» (у ревьюера — пометка черновика) и
+// отправляемый блок; служебная шапка, досье и копирование — только во вкладке периода.
+function reviewAllBlock(pt, full) {
+  const box = el('article', 'review-all');
+  const draft = full && pt.review.status !== 'approved';
+  box.appendChild(el('h3', 'review-period', `${esc(pt.period)} <span class="d">${esc(fmtDate(pt.date))}</span>` +
+    (draft ? ` <span class="chip warn">${esc(reviewStatusName('draft'))}</span>` : '')));
+  const sent = el('div', 'md review-sent');
+  if (pt.review.sent_html) sent.innerHTML = pt.review.sent_html;
+  else sent.appendChild(el('div', 'empty', esc(t('sent_empty'))));
+  box.appendChild(sent);
+  return box;
+}
 
 // --- рекомендации ---
-function recsCard(recs, full) {
+// Чипы истории вердиктов «период значок вердикт», по порядку данных (от старого периода к
+// новому); пояснение — в тултипе: у ревьюера `note` как в трекере, у адресата `comment`
+// (очищен от путей машины при сборке). Пусто —
+// один чип «ещё не проверялась».
+function verdictChips(verdicts) {
+  if (!verdicts || !verdicts.length) return `<span class="chip neutral">${esc(t('rec_not_checked'))}</span>`;
+  return verdicts.map(v => {
+    const tipText = v.note != null ? v.note : v.comment;
+    const tipAttr = tipText ? ` tabindex="0" data-tip="${esc(tipText)}"` : '';
+    return `<span class="chip ${CHIP_CLASS[v.verdict] || 'neutral'}"${tipAttr}>${esc(v.period || '?')} ${CHIP_GLYPH[v.verdict] || '·'} ${esc(recVerdictName(v.verdict))}</span>`;
+  }).join('');
+}
+// hlPeriod — метка периода: рекомендации, выданные в нём, подсвечены (селектор карточки группы).
+function recsCard(recs, full, title, hlPeriod) {
   const card = el('section', 'card');
   const list = recs.filter(r => S.axis === 'all' || r.axis === S.axis);
   // Рекомендация неодобренного прогона адресату не ушла: в счётчик открытых не входит.
   const open = recs.filter(r => recStatus(r) === 'open' && !r.pending_approval).length;
-  card.appendChild(head(t('recs'), `${t('open_now')}: ${open}`));
+  card.appendChild(head(title || t('recs'), `${t('open_now')}: ${open}`));
   if (!list.length) { card.appendChild(el('div', 'empty', esc(t('no_recs')))); return card; }
   const grid = el('div', 'recs');
   list.forEach(r => {
     const st = recStatus(r);
-    const d = el('div', 'rec' + (S.axis === r.axis ? ' hl' : ''));
+    const given = hlPeriod != null && r.given_in === hlPeriod;
+    const d = el('div', 'rec' + (S.axis === r.axis || given ? ' hl' : ''));
     const idChip = (full && r.id ? `<span class="chip id">${esc(r.id)}</span>` : '')
       + (r.pending_approval ? `<span class="chip warn">${esc(t('rec_from_draft'))}</span>` : '');
-    const given = `${esc(t('rec_given'))} ${esc(r.given_in || '?')}` + (full && r.given_at ? ' · ' + esc(fmtDate(r.given_at)) : '');
-    d.appendChild(el('div', 'head', `${idChip}<span>${esc(axName(r.axis))}</span><span>· ${given}</span><span class="chip ${CHIP_CLASS[st] || 'neutral'} rec-status">${CHIP_GLYPH[st] || '·'} ${esc(recStatusName(st))}</span>`));
+    const givenText = `${esc(t('rec_given'))} ${esc(r.given_in || '?')}` + (full && r.given_at ? ' · ' + esc(fmtDate(r.given_at)) : '');
+    const mark = given ? `<span class="chip accent">${esc(t('rec_given_selected'))}</span>` : '';
+    d.appendChild(el('div', 'head', `${idChip}<span>${esc(axName(r.axis))}</span><span>· ${givenText}</span>${mark}<span class="chip ${CHIP_CLASS[st] || 'neutral'} rec-status">${CHIP_GLYPH[st] || '·'} ${esc(recStatusName(st))}</span>`));
     d.appendChild(el('div', 'text', esc(r.text)));
-    if (full && r.verdicts && r.verdicts.length) {
-      const hist = el('div', 'hist'); hist.appendChild(el('span', null, esc(t('verdict_history')) + ':'));
-      r.verdicts.forEach(v => {
-        const ch = el('span', 'chip ' + (CHIP_CLASS[v.verdict] || 'neutral'), `${esc(v.period || '?')} ${CHIP_GLYPH[v.verdict] || '·'} ${esc(recVerdictName(v.verdict))}`);
-        if (v.note) { ch.setAttribute('data-tip', v.note); ch.tabIndex = 0; }
-        hist.appendChild(ch);
-      });
-      d.appendChild(hist);
-    }
+    d.appendChild(el('div', 'hist', `<span>${esc(t('verdict_history'))}:</span>${verdictChips(r.verdicts)}`));
     grid.appendChild(d);
   });
   card.appendChild(grid);
@@ -677,11 +752,15 @@ function personTransitions(points) {
     return row;
   });
 }
+// Вид личного отчёта человека: `show_scores` из отчёта ревьюера (уже по приоритету флаг запуска >
+// карточка > конфиг), без него — из меты.
+function personScores(p) { return p.show_scores != null ? !!p.show_scores : !!META.show_scores; }
 // Как видит адресат: те же данные, что пишет личный отчёт (только одобренные прогоны и их
-// рекомендации, статус — по вердиктам одобренных прогонов, одобренный отправляемый блок,
-// баллы и уровень — только при show_scores, переходы — только при show_dynamics карточки).
+// рекомендации, статус и история — по вердиктам одобренных прогонов, одобренный отправляемый блок,
+// агенты и модели; вид scores — баллы и уровень без переходов, вид trend — переходы при
+// show_dynamics карточки, без баллов и уровня).
 function asPersonModel(p) {
-  const scores = !!META.show_scores;
+  const scores = personScores(p);
   const dynamics = p.show_dynamics !== false;
   const shown = p.points.filter(pt => pt.approved !== false);
   const trans = personTransitions(shown);
@@ -691,13 +770,17 @@ function asPersonModel(p) {
       const axes = {};
       DATA.axes.forEach(a => { const c = pt.axes[a] || { ie: true }; axes[a] = { ie: !!c.ie, reason: c.reason || null }; if (scores) axes[a].score = c.score; });
       const out = { period: pt.period, date: pt.date, sessions: pt.sessions, axes,
-        review: pt.review && pt.review.status === 'approved' && pt.review.sent_html ? { sent_html: pt.review.sent_html } : null };
-      if (dynamics) out.transitions = trans[i];
+        review: pt.review && pt.review.status === 'approved' && pt.review.sent_html ? { sent_html: pt.review.sent_html } : null,
+        agent_stack: (pt.agent_stack || []).slice() };
       if (scores) out.level = pt.level;
+      else if (dynamics) out.transitions = trans[i];
       return out;
     }),
-    recs: p.recs.filter(r => !r.pending_approval).map(r => ({ text: r.text, axis: r.axis, given_in: r.given_in,
-      status: recStatus({ verdicts: (r.verdicts || []).filter(v => v.approved !== false) }) })),
+    recs: p.recs.filter(r => !r.pending_approval).map(r => {
+      const approved = (r.verdicts || []).filter(v => v.approved !== false);
+      return { text: r.text, axis: r.axis, given_in: r.given_in, status: recStatus({ verdicts: approved }),
+        verdicts: approved.map(v => ({ period: v.period, verdict: v.verdict, comment: v.comment != null ? v.comment : (v.note || '') })) };
+    }),
   };
 }
 function backLink(frag) {
@@ -705,83 +788,121 @@ function backLink(frag) {
   back.querySelector('a').onclick = e => { e.preventDefault(); S.view = 'overview'; location.hash = 'overview'; render(); };
   frag.appendChild(back);
 }
+// Одна карточка человека на три вида; что в ней есть — флаги вида (данные уже отфильтрованы при
+// сборке, флаги лишь не рисуют пустое). svc — служебное ревьюера: код человека, отсеянные сессии,
+// главное по прогону, предупреждения, пояснения судьи под графиками, служебная шапка ревью, досье,
+// копирование, id рекомендаций, доказательства; scores — графики с баллами и уровень, иначе
+// переходы ↑ → ↓ ◇; mark — пометка ручной правки балла; stack — агенты и модели; sessions —
+// счётчик оценённых сессий; runs — выбор прогона; addressee — вид адресата (личный отчёт и
+// «Как видит адресат»: вступление, у ревьюера — кнопка назад).
+const REVIEWER_VIEW = { svc: true, scores: true, mark: true, stack: true, sessions: true, runs: true, addressee: false };
+const GROUP_VIEW = { svc: false, scores: true, mark: true, stack: false, sessions: false, runs: false, addressee: false };
+function addresseeView(scores) {
+  return { svc: false, scores: !!scores, mark: false, stack: true, sessions: true, runs: true, addressee: true };
+}
 function personView() {
   const frag = document.createDocumentFragment();
   const p = person();
   if (!PERSONAL) backLink(frag);
   if (!p) { frag.appendChild(el('div', 'empty', esc(t('nothing_found')))); return frag; }
-  if (PERSONAL) return personalView(p, frag);
-  if (REVIEWER && S.asPerson) return personalView(asPersonModel(p), frag);
-  const idx = runIndex(p); const run = p.points[idx] || null; const last = p.points[p.points.length - 1] || null;
+  if (PERSONAL) return personCard(p, addresseeView(META.show_scores), frag);
+  if (REVIEWER && S.asPerson) return personCard(asPersonModel(p), addresseeView(personScores(p)), frag);
+  return personCard(p, REVIEWER ? REVIEWER_VIEW : GROUP_VIEW, frag);
+}
+function switchView(asPerson) { S.asPerson = asPerson; S.run = -1; S.review = null; render(); }
+function personCard(pp, v, frag) {
+  const pts = pp.points;
+  const idx = runIndex(pp); const run = pts[idx] || null; const last = pts[pts.length - 1] || null;
 
   const card = el('section', 'card');
   const hd = el('div', 'person-head');
   const who = el('div', 'who');
-  who.appendChild(el('h1', null, esc(p.name) + (REVIEWER ? ` <span class="muted small">${esc(p.id)}</span>` : '')));
+  who.appendChild(el('h1', null, esc(pp.name) + (v.svc ? ` <span class="muted small">${esc(pp.id)}</span>` : '')));
   const facts = el('div', 'facts');
-  if (last && last.level) facts.appendChild(el('span', 'chip lvl', esc(t('level_last') + ': ' + lvlName(last.level)) + (last.gate ? ` · ${esc(t('gate'))}` : '')));
-  facts.appendChild(el('span', null, `${esc(t('tile_runs'))}: <b class="tnum">${p.points.length}</b>`));
-  if (REVIEWER) {
-    facts.appendChild(el('span', null, `${esc(t('sessions_assessed'))}: <b class="tnum">${sum(p.points, x => x.sessions)}</b>`));
-    const skipped = sum(p.points, x => x.sessions_skipped);
+  if (v.scores && last && last.level) facts.appendChild(el('span', 'chip lvl', esc(t('level_last') + ': ' + lvlName(last.level)) + (last.gate ? ` · ${esc(t('gate'))}` : '')));
+  facts.appendChild(el('span', null, `${esc(t('tile_runs'))}: <b class="tnum">${pts.length}</b>`));
+  if (v.sessions) facts.appendChild(el('span', null, `${esc(t('sessions_assessed'))}: <b class="tnum">${sum(pts, x => x.sessions)}</b>`));
+  if (v.svc) {
+    const skipped = sum(pts, x => x.sessions_skipped);
     if (skipped) {
       const sk = el('span', 'muted small', `${esc(t('sessions_skipped'))}: <span class="tnum">${skipped}</span>`);
       sk.setAttribute('data-tip', t('sessions_skipped_tip')); sk.tabIndex = 0; facts.appendChild(sk);
     }
   }
   who.appendChild(facts);
-  if (REVIEWER) { const st = stackChips(p.points); if (st) who.appendChild(st); }
+  if (v.stack) { const st = stackChips(pts); if (st) who.appendChild(st); }
+  if (GROUP && pp.details) who.appendChild(el('p', 'intro', esc(t('feedback_intro'))));
+  if (v.addressee) who.appendChild(el('p', 'intro', esc(t('personal_intro'))));
   hd.appendChild(who);
   const tb = el('div', 'toolbar');
-  if (REVIEWER && p.points.length > 1) {
-    tb.appendChild(field(t('run'), selectEl('run', [[-1, t('last_run')]].concat(p.points.map((x, i) => [i, x.period + ' · ' + fmtDate(x.date)])), S.run, v => { S.run = parseInt(v, 10); S.review = null; render(); })));
+  if (GROUP && pp.details && pp.details.periods.length > 1) {
+    const opts = [[ALL, t('all_periods')]].concat(pp.details.periods.map((x, i) => [i, x.period + ' · ' + fmtDate(x.date)]));
+    tb.appendChild(field(t('filter_period'), selectEl('gperiod', opts, S.gperiod, val => { S.gperiod = val === ALL ? ALL : parseInt(val, 10); S.review = null; render(); })));
+  }
+  if (v.runs && pts.length > 1) {
+    tb.appendChild(field(t('run'), selectEl('run', [[-1, t('last_run')]].concat(pts.map((x, i) => [i, x.period + ' · ' + fmtDate(x.date)])), S.run, val => { S.run = parseInt(val, 10); S.review = null; render(); })));
   }
   tb.appendChild(axisSelect());
-  if (REVIEWER) tb.appendChild(wrapBtn(button(t('as_person'), false, () => { S.asPerson = true; S.showScores = !!META.show_scores; render(); })));
+  if (REVIEWER) tb.appendChild(wrapBtn(v.svc ? button(t('as_person'), false, () => switchView(true)) : button(t('as_reviewer'), true, () => switchView(false))));
   hd.appendChild(tb);
   card.appendChild(hd);
-  if (REVIEWER && run && run.summary) card.appendChild(el('div', 'summary', `<b>${esc(t('summary'))} · ${esc(run.period)} · ${esc(fmtDate(run.date))}</b>${esc(run.summary)}`));
-  if (REVIEWER && run && run.warnings && run.warnings.length) {
+  if (v.svc && run && run.summary) card.appendChild(el('div', 'summary', `<b>${esc(t('summary'))} · ${esc(run.period)} · ${esc(fmtDate(run.date))}</b>${esc(run.summary)}`));
+  if (v.svc && run && run.warnings && run.warnings.length) {
     const w = el('div', 'chips run-warn'); w.appendChild(el('span', 'muted small', esc(t('run_warnings')) + ':'));
     run.warnings.forEach(x => w.appendChild(el('span', 'chip warn', esc(x))));
     card.appendChild(w);
   }
   frag.appendChild(card);
-  if (!p.points.length) { const c = el('section', 'card'); c.appendChild(el('div', 'empty', esc(t('no_points')))); frag.appendChild(c); return frag; }
-  frag.appendChild(chartsCard(p.points, REVIEWER ? idx : -1, REVIEWER));
-  if (GROUP) return frag;
-  frag.appendChild(reviewsCard(p.points, idx, true));
-  frag.appendChild(recsCard(p.recs, true));
-  if (run) frag.appendChild(evidenceCard(p, idx));
+  if (!pts.length) { const c = el('section', 'card'); c.appendChild(el('div', 'empty', esc(t('no_points')))); frag.appendChild(c); return frag; }
+  const selected = v.runs ? idx : -1;
+  if (v.scores) frag.appendChild(chartsCard(pts, selected, v.svc, v.mark));
+  else if (pts.some(x => x.transitions)) frag.appendChild(trendCard(pts, selected));
+  if (GROUP) { if (pp.details) groupDetails(pp.details, frag); return frag; }
+  frag.appendChild(reviewsCard(pts, idx, v.svc));
+  frag.appendChild(recsCard(pp.recs, v.svc));
+  if (v.svc && run) frag.appendChild(evidenceCard(pp, idx));
   return frag;
 }
-function personalView(pp, frag) {
-  const pts = pp.points; const last = pts[pts.length - 1] || null;
-  const scores = !!META.show_scores && S.showScores;
+
+// --- карточка человека в группе: что он получил (данные уже отфильтрованы при сборке) ---
+// Только одобренные тексты и рекомендации с историей вердиктов; баллов, досье, доказательств и
+// черновиков в details нет. Селектор периода выбирает вкладку и подсвечивает рекомендации периода.
+function groupDetails(d, frag) {
+  const sel = typeof S.gperiod === 'number' && d.periods[S.gperiod] ? S.gperiod : ALL;
+  frag.appendChild(reviewsCard(d.periods, sel, false, { title: t('feedback_periods'), hint: t('feedback_periods_hint'), strict: true }));
+  frag.appendChild(recsCard(d.recs, false, t('recs_outcome'), sel === ALL ? null : d.periods[sel].period));
+}
+
+// --- предложения к карточке (только ревьюер) ---
+// Pending-предложения правок карточки: поле, «сейчас → предлагается», основание, источник, прогон и
+// команды apply/reject текстом для копирования. Кнопок применения нет: карточка меняется только
+// командой. Нет pending — блока нет (null).
+function suggestionsCard(p) {
+  const list = (p && p.card_suggestions) || [];
+  if (!list.length) return null;
+  const fields = {
+    'profile.role': t('sugg_f_role'), 'profile.grade': t('sugg_f_grade'), 'profile.years': t('sugg_f_years'),
+    'profile.stack': t('sugg_f_stack'), 'profile.tools': t('sugg_f_tools'), 'profile.constraints': t('sugg_f_constraints'),
+    'feedback.skip_basics': t('sugg_f_skip_basics'), 'feedback.boundaries': t('sugg_f_boundaries'), 'feedback.avoid': t('sugg_f_avoid'),
+  };
+  const sources = { 'script:agent_stack': t('sugg_src_agent_stack'), 'script:stable_axis': t('sugg_src_stable_axis'), judge: t('sugg_src_judge') };
+  const show = v => (v == null || v === '' || (Array.isArray(v) && !v.length) ? '—' : Array.isArray(v) ? v.join(', ') : String(v));
+  const cmd = (verb, label, sid) => `<div><span class="muted small">${esc(label)}:</span> <code>sr.py people ${verb} ${esc(p.id)} ${esc(sid)}</code></div>`;
   const card = el('section', 'card');
-  const hd = el('div', 'person-head');
-  const who = el('div', 'who');
-  who.appendChild(el('h1', null, esc(pp.name)));
-  const facts = el('div', 'facts');
-  if (scores && last && last.level) facts.appendChild(el('span', 'chip lvl', esc(t('level_last') + ': ' + lvlName(last.level))));
-  facts.appendChild(el('span', null, `${esc(t('tile_runs'))}: <b class="tnum">${pts.length}</b>`));
-  facts.appendChild(el('span', null, `${esc(t('sessions_assessed'))}: <b class="tnum">${sum(pts, x => x.sessions)}</b>`));
-  who.appendChild(facts);
-  who.appendChild(el('p', 'intro', esc(t('personal_intro'))));
-  hd.appendChild(who);
-  const tb = el('div', 'toolbar');
-  tb.appendChild(axisSelect());
-  if (META.show_scores) tb.appendChild(wrapBtn(button(S.showScores ? t('hide_scores') : t('show_scores'), !S.showScores, () => { S.showScores = !S.showScores; render(); })));
-  if (REVIEWER) tb.appendChild(wrapBtn(button(t('as_reviewer'), true, () => { S.asPerson = false; render(); })));
-  hd.appendChild(tb);
-  card.appendChild(hd);
-  frag.appendChild(card);
-  if (!pts.length) { const c = el('section', 'card'); c.appendChild(el('div', 'empty', esc(t('no_points')))); frag.appendChild(c); return frag; }
-  if (scores) frag.appendChild(chartsCard(pts, -1, false));
-  if (pts.some(x => x.transitions)) frag.appendChild(transitionsCard(pts));
-  frag.appendChild(reviewsCard(pts, pts.length - 1, false));
-  frag.appendChild(recsCard(pp.recs, false));
-  return frag;
+  card.appendChild(head(t('sugg_title'), t('sugg_hint')));
+  const box = el('div', 'suggs');
+  list.forEach(s => {
+    const d = el('div', 'sugg');
+    d.appendChild(el('div', 'sugg-head', `<span class="chip id">${esc(s.id)}</span><b>${esc(fields[s.field] || s.field)}</b>`));
+    const proposed = (s.op === 'append' ? '+ ' : '') + show(s.proposed);
+    d.appendChild(el('div', 'sugg-change', `<span class="old">${esc(show(s.current))}</span><span class="arrow" aria-hidden="true">→</span><span class="new">${esc(proposed)}</span>`));
+    if (s.rationale) d.appendChild(el('div', 'sugg-why', `<span class="muted">${esc(t('sugg_reason'))}:</span> ${esc(s.rationale)}`));
+    d.appendChild(el('div', 'muted small', `${esc(t('sugg_source'))}: ${esc(sources[s.source] || s.source || '—')} · ${esc(t('sugg_run'))}: <span class="mono">${esc(s.run_id || '—')}</span>`));
+    d.appendChild(el('div', 'sugg-cmd', cmd('apply', t('sugg_apply'), s.id) + cmd('reject', t('sugg_reject'), s.id)));
+    box.appendChild(d);
+  });
+  card.appendChild(box);
+  return card;
 }
 
 // --- рендер ---
@@ -794,6 +915,8 @@ function render(keepFocus) {
   app.appendChild(topbar());
   const main = el('main');
   main.appendChild(S.view === 'person' ? personView() : overview());
+  // Предложения к карточке — в конце карточки человека у ревьюера (не в «как видит человек»).
+  if (REVIEWER && S.view === 'person' && !S.asPerson) { const sc = suggestionsCard(person()); if (sc) main.appendChild(sc); }
   app.appendChild(main);
   if (active) {
     const e = document.getElementById(active);
@@ -808,8 +931,9 @@ function route() {
   const h = location.hash.replace(/^#/, '');
   let id = null;
   if (h.indexOf('p-') === 0) { try { id = decodeURIComponent(h.slice(2)); } catch (e) { id = null; } }
-  if (id && DATA.people.some(p => p.id === id)) {
-    if (S.person !== id) { S.run = -1; S.review = null; S.asPerson = false; }
+  const known = id && DATA.people.some(p => p.id === id);
+  if (known) {
+    if (S.person !== id) { S.run = -1; S.review = null; S.gperiod = ALL; S.asPerson = false; }
     S.view = 'person'; S.person = id;
   } else S.view = 'overview';
 }

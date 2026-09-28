@@ -103,6 +103,13 @@
     "show_scores": {"type": "boolean"},
     "reviewer_gate": {"type": "boolean"},
     "template": {"type": "string", "minLength": 1},
-    "extensions": {"type": "object"}
+    "extensions": {"type": "object"},
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "group_details": {"type": "boolean"}
+      }
+    }
   }
 }

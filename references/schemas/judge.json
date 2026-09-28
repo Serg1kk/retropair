@@ -754,6 +754,73 @@
         "artifact": {
           "type": "null",
           "description": "Точка расширения под оценку артефакта. В этой версии всегда null: оценивается только процесс."
+        },
+        "card_suggestions": {
+          "type": "array",
+          "description": "Необязательно. Расхождения карточки (profile) с тем, что видно в логах: стек, инструменты, ограничения среды. Не попадает в feedback_parts и текст адресату, не влияет на баллы и уровень. append переносит поле в прогон трекера как есть; карточку правит только человек командой people apply.",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "value",
+              "reason",
+              "evidence"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "type": "string",
+                "description": "Ключ блока profile карточки.",
+                "enum": [
+                  "role",
+                  "grade",
+                  "years",
+                  "stack",
+                  "tools",
+                  "constraints"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Предлагаемое значение поля целиком (years — целое число строкой)."
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Одна строка: чем карточка расходится с логами."
+              },
+              "evidence": {
+                "type": "object",
+                "required": [
+                  "session_id",
+                  "turn_index",
+                  "quote"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "turn_index": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "quote": {
+                    "type": "string",
+                    "maxLength": 400,
+                    "description": "Дословно из хода человека или из команды или вывода инструмента, без пересказа."
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

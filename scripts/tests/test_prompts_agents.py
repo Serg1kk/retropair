@@ -23,7 +23,7 @@ TOOLS = {
 }
 BODY_VERSIONS = {
     "log-collector": "collector_version: v6",
-    "log-judge": "prompt_version: v15",
+    "log-judge": "prompt_version: v16",
     "feedback-critic": "critic_version: v1",
 }
 FILE_VERSIONS = {
@@ -300,6 +300,17 @@ class AgentsReal(unittest.TestCase):
         for group in (JUDGE_MUST_NAME, AXES, VERDICT_KEYS, SESSION_STATUSES):
             self.assertEqual(missing_fields(text, group), [])
         self.assertIn("REC-<person_id>-<NNN>", text)
+
+    def test_judge_card_suggestions_rule(self) -> None:
+        """Необязательное `card_suggestions`: только profile, дословная цитата, вне текста и оценки, ≤ 3."""
+        text = self.judge_body()
+        self.assertIn("`card_suggestions`", text)
+        rule = next(p for p in text.split("\n\n") if "`card_suggestions`" in p).lower()
+        for phrase in ("необязательное", "`profile`", "дословно", "`feedback_parts`", "текст адресату",
+                       "не влия", "не больше трёх", "расхождени", "поля `feedback` не предлагаются"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, rule)
+        self.assertIn('`"v16"`', text)
 
     def test_judge_drops_source_ids(self) -> None:
         text = self.judge_body()

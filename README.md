@@ -39,8 +39,16 @@ In Claude Code:
 - **Shows progress over time**, always against your own previous period. People are never compared with each other.
 - **Builds self-contained HTML reports**: for the reviewer, for the whole group and a personal file to send to a person; they open in any browser without a network.
 - **Adapts to the person and the project**: the person card changes the wording, not the score; the text template, the models and effort of the agents are yours to change.
+- **Suggests card updates** from approved runs: new tools from the logs, consistently strong axes for `skip_basics`, profile mismatches noticed by the judge; nothing changes until you run `people apply` ([details](docs/en/customize.md#the-card-is-updated-through-suggestions)).
 
 ## How it works
+
+<p align="center"><img src="docs/images/how-it-works.en.gif" alt="How sessionretro works: session logs pass the sanitizer and parallel collectors to the judge, the run tracker and the reports; the person card changes the wording, not the score; next steps are checked in the next period; the reviewer approves the text before it reaches the person" width="620"></p>
+
+The person card goes to the judge only: it changes the wording, not the score. The judge checks each period's next steps in the next period, and in team and course modes a text reaches the person only after the reviewer approves it.
+
+<details>
+<summary>Text version</summary>
 
 ```text
 session logs ─▶ sanitizer ─▶ collectors ─▶ judge ─▶ run tracker ─▶ HTML reports
@@ -48,7 +56,14 @@ session logs ─▶ sanitizer ─▶ collectors ─▶ judge ─▶ run tracker 
                               quotes,        under       levels,
                               no scores)     quotes,     next steps)
                                              text)
+                                             ▲
+person card: profile + feedback ─────────────┘  changes the wording, not the score
+
+next period: the judge checks each next step ─▶ followed · partly · not visible · not followed
+reviewer report ─▶ the reviewer approves (team, course) ─▶ personal report ─▶ the person
 ```
+
+</details>
 
 Scripts collect the logs and sanitize them. Collector agents read a period's sessions in batches in parallel and write down verbatim quotes, without scores; nothing is cut, a batch is a split, not a sample. One judge agent combines the facts, scores each axis only under a quote and writes the text for the person. Scripts check the result, record the run, compute the level by formula and render the text with a replaceable template. Details: [docs/en/how-it-works.md](docs/en/how-it-works.md).
 
@@ -56,7 +71,7 @@ Scripts collect the logs and sanitize them. Collector agents read a period's ses
 
 | Mode | Who reviews | People | Text to the person |
 |---|---|---|---|
-| `self` | you review yourself | one card, `me` | ready at once; scores hidden unless you turn on `show_scores` |
+| `self` | you review yourself | one card, `me` | ready at once |
 | `team` | a team lead or reviewer reviews the team | a card per person | goes out only after the reviewer approves it |
 | `course` | an instructor reviews a learning group | a card per participant | goes out only after the instructor approves it |
 
@@ -66,26 +81,26 @@ One codebase for all three; the mode is chosen in `setup` and can be changed lat
 
 Open Claude Code in your project and run `/sessionretro:setup`: up to 11 questions one at a time (mode, people, log sources, the SessionEnd hook, models and effort for the agents, scores, periods, text template, log retention, `.gitignore`), then a single `sr.py setup-apply` call applies the answers and `doctor` shows the result. For scripts and CI: `setup-apply --answers <file|->` with a JSON object.
 Project agents in `.claude/agents/sessionretro-*.md` are yours to edit and plugin updates leave them alone; proposals to the plugin authors are saved in `.sessionretro/improvements/` and leave your machine only when you file the issue yourself.
-Details: [docs/en/customize.md](docs/en/customize.md); in Russian: [docs/ru/setup.md](docs/ru/setup.md), [docs/ru/customize.md](docs/ru/customize.md), [docs/ru/feedback.md](docs/ru/feedback.md).
+Details: [docs/en/setup.md](docs/en/setup.md), [docs/en/customize.md](docs/en/customize.md), [docs/en/feedback.md](docs/en/feedback.md).
 
 ## Collecting session logs
 
 `/sessionretro:collect` (or `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect`) gathers Claude Code JSONL sessions, SpecStory exports, plain folders and, for team and course modes, git repositories into sanitized copies under `.sessionretro/logs/`, and keeps a session inventory with statuses in `.sessionretro/logs-index.json`.
 With the SessionEnd hook enabled (`hook.enabled`), collection runs in the background after every Claude Code session. Claude Code deletes its own session logs after `cleanupPeriodDays` (30 days by default); `setup` offers to raise it to 90, and collected copies stay in the workspace.
-Collection is not supported on Windows in 0.1. Details (in Russian): [docs/ru/collect.md](docs/ru/collect.md).
+Collection is not supported on Windows in 0.1. Details: [docs/en/collect.md](docs/en/collect.md).
 
 ## Running a review
 
 Ask Claude Code to "run the retro" or call the skill: `/sessionretro:review <person>` or `/sessionretro:review --all`; add `--no-ask` for unattended runs (`claude -p`) and `--approve <person>` to approve a draft. Collectors read the period's sessions in batches, the judge scores under quotes, scripts record the run and render the review to `.sessionretro/reviews/<person>/<run_id>.md`. In team and course modes the text stays a draft until the reviewer approves it.
-The assessment in plain words: [docs/en/how-it-works.md](docs/en/how-it-works.md). In Russian: walkthrough, arguments and exit codes in [docs/ru/review.md](docs/ru/review.md), the same overview in [docs/ru/how-it-works.md](docs/ru/how-it-works.md), the axes and levels in [docs/ru/axes.md](docs/ru/axes.md).
+Walkthrough, arguments and exit codes: [docs/en/review.md](docs/en/review.md); the assessment in plain words: [docs/en/how-it-works.md](docs/en/how-it-works.md); the axes and levels: [docs/en/axes.md](docs/en/axes.md).
 
 ## Reports
 
 `/sessionretro:report` (or `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report`) builds self-contained HTML files:
 
 - `reports/reviewer.html`: everything for the reviewer: drafts, dossiers, evidence, recommendations, a "how the recipient sees it" view;
-- `reports/group.html` (team and course modes): an overview to show the whole group: axes per person in alphabetical order, no texts, quotes or ranking;
-- `reports/personal/<id>.html`: the file you send to a person: their periods, changes per axis, recommendations and approved review texts only;
+- `reports/group.html` (team and course modes): one interface for the whole group: axes per person in alphabetical order, no ranking; click a person to open their card: axes over time, approved review texts by period (with an "all" tab) and recommendations with verdicts; `--no-details` or `"report": {"group_details": false}` leaves numbers only for showing the group;
+- `reports/personal/<id>.html`: the file you send to a person: their card as the reviewer sees it, minus the reviewer-only parts: axes over time with scores and level (or dynamics only ↑ → ↓ ◇: `--trend`, `show_scores: false`), agents and models, recommendations with verdicts by period and approved review texts only;
 - `~/.sessionretro/reports/index.html`: all your workspaces on one page.
 
 A personal file is not written if it mentions other people from the workspace. `--anon` builds a copy with codes and made-up names for demos. Details (in Russian): [docs/ru/reports.md](docs/ru/reports.md).
@@ -142,8 +157,9 @@ The workspace settings are in `.sessionretro/config.json`; `setup` writes them, 
 | `hook.enabled` | `true` | background collection at the end of every Claude Code session |
 | `models` | collector `sonnet`/`medium`, judge `opus`/`high`, critic `sonnet`/`medium` | model and effort of each agent |
 | `period.mode` | `run` | periods by run date (`run`) or by date windows (`dates`); `labels` is accepted, but in 0.1 `review` does not ask for a label and such runs stay unlabeled |
-| `show_scores` | `false` | show axis scores in personal reports (self mode) |
+| `show_scores` | `true` | the view of personal reports: `true` means axis scores and level, `false` means dynamics only ↑ → ↓ ◇; a person card can set its own with `feedback.show_scores`, a run with `report --scores`/`--trend` |
 | `reviewer_gate` | `true` | in team and course modes a text is a draft until approved; by hand only |
+| `report.group_details` | `true` (optional key) | the person card with approved texts and recommendations in `group.html`; `false` means numbers only |
 | `sanitize.names`, `sanitize.extra_patterns` | empty | your own words and patterns to remove from logs |
 | `batches.min_turns` | `4` | shorter sessions are marked "too short" and not assessed |
 | `template` | `default` | the text template; your own copy lives in `.sessionretro/templates/` |
@@ -160,8 +176,8 @@ How to write to each person: the card `.sessionretro/people/<id>.yaml` and the s
 
 ## Documentation
 
-- In English: [how the assessment works](docs/en/how-it-works.md), [privacy](docs/en/privacy.md), [customizing cards, templates and agents](docs/en/customize.md).
-- In Russian: all pages, from setup to reports and FAQ.
+- In English: every page from [setup](docs/en/setup.md) to the [FAQ](docs/en/faq.md), except reports.
+- In Russian: all pages, including [reports](docs/ru/reports.md).
 - The full index: [docs/README.md](docs/README.md).
 
 ## Roadmap

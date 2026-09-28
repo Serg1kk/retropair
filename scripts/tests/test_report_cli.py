@@ -170,6 +170,8 @@ class TargetsTest(_Base):
         self.assertIn('<html lang="ru"', text)
 
     def test_show_scores_flag(self):
+        # в конфиге фикстуры show_scores: false — без флага вид trend, баллов и уровня нет;
+        # --show-scores (совместимое имя --scores) — вид scores
         self.ok("--personal", "anna")
         plain = _data_without_i18n((self.reports / "personal" / "anna.html").read_text("utf-8"))
         self.assertNotIn('"score"', plain)
@@ -308,6 +310,34 @@ class GateTest(_Base):
         self.assertTrue(self.index.is_file())
         self.assertNotIn("anna.html", res.stdout)
 
+    def _plant_verdict_note(self, period: str, note: str) -> None:
+        """Пояснение вердикта по рекомендации Анны в прогоне `period`."""
+        path = ws_paths(self.ws)["runs"] / "process-reviews.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        run = [r for r in doc["runs"] if r["person_id"] == "anna"
+               and r["period"]["label"] == period and not r.get("retracted")][0]
+        self.assertTrue(run["prev_recommendations"])
+        run["prev_recommendations"][0]["note"] = note
+        path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+    def test_foreign_name_in_verdict_note_blocks_personal_file(self):
+        self.ok("--personal", "anna")
+        target = self.reports / "personal" / "anna.html"
+        self.assertTrue(target.is_file())
+        self._plant_verdict_note("P2", "Сделано вместе с Борисом, тесты его.")
+        res = self.sr("report", "--personal", "anna")
+        self.assertEqual(res.returncode, 1, res.stderr)
+        self.assertIn("чужие токены", res.stderr)
+        self.assertIn("boris", res.stderr)
+        self.assertFalse(target.exists(), "старый личный файл должен быть удалён")
+
+    def test_foreign_name_in_draft_verdict_note_does_not_reach_personal(self):
+        # вердикт P3 — черновой прогон: в личный файл не идёт, гейт молчит
+        self._plant_verdict_note("P3", "Сделано вместе с Борисом, тесты его.")
+        self.ok("--personal", "anna")
+        text = (self.reports / "personal" / "anna.html").read_text(encoding="utf-8")
+        self.assertNotIn("Борис", _data_without_i18n(text))
+
     def test_sanitize_names_are_gated(self):
         cfg_path = ws_paths(self.ws)["config"]
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -346,6 +376,29 @@ class AnonTest(_Base):
             for leak in ("@fake-handle", "github.com/fake", "/home/user"):
                 with self.subTest(file=path.name, leak=leak):
                     self.assertNotIn(leak, text)
+
+    def test_anon_personal_verdict_history_is_anonymized(self):
+        path = ws_paths(self.ws)["runs"] / "process-reviews.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        run = [r for r in doc["runs"] if r["person_id"] == "anna"
+               and r["period"]["label"] == "P2" and not r.get("retracted")][0]
+        run["prev_recommendations"][0]["note"] = (
+            "Анна Вершинина закрыла тестами сервис в /home/user/proj/app, пишите anna@example.com")
+        path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        res = self.ok("--anon", "--personal", "anna", "--json")
+        out = Path(json.loads(res.stdout)[0]["path"])
+        text = out.read_text(encoding="utf-8")
+        data = _data(text)
+        hist = {r["given_in"]: r["verdicts"] for r in data["people"][0]["recs"]}
+        self.assertEqual([(v["period"], v["verdict"]) for v in hist["P1"]], [("P2", "followed")])
+        comment = hist["P1"][0]["comment"]
+        self.assertTrue(comment)
+        self.assertIn("закрыла тестами", comment)
+        for label, pat in _leak_patterns(self.PEOPLE):
+            with self.subTest(token=label):
+                self.assertIsNone(pat.search(comment), comment)
+        for leak in ("/home/user", "anna@example.com"):
+            self.assertNotIn(leak, text)
 
     def test_anon_personal_by_real_id(self):
         res = self.ok("--anon", "--personal", "boris", "--json")
@@ -617,6 +670,46 @@ class DoctorTest(_Base):
     def test_doctor_lines_none_root(self):
         from lib import cmd_report
         self.assertEqual(cmd_report.doctor_lines(None), [])
+
+
+class CardSuggestionsFilesTest(_util.TempHome, unittest.TestCase):
+    """Предложения к карточке в собранных файлах: только reviewer.html."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory(prefix="sr-report-sugg-")
+        self.ws = report_fixture.make_workspace(Path(self._tmp.name) / "ws", suggestions=True)
+        self.reports = ws_paths(self.ws)["reports"]
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+        super().tearDown()
+
+    def test_only_reviewer_file_carries_suggestions(self):
+        res = run_sr("report", home=self.home, cwd=self.ws)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        reviewer = (self.reports / "reviewer.html").read_text(encoding="utf-8")
+        people = {p["id"]: p for p in _data(reviewer)["people"]}
+        self.assertEqual([i["id"] for i in people["anna"]["card_suggestions"]],
+                         ["S-anna-001", "S-anna-002"])
+        self.assertIn("Новые агенты в прогоне: SuggestTool", reviewer)
+        self.assertNotIn(report_fixture.XSS_QUOTE, reviewer)
+        others = [self.reports / "group.html", *sorted((self.reports / "personal").glob("*.html"))]
+        self.assertEqual(len(others), 4)
+        for path in others:
+            with self.subTest(file=path.name):
+                text = path.read_text(encoding="utf-8")
+                # имя ключа есть в коде страницы (report.js общий), в данных его быть не должно
+                self.assertNotIn("card_suggestions", _data_without_i18n(text))
+                for mark in ("SuggestTool", report_fixture.SUGGEST_APPEND, "S-anna-00"):
+                    self.assertNotIn(mark, text)
+
+    def test_anon_reviewer_passes_roster_gate(self):
+        res = run_sr("report", "--reviewer", "--anon", home=self.home, cwd=self.ws)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        text = _data_without_i18n((self.reports / "reviewer.html").read_text(encoding="utf-8"))
+        self.assertIn("SuggestTool", text)
+        self.assertNotIn("anna", text.casefold())
 
 
 class RealisticSizeTest(_util.TempHome, unittest.TestCase):

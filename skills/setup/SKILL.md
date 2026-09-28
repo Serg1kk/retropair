@@ -102,7 +102,8 @@ self / team / course (учебная группа, преподаватель). 
 
 ### Вопрос 7. Баллы → `show_scores`
 
-Рекомендуемое — `false`: человек видит текст, а не баллы.
+Рекомендуемое — `true`: личный отчёт с баллами и уровнем, как карточка ревьюера; `false` —
+только динамика ↑ → ↓ ◇.
 
 ### Вопрос 8. Периоды → `period`
 
@@ -162,7 +163,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
   "models": {"collector": {"model": "sonnet", "effort": "medium"},
              "judge": {"model": "opus", "effort": "high"},
              "critic": {"model": "sonnet", "effort": "medium"}},
-  "show_scores": false,
+  "show_scores": true,
   "period": {"mode": "run"},
   "template": "default",
   "cleanup_period_days": {"value": 90, "write": false},

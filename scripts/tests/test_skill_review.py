@@ -321,6 +321,19 @@ class SkillTest(unittest.TestCase):
     def test_other_period_left_open(self) -> None:
         self.assertIn("не закрываются", phases(self.body)[6])
 
+    def test_card_suggestions_shown_never_applied(self) -> None:
+        """После сводки и после `--approve` — `people suggestions <person> --refresh`, в сводке число
+        и строки с командами apply/reject; скилл сам ничего не применяет, в `--no-ask` только показ."""
+        call = LITERAL + " people suggestions <person> --refresh"
+        final = phases(self.body)[12]
+        approve = self.body.split("**Одобрение.**", 1)[1].split("\n## ", 1)[0]
+        for part in (final, approve):
+            self.assertIn(call, command_lines(part))
+        for phrase in ("предложения к карточке: N", "people apply", "people reject", "сам не применяет",
+                       "--no-ask"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, final)
+
     def test_clean(self) -> None:
         for lineno, line in enumerate(self.text.splitlines(), start=1):
             with self.subTest(line=lineno):
@@ -469,6 +482,11 @@ class OrchestrationTest(unittest.TestCase):
         self.assertIn("Записанный выход судьи", section)
         self.assertIn('sr.py" verify', section)
 
+    def test_summary_names_card_suggestions(self) -> None:
+        summary = self.text.split("## Сводка", 1)[1]
+        self.assertIn("предложения к карточке: N", summary)
+        self.assertIn("people suggestions <person> --refresh", summary)
+
     def test_restart_and_summary(self) -> None:
         for phrase in ("## Перезапуск", "## Сводка"):
             with self.subTest(phrase=phrase):
@@ -553,11 +571,11 @@ class SharedDocsTest(unittest.TestCase):
         return "\n".join(lines[i:end]) + "\n"
 
     def test_readmes_link_pages(self) -> None:
-        for name in ("README.md", "README.ru.md"):
+        for name, lang in (("README.md", "en"), ("README.ru.md", "ru")):
             with self.subTest(readme=name):
                 sec = self.section(name)
-                self.assertIn("docs/ru/review.md", sec)
-                self.assertIn("docs/ru/how-it-works.md", sec)
+                self.assertIn(f"docs/{lang}/review.md", sec)
+                self.assertIn(f"docs/{lang}/how-it-works.md", sec)
 
     def test_changelog_bullet(self) -> None:
         self.assertRegex(self.section("CHANGELOG.md"), r"(?m)^- .+")

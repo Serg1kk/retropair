@@ -34,9 +34,11 @@ RUN_KEYS = [
     "gating_evidence", "task_solved", "summary", "recommendations", "prev_recommendations",
     "feedback_draft", "feedback_parts", "revision", "operator_override", "logs_index_marks",
     "retracted", "level_judge", "level_computed", "review_status", "approved_at", "artifact", "source",
+    "card_suggestions",
 ]
-# необязательные поля прогона: отзыв и время approve (A16: момент выдачи рекомендаций при гейте)
-OPTIONAL_RUN_KEYS = {"retracted", "approved_at"}
+# необязательные поля прогона: отзыв, время approve (A16: момент выдачи рекомендаций при гейте)
+# и предложения правок карточки от судьи (есть, только если судья их дал)
+OPTIONAL_RUN_KEYS = {"retracted", "approved_at", "card_suggestions"}
 AXIS_FIELDS = {"id", "score", "insufficient_evidence", "insufficient_evidence_reason", "evidence",
                "subcriteria", "note"}
 

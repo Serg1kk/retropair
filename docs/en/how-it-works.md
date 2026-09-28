@@ -3,8 +3,15 @@
 sessionretro reads the logs of your sessions with a coding agent for a period and answers one
 question: **how you lead the agent** — how you frame the task, verify the result and keep the
 decisions in your hands. Code quality, architecture and speed are not assessed. This page explains
-how a text comes out of the logs; the eight axes in detail are described in Russian in
-[axes.md](../ru/axes.md).
+how a text comes out of the logs; the eight axes in detail are described in
+[axes.md](axes.md).
+
+![How sessionretro works: session logs pass the sanitizer and parallel collectors to the judge, the run tracker and the reports; the person card changes the wording, not the score; next steps are checked in the next period; the reviewer approves the text before it reaches the person](../images/how-it-works.en.gif)
+
+The whole path on one picture: the person card goes to the judge only and changes the wording,
+not the score; the next steps of a period come back to the judge in the next period; in team and
+course modes the reviewer approves the text before it reaches the person. Each step is explained
+below.
 
 ## The eight axes
 
@@ -100,8 +107,10 @@ the only verdict is "too early to judge": the recommendation stays open for the 
 ## What the person sees
 
 The text: an opening, the "try differently" items and a walk through all eight axes by their
-human names. There are no scores or level in the text; in self mode you can turn them on for
-yourself with `show_scores` in `config.json`. There are never comparisons with other people, in
+human names. There are no scores or level in the text. In the personal HTML report axis scores
+and the level are shown on the charts by default; the "dynamics only" view (`show_scores: false`
+in `config.json` or in the person card, `report --trend`) keeps only the direction of change.
+There are never comparisons with other people, in
 any mode. In team and course modes a reviewer reads the text first. Logs are voluntary: no logs,
 no text and no conclusions about the person.
 
@@ -119,4 +128,5 @@ the golden set yet.
 
 - [Privacy: what stays with you and where things go](privacy.md)
 - [Customizing: person cards, the text template and project agents](customize.md)
-- Running a review, arguments and exit codes (in Russian): [review.md](../ru/review.md)
+- [Reviewing a period: how to run it, arguments and exit codes](review.md)
+- [The eight axes: what counts, the gate, levels, anti-patterns](axes.md)

@@ -688,7 +688,7 @@ def _build_run(obj: dict, *, run_id: str, ws_id: str, person_id: str, label: str
         }
         for a in data.get("axes") or []
     ]
-    return {
+    run = {
         "run_id": run_id,
         "workspace": ws_id,
         "period": {"label": label, "from": None, "to": None, "anchor": None},
@@ -727,6 +727,10 @@ def _build_run(obj: dict, *, run_id: str, ws_id: str, person_id: str, label: str
         "artifact": None,
         "source": None,
     }
+    # предложения правок карточки: как есть и только если судья их дал (нет → ключа нет)
+    if "card_suggestions" in data:
+        run["card_suggestions"] = data["card_suggestions"]
+    return run
 
 
 def _renumber_recs(run: dict, runs: list) -> list[str]:

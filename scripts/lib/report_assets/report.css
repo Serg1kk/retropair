@@ -111,6 +111,7 @@ button { cursor: pointer; }
 .chip.bad { background: var(--bad-soft); color: var(--bad); }
 .chip.neutral { background: var(--neutral-soft); color: var(--neutral); }
 .chip.open { background: transparent; border: 1px solid var(--accent); color: var(--accent-ink); }
+.chip.accent { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 .chip.id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; background: var(--surface-2); color: var(--ink-2); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -167,6 +168,7 @@ table.hm td.none { color: var(--muted); font-style: italic; text-align: left; fo
 .chart.dim { opacity: .6; }
 .chart h4 { font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
 .chart .plot { width: 100%; min-height: 150px; }
+.chart .plot.trend { min-height: 88px; }
 .chart svg { display: block; width: 100%; height: auto; overflow: hidden; }
 .chart .note { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .chart .note.open { display: block; }
@@ -224,8 +226,13 @@ details .body { padding: 4px 14px 14px; }
 .md blockquote { margin: 0 0 10px; padding: 6px 12px; border-left: 3px solid var(--hairline); color: var(--ink-2); }
 .md blockquote p:last-child { margin: 0; }
 .md hr { border: 0; border-top: 1px solid var(--hairline); margin: 12px 0; }
-.md .tbl { overflow-x: auto; margin: 0 0 10px; -webkit-overflow-scrolling: touch; }
+.md { min-width: 0; }
+.md .tbl { overflow-x: auto; max-width: 100%; margin: 0 0 10px; -webkit-overflow-scrolling: touch; }
 .md table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+/* Таблица текста ревью без обёртки .tbl (в списке, цитате, готовом HTML) скроллится сама:
+   на узком экране прокручивается таблица, а не страница. */
+.md table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.md .tbl table { display: table; max-width: none; overflow: visible; }
 .md th, .md td { text-align: left; vertical-align: top; padding: 5px 8px; border-bottom: 1px solid var(--hairline); }
 .md th { color: var(--muted); font-weight: 500; font-size: 12.5px; white-space: nowrap; }
 .md td code { white-space: nowrap; }
@@ -242,17 +249,15 @@ details .body { padding: 4px 14px 14px; }
 .review-sent { padding: 4px 0 6px; max-width: 80ch; font-size: 15px; line-height: 1.6; }
 .review-sent > h4:first-child { margin-top: 0; font-size: 17px; margin-bottom: 10px; }
 .review-sent p { margin-bottom: 12px; }
+.review-all + .review-all { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.review-period { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.review-period .d { color: var(--muted); font-weight: 400; font-size: 12.5px; }
 .review-private { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .review-private .tag { display: inline-block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--warn); margin-bottom: 8px; }
 .review-private .ctx { font-size: 13.5px; color: var(--ink-2); padding: 8px 12px; background: var(--surface-2); border-radius: 8px; margin-top: 10px; white-space: pre-line; }
 .review-private .ctx b { display: block; font-weight: 500; color: var(--muted); font-size: 12.5px; margin-bottom: 2px; }
 
-/* --- тренд (персональный режим без баллов) --- */
-table.trend { border-collapse: collapse; width: 100%; font-size: 14px; }
-table.trend th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12.5px; padding: 6px 8px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
-table.trend td { padding: 7px 8px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
-table.trend td.ax { font-weight: 600; }
-table.trend .chip.nd { background: repeating-linear-gradient(45deg, transparent 0 3px, var(--hatch) 3px 4px); color: var(--muted); border: 1px solid var(--hairline); }
+/* --- вступление карточки (личный отчёт, карточка группы) --- */
 .intro { color: var(--ink-2); font-size: 14px; max-width: 72ch; }
 
 /* --- мелочи интерфейса отчёта --- */
@@ -269,8 +274,6 @@ details.service { margin-bottom: 12px; }
 .run-warn { margin-top: 8px; }
 .run-warn .chip { white-space: normal; }
 pre.draft { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-table.trend th.ax { font-weight: 600; color: var(--ink); font-size: 14px; white-space: normal; }
-table.trend tr.hl th, table.trend tr.hl td { background: var(--accent-soft); }
 .quote .q, .ap .n, .rec .text, .summary { overflow-wrap: anywhere; }
 .trimmed-note { margin: 0 0 12px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
 .seg .ico, .filters-toggle { display: none; }
@@ -355,3 +358,17 @@ table.trend tr.hl th, table.trend tr.hl td { background: var(--accent-soft); }
   a { text-decoration: none; color: inherit; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* --- предложения к карточке (только ревьюер) --- */
+.suggs { display: flex; flex-direction: column; gap: 10px; }
+.sugg { border: 1px solid var(--hairline); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sugg-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; }
+.sugg-change { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-size: 14px; overflow-wrap: anywhere; min-width: 0; }
+.sugg-change .old { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--hatch); }
+.sugg-change .arrow { color: var(--muted); }
+.sugg-change .new { font-weight: 600; }
+.sugg-why { font-size: 13.5px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
+.sugg .small { overflow-wrap: anywhere; }
+.sugg-cmd { display: flex; flex-direction: column; gap: 4px; }
+.sugg-cmd code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+@media print { .sugg { break-inside: avoid; } }

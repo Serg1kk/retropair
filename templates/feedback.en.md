@@ -20,8 +20,8 @@ Placeholders:
 
 The block heading with the period (period.label) is not part of the template: the renderer
 puts it as a line above the block. The template holds no scores, levels or axis codes;
-showing scores in self mode under the show_scores flag is up to the renderer, not the
-template.
+scores and the level are shown by the personal HTML report under the show_scores setting,
+not by the template.
 
 Action item (one paragraph, one line without line breaks):
 **<n>.** <date>, <place>: "<quote>"; <cost>. Worth trying: <try>. A related lever: <lever>.
