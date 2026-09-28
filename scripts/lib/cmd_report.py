@@ -6,9 +6,12 @@ team/course — ещё и group. Личный файл проходит гейт
 файлы собираются. `--anon` обезличивает все файлы (коды `p01…`, вымышленные имена, без
 контактов и домашних путей), личные файлы тогда называются по коду; перед записью каждый
 обезличенный файл проверяется на настоящие токены ростера (в личном — и адресата).
+Личный файл строится только из одобренных прогонов (при гейте ревьюера); у кого их нет,
+тому личный файл не собирается — предупреждение, а для `--personal` код 1.
 
 Коды: 0 — всё собрано; 1 — гейт, нет или битый трекер, нет данных, у человека нет
-прогонов, групповой отчёт в self как единственная цель; 2 — ошибка вызова.
+прогонов или одобренных прогонов, групповой отчёт в self как единственная цель;
+2 — ошибка вызова.
 """
 
 from __future__ import annotations
@@ -149,6 +152,12 @@ def handle(args) -> int:
         if args.personal is not None and args.personal not in with_runs:
             raise SrError(f"report --personal: у человека {args.personal!r} нет живых прогонов "
                           f"в трекере ({ws_paths(root)['runs'] / 'process-reviews.json'})", 1)
+        by_id = {p["id"]: p for p in model["people"]}
+        if (args.personal is not None and "personal" in data_targets
+                and not rd.approved_points(by_id[args.personal])):
+            raise SrError(f"report --personal: у человека {args.personal!r} нет одобренных "
+                          f"прогонов — личный отчёт показывает только одобренные; сначала "
+                          f"approve", 1)
         extra_names = list(cfg["sanitize"]["names"])
         anonymizer = (anon.Anonymizer(list(cards.values()), extra_names, lang)
                       if args.anon else None)
@@ -174,6 +183,11 @@ def handle(args) -> int:
 
         if "personal" in data_targets:
             ids = [args.personal] if args.personal else [p["id"] for p in model["people"]]
+            waiting = [pid for pid in ids if not rd.approved_points(by_id[pid])]
+            if waiting:
+                _warn(f"нет одобренных прогонов, личный отчёт не собирается: "
+                      f"{', '.join(waiting)} (ждут approve ревьюера)")
+                ids = [pid for pid in ids if pid not in waiting]
             if anonymizer is None:
                 _warn_title_names(ws_title, cards, ids)
             for pid in ids:

@@ -219,6 +219,17 @@ plugin_version: 0.1.0
 Реестр нужен, чтобы видеть все проекты с одной страницы. Его ведут команды плагина
 (`init` добавляет запись), править файл руками не нужно.
 
+Посмотреть реестр и убрать лишнее (например, удалённую песочницу) — команда `workspaces`.
+`list` показывает id, путь, заголовок и режим и помечает «папки нет», если у записи пропал
+`.sessionretro/config.json`; `remove <id>` убирает одну запись, `remove --missing` — все
+помеченные. Файлы проектов не трогаются, страница workspaces обновится при следующем
+`report --index`:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" workspaces list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" workspaces remove --missing
+```
+
 ## Карточка человека
 
 ```yaml

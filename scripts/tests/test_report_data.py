@@ -208,14 +208,24 @@ class TestPayload(_Base):
         pts = self.personal()["people"][0]["points"]
         self.assertEqual(set(pts[0]["review"]), {"sent_md"})
         self.assertEqual(pts[0]["review"]["sent_md"], self.person["anna"]["points"][0]["review"]["sent_md"])
+        # прогон одобрен в трекере, а файл ревью ещё черновик: отправляемого блока нет
+        root = self.fresh()
+        doc = _tracker(root)
+        _run_of(doc, "anna", "P3")["review_status"] = "approved"
+        _write_tracker(root, doc)
+        model, _warnings = _collect(root)
+        pts = rd.build_payload(model, mode="personal", person="anna")["people"][0]["points"]
+        self.assertEqual(pts[-1]["period"], "P3")
         self.assertIsNone(pts[-1]["review"])
 
     def test_personal_recs_with_status(self) -> None:
         recs = {r["given_in"]: r for r in self.personal()["people"][0]["recs"]}
         self.assertEqual(set(recs["P1"]), {"text", "axis", "given_in", "status"})
         self.assertEqual(recs["P1"]["status"], "followed")
+        # у vera вердикт `ignored` вынесен в черновике P3: адресату статус не меняется
         vera = {r["given_in"]: r for r in self.personal("vera")["people"][0]["recs"]}
-        self.assertEqual(vera["P1"]["status"], "ignored")
+        self.assertEqual(vera["P1"]["status"], "open")
+        self.assertNotIn("P3", vera)
         boris = {r["given_in"]: r for r in self.personal("boris")["people"][0]["recs"]}
         self.assertEqual(boris["P1"]["status"], "open")
 
@@ -414,6 +424,7 @@ class TestFreeTextEnums(_Base):
         root = self.fresh()
         doc = _tracker(root)
         run = _run_of(doc, "anna", "P3")
+        run["review_status"] = "approved"  # в личный отчёт идут только одобренные прогоны
         for axis in run["axes"]:
             if axis["id"] == "reversibility":
                 axis["insufficient_evidence_reason"] = "работа шла у Бориса в IDE"
@@ -574,6 +585,97 @@ class TestReviewerTrim(_Base):
             self.assertTrue(pt["feedback_draft"])
             self.assertTrue(all(ap["quote"] for ap in pt["antipatterns"]))
             self.assertTrue(all(g["quote"] for g in pt["gating_evidence"]))
+
+
+DRAFT_REC_TEXT = "Текст рекомендации из неодобренного прогона, адресат его не получал."
+
+
+class TestUnapprovedRuns(_Base):
+    """При гейте ревьюера адресат видит только одобренные прогоны.
+
+    Фикстура team (`reviewer_gate: true`): у каждого человека последний период — черновик.
+    У anna P1 и P2 одобрены, P3 — живой черновик с новой рекомендацией и вердиктом
+    `followed` по рекомендации P2.
+    """
+
+    def gated_model(self, mode: str = "team") -> tuple[dict, dict]:
+        root = self.fresh(mode=mode) if mode == "self" else self.fresh()
+        doc = _tracker(root)
+        pid = "me" if mode == "self" else "anna"
+        draft = _run_of(doc, pid, "P3")
+        self.assertEqual(draft["review_status"], "draft")
+        draft["recommendations"][0]["text"] = DRAFT_REC_TEXT
+        draft["prev_recommendations"] = [{"id": f"REC-{pid}-002", "verdict": "followed",
+                                          "evidence": None, "note": ""}]
+        _write_tracker(root, doc)
+        model, _warnings = _collect(root)
+        return model, draft
+
+    def test_model_marks_unapproved_points_and_recs(self) -> None:
+        model, draft = self.gated_model()
+        anna = [p for p in model["people"] if p["id"] == "anna"][0]
+        self.assertEqual([pt["approved"] for pt in anna["points"]], [True, True, False])
+        recs = {r["id"]: r for r in anna["recs"]}
+        self.assertEqual({rid: r["pending_approval"] for rid, r in recs.items()},
+                         {"REC-anna-001": False, "REC-anna-002": False, "REC-anna-003": True})
+        verdict = recs["REC-anna-002"]["verdicts"][-1]
+        self.assertEqual((verdict["verdict"], verdict["approved"]), ("followed", False))
+
+    def test_personal_has_no_draft_recommendation_and_keeps_status(self) -> None:
+        model, _draft = self.gated_model()
+        payload = rd.build_payload(model, mode="personal", person="anna")
+        self.assertNotIn(DRAFT_REC_TEXT, json.dumps(payload, ensure_ascii=False))
+        recs = {r["given_in"]: r["status"] for r in payload["people"][0]["recs"]}
+        self.assertEqual(recs, {"P1": "followed", "P2": "open"})
+
+    def test_personal_points_counters_and_transitions_without_draft(self) -> None:
+        model, _draft = self.gated_model()
+        anna = [p for p in model["people"] if p["id"] == "anna"][0]
+        approved = anna["points"][:2]
+        payload = rd.build_payload(model, mode="personal", person="anna", show_scores=True)
+        pts = payload["people"][0]["points"]
+        self.assertEqual([pt["period"] for pt in pts], ["P1", "P2"])
+        self.assertEqual(sum(pt["sessions"] for pt in pts), sum(pt["sessions"] for pt in approved))
+        self.assertEqual(pts[-1]["transitions"], rd.transitions(approved, model["axes"])[-1])
+        self.assertEqual(payload["meta"]["date_to"], approved[-1]["date"])
+        self.assertEqual(payload["meta"]["date_from"], approved[0]["date"])
+
+    def test_personal_without_approved_runs_refused(self) -> None:
+        model, _draft = self.gated_model()
+        anna = [p for p in model["people"] if p["id"] == "anna"][0]
+        for pt in anna["points"]:
+            pt["approved"] = False
+        with self.assertRaises(SrError) as ctx:
+            rd.build_payload(model, mode="personal", person="anna")
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("anna", ctx.exception.message)
+
+    def test_reviewer_keeps_draft_recommendation_with_flag(self) -> None:
+        model, _draft = self.gated_model()
+        payload = rd.build_payload(model, mode="reviewer")
+        anna = [p for p in payload["people"] if p["id"] == "anna"][0]
+        recs = {r["id"]: r for r in anna["recs"]}
+        self.assertEqual(recs["REC-anna-003"]["text"], DRAFT_REC_TEXT)
+        self.assertTrue(recs["REC-anna-003"]["pending_approval"])
+        self.assertFalse(recs["REC-anna-002"]["pending_approval"])
+        self.assertEqual([pt["approved"] for pt in anna["points"]], [True, True, False])
+
+    def test_group_has_no_recommendations(self) -> None:
+        model, _draft = self.gated_model()
+        payload = rd.build_payload(model, mode="group")
+        self.assertNotIn(DRAFT_REC_TEXT, json.dumps(payload, ensure_ascii=False))
+        self.assertTrue(all(p["recs"] == [] for p in payload["people"]))
+
+    def test_self_mode_all_runs_approved(self) -> None:
+        model, _draft = self.gated_model(mode="self")
+        me = model["people"][0]
+        self.assertTrue(all(pt["approved"] for pt in me["points"]))
+        self.assertFalse(any(r["pending_approval"] for r in me["recs"]))
+        payload = rd.build_payload(model, mode="personal", person="me")
+        self.assertEqual([pt["period"] for pt in payload["people"][0]["points"]], ["P1", "P2", "P3"])
+        recs = {r["given_in"]: r["status"] for r in payload["people"][0]["recs"]}
+        self.assertEqual(recs["P2"], "followed")
+        self.assertIn(DRAFT_REC_TEXT, json.dumps(payload, ensure_ascii=False))
 
 
 SAMPLE = FIXTURES / "process-reviews.sample.json"

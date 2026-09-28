@@ -6,6 +6,11 @@
     model = {workspace:{id,title,mode,lang,show_scores}, axes:[id], unbound_reviews:[run_id],
              warnings:[str], people:[{id, name, group, show_dynamics, points:[P], recs:[R]}]}
 
+У точки `approved`, у рекомендации `pending_approval`, у вердикта `approved`: при гейте
+ревьюера (`tracker.reviewer_gated`) прогон без `review_status: approved` человек не получал.
+Личный payload строится только из одобренных прогонов: точки, переходы, даты, рекомендации
+и их статусы; ревьюер видит всё с этими пометками.
+
 Поля, которые показываются как коды (`reason`, `axis` рекомендации), сверяются со словарём:
 неизвестная причина → `other`, рекомендация с чужой осью пропускается — свободный текст
 оценщика в эти поля адресату не попадает. Ревью привязывается к прогону, только если лежит
@@ -27,6 +32,7 @@ from typing import Callable
 from lib import md
 from lib.config import load_config
 from lib.people import list_people
+from lib.tracker import APPROVED_STATUS, reviewer_gated
 from lib.workspace import SrError, ws_paths
 
 TRACKER_VERSION = 2
@@ -209,16 +215,26 @@ def _axes(run: dict, axes: list[str], warn: Callable[[str], None],
     return out
 
 
+def run_approved(run: dict, gated: bool) -> bool:
+    """Прогон одобрен: гейта ревьюера нет или `review_status` прогона — approved.
+
+    То же условие, что у трекера при раскладке рекомендаций в `open` / `pending_approval`
+    (`tracker.open_recs`, `tracker._awaits_approval`): неодобренный прогон человек не получал.
+    """
+    return not gated or run.get("review_status") == APPROVED_STATUS
+
+
 def _review_view(review: dict) -> dict:
     return {key: review.get(key) for key in
             ("status", "service_md", "sent_md", "dossier_md", "path", "recognized", "warning")}
 
 
 def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str], None],
-           reasons: frozenset[str]) -> dict:
+           reasons: frozenset[str], gated: bool) -> dict:
     reviewed = run.get("reviewed_at") or ""
     return {
         "run_id": run["run_id"],
+        "approved": run_approved(run, gated),
         "period_key": _period_key(run),
         "period": _period_label(run),
         "date": reviewed[:10],
@@ -239,16 +255,20 @@ def _point(run: dict, axes: list[str], review: dict | None, warn: Callable[[str]
     }
 
 
-def _recs(runs: list[dict], axes: list[str], warn: Callable[[str], None]) -> list[dict]:
+def _recs(runs: list[dict], axes: list[str], warn: Callable[[str], None],
+          gated: bool) -> list[dict]:
     """Рекомендации человека по его прогонам (в порядке точек) с поздними вердиктами.
 
     Рекомендация с осью не из `axes` пропускается с предупреждением (ось — код, свободный
     текст в этом поле адресату не показывается); вердикты по ней тоже пропускаются.
+    `pending_approval` у рекомендации и `approved: false` у вердикта — выданы в неодобренном
+    прогоне (`run_approved`); `open` считается по всем вердиктам, как в трекере.
     """
     recs: dict[str, dict] = {}
     skipped: set[str] = set()
     for run in runs:
         label = _period_label(run)
+        approved = run_approved(run, gated)
         for verdict in run.get("prev_recommendations") or []:
             if verdict.get("id") in skipped:
                 continue
@@ -258,7 +278,7 @@ def _recs(runs: list[dict], axes: list[str], warn: Callable[[str], None]) -> lis
                      f"{verdict.get('id')!r}")
                 continue
             rec["verdicts"].append({"period": label, "verdict": verdict.get("verdict"),
-                                    "note": verdict.get("note") or ""})
+                                    "note": verdict.get("note") or "", "approved": approved})
         for item in run.get("recommendations") or []:
             rid = item.get("id")
             if not rid or rid in recs or rid in skipped:
@@ -270,7 +290,7 @@ def _recs(runs: list[dict], axes: list[str], warn: Callable[[str], None]) -> lis
                 continue
             recs[rid] = {"id": rid, "axis": item.get("axis"), "text": item.get("text") or "",
                          "given_in": label, "given_at": run.get("reviewed_at"),
-                         "verdicts": [], "open": True}
+                         "verdicts": [], "open": True, "pending_approval": not approved}
     for rec in recs.values():
         rec["open"] = not any(v["verdict"] in CLOSING_VERDICTS for v in rec["verdicts"])
     return list(recs.values())
@@ -290,6 +310,7 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
     root = Path(root)
     paths = ws_paths(root)
     cfg = load_config(root)
+    gated = reviewer_gated(cfg)
     i18n = load_i18n()
     axes = list(i18n["axes"])
     reasons = reason_codes(i18n)
@@ -356,10 +377,10 @@ def collect(root: Path, warn: Callable[[str], None]) -> dict:
             review = _bound_review(reviews.get(run["run_id"]), pid, note)
             if run["run_id"] in reviews and review is None:
                 unbound.append(run["run_id"])
-            points.append(_point(run, axes, review, note, reasons))
+            points.append(_point(run, axes, review, note, reasons, gated))
         people.append({"id": pid, "name": card.get("name") or pid, "group": card.get("group"),
                        "show_dynamics": show_dynamics[pid],
-                       "points": points, "recs": _recs(person_runs, axes, note)})
+                       "points": points, "recs": _recs(person_runs, axes, note, gated)})
     skipped = len(cards) - len(people)
     if skipped:
         note(f"людей без прогонов: {skipped}, в отчёт не попадают")
@@ -426,19 +447,29 @@ def transitions(points: list[dict], axes: list[str]) -> list[dict[str, str]]:
     return out
 
 
-def _rec_status(rec: dict) -> str:
+def _approved_status(rec: dict) -> str:
+    """Статус рекомендации для адресата: по вердиктам только одобренных прогонов."""
     status = "open"
     for verdict in rec["verdicts"]:
-        if verdict["verdict"] in CLOSING_VERDICTS:
+        if verdict["approved"] and verdict["verdict"] in CLOSING_VERDICTS:
             status = verdict["verdict"]
     return status
 
 
+def approved_points(person: dict) -> list[dict]:
+    """Точки одобренных прогонов человека — всё, что может попасть в его личный отчёт."""
+    return [pt for pt in person["points"] if pt["approved"]]
+
+
 def _personal_person(person: dict, axes: list[str], show_scores: bool,
                      show_dynamics: bool) -> dict:
-    trans = transitions(person["points"], axes)
+    shown = approved_points(person)
+    if not shown:
+        raise SrError(f"личный отчёт {person['id']!r}: нет одобренных прогонов — все "
+                      f"{len(person['points'])} ждут approve ревьюера", 1)
+    trans = transitions(shown, axes)
     points = []
-    for point, tr in zip(person["points"], trans):
+    for point, tr in zip(shown, trans):
         out_axes = {}
         for axis in axes:
             src = point["axes"][axis]
@@ -457,7 +488,7 @@ def _personal_person(person: dict, axes: list[str], show_scores: bool,
             out["level"] = point["level"]
         points.append(out)
     recs = [{"text": r["text"], "axis": r["axis"], "given_in": r["given_in"],
-             "status": _rec_status(r)} for r in person["recs"]]
+             "status": _approved_status(r)} for r in person["recs"] if not r["pending_approval"]]
     return {"id": person["id"], "name": person["name"], "points": points, "recs": recs}
 
 
@@ -504,7 +535,8 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
                   show_dynamics: bool = True) -> dict:
     """Данные одного HTML-файла для режима `group|reviewer|personal` (белые списки полей).
 
-    `personal` требует `person` (id из модели), иначе `SrError(2)`. `quote_periods` —
+    `personal` требует `person` (id из модели), иначе `SrError(2)`; строится только из
+    одобренных прогонов (`approved_points`), нет ни одного — `SrError(1)`. `quote_periods` —
     сколько последних периодов человека в reviewer несут цитаты, досье и черновик фидбэка
     (`None` — все); в старших точках `evidence` пуст, `quote` антипаттернов и гейта и
     `feedback_draft` пустые, досье заменено на `dossier_ref`, у точки `trimmed: true`.
@@ -524,14 +556,14 @@ def build_payload(model: dict, *, mode: str, person: str | None = None,
             known = ", ".join(p["id"] for p in model["people"])
             raise SrError(f"человек {person!r} не найден среди людей с прогонами ({known})", 2)
         people = [_personal_person(found[0], axes, show_scores, show_dynamics)]
-        dates_from = found
+        dated = approved_points(found[0])
     elif mode == "group":
         people = [_group_person(p, axes) for p in model["people"]]
-        dates_from = model["people"]
+        dated = [pt for p in model["people"] for pt in p["points"]]
     else:
         people = [_reviewer_person(p, axes, quote_periods) for p in model["people"]]
-        dates_from = model["people"]
-    dates = sorted(pt["date"] for p in dates_from for pt in p["points"] if pt["date"])
+        dated = [pt for p in model["people"] for pt in p["points"]]
+    dates = sorted(pt["date"] for pt in dated if pt["date"])
     return {
         "meta": {
             "title": title,

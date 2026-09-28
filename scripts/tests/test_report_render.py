@@ -268,10 +268,46 @@ class ReportJsBehaviourTest(unittest.TestCase):
         script = (
             "const DATA = {axes: ['a']}; const META = {show_scores: false};\n"
             "const recStatus = r => r.status || 'open';\n"
+            + _js_function(self.js, "personTransitions") + "\n"
             + _js_function(self.js, "asPersonModel")
             + f"\nprocess.stdout.write(JSON.stringify(asPersonModel({json.dumps(person)}).points));"
         )
         return _run_node(script)
+
+    def test_as_person_drops_unapproved_points_and_recs(self):
+        def point(period, score, approved):
+            return {"period": period, "date": "2026-01-01", "sessions": 1, "approved": approved,
+                    "axes": {"a": {"ie": False, "score": score}}, "transitions": {"a": "up"},
+                    "review": None, "level": "l1"}
+
+        person = {"id": "p1", "name": "P", "show_dynamics": True,
+                  "points": [point("w1", 2, True), point("w2", 4, False), point("w3", 1, True)],
+                  "recs": [
+                      {"id": "r1", "axis": "a", "text": "old", "given_in": "w1", "open": False,
+                       "pending_approval": False,
+                       "verdicts": [{"period": "w2", "verdict": "followed", "approved": False}]},
+                      {"id": "r2", "axis": "a", "text": "draft", "given_in": "w2", "open": True,
+                       "pending_approval": True, "verdicts": []}]}
+        script = (
+            "const DATA = {axes: ['a']}; const META = {show_scores: false};\n"
+            + _js_function(self.js, "recStatus") + "\n"
+            + _js_function(self.js, "personTransitions") + "\n"
+            + _js_function(self.js, "asPersonModel")
+            + f"\nprocess.stdout.write(JSON.stringify(asPersonModel({json.dumps(person)})));"
+        )
+        got = _run_node(script)
+        self.assertEqual([p["period"] for p in got["points"]], ["w1", "w3"])
+        self.assertEqual([p["transitions"]["a"] for p in got["points"]], ["none", "down"])
+        self.assertEqual(got["recs"], [{"text": "old", "axis": "a", "given_in": "w1",
+                                        "status": "open"}])
+
+    def test_open_recs_counters_skip_draft_recs(self):
+        tile = [ln for ln in self.js.splitlines() if "t('tile_open_recs')" in ln]
+        self.assertEqual(len(tile), 1)
+        self.assertIn("pending_approval", tile[0])
+        body = _js_function(self.js, "recsCard")
+        self.assertIn("pending_approval", body)
+        self.assertIn("t('rec_from_draft')", body)
 
     def test_as_person_hides_transitions_when_dynamics_off(self):
         points = self._as_person(False)

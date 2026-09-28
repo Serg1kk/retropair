@@ -237,6 +237,7 @@
     "open_now": {"ru": "сейчас открыто", "en": "currently open"},
     "no_recs": {"ru": "рекомендаций пока нет", "en": "no recommendations yet"},
     "rec_given": {"ru": "выдана", "en": "given"},
+    "rec_from_draft": {"ru": "из черновика: адресат ещё не получил, в счётчик открытых не входит", "en": "from a draft: not yet sent to the person, not counted as open"},
     "verdict_history": {"ru": "вердикты по периодам", "en": "verdicts by period"},
     "evidence": {"ru": "Доказательства", "en": "Evidence"},
     "evidence_hint": {"ru": "цитаты из логов, на которых стоит оценка выбранного прогона", "en": "log quotes the selected run's scores stand on"},

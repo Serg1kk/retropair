@@ -207,6 +207,70 @@ class ErrorsTest(_Base):
         self.assertEqual(res.returncode, 2)
 
 
+DRAFT_REC_TEXT = "Текст рекомендации из неодобренного прогона, адресат его не получал."
+
+
+class UnapprovedRunsTest(_Base):
+    """team с гейтом ревьюера: в личный файл идут только одобренные прогоны."""
+
+    def _tracker_path(self) -> Path:
+        return ws_paths(self.ws)["runs"] / "process-reviews.json"
+
+    def _plant_draft(self) -> None:
+        path = self._tracker_path()
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        run = [r for r in doc["runs"] if r["person_id"] == "anna"
+               and r["period"]["label"] == "P3" and not r.get("retracted")][0]
+        self.assertEqual(run["review_status"], "draft")
+        run["recommendations"][0]["text"] = DRAFT_REC_TEXT
+        run["prev_recommendations"] = [{"id": "REC-anna-002", "verdict": "followed",
+                                        "evidence": None, "note": ""}]
+        path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+    def _all_drafts(self, pid: str) -> None:
+        path = self._tracker_path()
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        for run in doc["runs"]:
+            if run["person_id"] == pid:
+                run["review_status"] = "draft"
+        path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+    def test_personal_html_has_no_draft_rec_or_draft_point(self):
+        self._plant_draft()
+        self.ok()
+        personal_text = (self.reports / "personal" / "anna.html").read_text(encoding="utf-8")
+        self.assertNotIn(DRAFT_REC_TEXT, personal_text)
+        data = _data(personal_text)
+        person = data["people"][0]
+        self.assertEqual([pt["period"] for pt in person["points"]], ["P1", "P2"])
+        self.assertEqual({r["given_in"]: r["status"] for r in person["recs"]},
+                         {"P1": "followed", "P2": "open"})
+        self.assertEqual(data["meta"]["date_to"], person["points"][-1]["date"])
+        reviewer = _data((self.reports / "reviewer.html").read_text(encoding="utf-8"))
+        anna = [p for p in reviewer["people"] if p["id"] == "anna"][0]
+        flagged = [r for r in anna["recs"] if r["text"] == DRAFT_REC_TEXT]
+        self.assertEqual(len(flagged), 1)
+        self.assertTrue(flagged[0]["pending_approval"])
+        group_text = (self.reports / "group.html").read_text(encoding="utf-8")
+        self.assertNotIn(DRAFT_REC_TEXT, group_text)
+
+    def test_personal_without_approved_runs_exit1(self):
+        self._all_drafts("boris")
+        res = self.sr("report", "--personal", "boris")
+        self.assertEqual(res.returncode, 1, res.stderr)
+        self.assertIn("boris", res.stderr)
+        self.assertIn("одобренн", res.stderr)
+        self.assertFalse((self.reports / "personal" / "boris.html").exists())
+
+    def test_all_personal_skips_person_without_approved_runs(self):
+        self._all_drafts("boris")
+        res = self.ok("--all-personal")
+        self.assertIn("boris", res.stderr)
+        self.assertFalse((self.reports / "personal" / "boris.html").exists())
+        for pid in ("anna", "vera"):
+            self.assertTrue((self.reports / "personal" / f"{pid}.html").is_file(), pid)
+
+
 class GateTest(_Base):
     def _plant_other_name(self) -> Path:
         """Подкидывает имя Бориса в отправляемый блок одобренного ревью Анны."""

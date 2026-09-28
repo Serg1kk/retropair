@@ -234,7 +234,7 @@ function overview() {
   tiles.appendChild(tile(t('tile_runs'), allPts.length));
   if (REVIEWER) tiles.appendChild(tile(t('tile_sessions'), sum(allPts, x => x.sessions)));
   tiles.appendChild(tile(t('tile_period'), META.date_from ? fmtDate(META.date_from) + ' – ' + fmtDate(META.date_to) : '—', true));
-  if (REVIEWER) tiles.appendChild(tile(t('tile_open_recs'), sum(DATA.people, p => p.recs.filter(r => r.open).length)));
+  if (REVIEWER) tiles.appendChild(tile(t('tile_open_recs'), sum(DATA.people, p => p.recs.filter(r => r.open && !r.pending_approval).length)));
   frag.appendChild(tiles);
 
   // На узком экране фильтры свёрнуты за кнопкой (на широком кнопка скрыта, поля видны всегда).
@@ -529,14 +529,16 @@ function reviewsCard(pts, selected, full) {
 function recsCard(recs, full) {
   const card = el('section', 'card');
   const list = recs.filter(r => S.axis === 'all' || r.axis === S.axis);
-  const open = recs.filter(r => recStatus(r) === 'open').length;
+  // Рекомендация неодобренного прогона адресату не ушла: в счётчик открытых не входит.
+  const open = recs.filter(r => recStatus(r) === 'open' && !r.pending_approval).length;
   card.appendChild(head(t('recs'), `${t('open_now')}: ${open}`));
   if (!list.length) { card.appendChild(el('div', 'empty', esc(t('no_recs')))); return card; }
   const grid = el('div', 'recs');
   list.forEach(r => {
     const st = recStatus(r);
     const d = el('div', 'rec' + (S.axis === r.axis ? ' hl' : ''));
-    const idChip = full && r.id ? `<span class="chip id">${esc(r.id)}</span>` : '';
+    const idChip = (full && r.id ? `<span class="chip id">${esc(r.id)}</span>` : '')
+      + (r.pending_approval ? `<span class="chip warn">${esc(t('rec_from_draft'))}</span>` : '');
     const given = `${esc(t('rec_given'))} ${esc(r.given_in || '?')}` + (full && r.given_at ? ' · ' + esc(fmtDate(r.given_at)) : '');
     d.appendChild(el('div', 'head', `${idChip}<span>${esc(axName(r.axis))}</span><span>· ${given}</span><span class="chip ${CHIP_CLASS[st] || 'neutral'} rec-status">${CHIP_GLYPH[st] || '·'} ${esc(recStatusName(st))}</span>`));
     d.appendChild(el('div', 'text', esc(r.text)));
@@ -625,23 +627,38 @@ function stackChips(points) {
   if (rest.length) { const m = el('span', 'chip', `+${rest.length} ${esc(t('more'))}`); m.setAttribute('data-tip', rest.join('\n')); m.tabIndex = 0; ch.appendChild(m); }
   return ch;
 }
-// Как видит адресат: те же данные, что пишет личный отчёт (одобренный отправляемый блок,
+// Переходы по осям между соседними точками списка — как transitions() при сборке отчёта.
+function personTransitions(points) {
+  return points.map((pt, i) => {
+    const row = {};
+    DATA.axes.forEach(a => {
+      const cur = pt.axes[a] || { ie: true }; const prev = i ? (points[i - 1].axes[a] || { ie: true }) : null;
+      row[a] = !prev || cur.ie || prev.ie ? 'none' : cur.score > prev.score ? 'up' : cur.score < prev.score ? 'down' : 'flat';
+    });
+    return row;
+  });
+}
+// Как видит адресат: те же данные, что пишет личный отчёт (только одобренные прогоны и их
+// рекомендации, статус — по вердиктам одобренных прогонов, одобренный отправляемый блок,
 // баллы и уровень — только при show_scores, переходы — только при show_dynamics карточки).
 function asPersonModel(p) {
   const scores = !!META.show_scores;
   const dynamics = p.show_dynamics !== false;
+  const shown = p.points.filter(pt => pt.approved !== false);
+  const trans = personTransitions(shown);
   return {
     id: p.id, name: p.name,
-    points: p.points.map(pt => {
+    points: shown.map((pt, i) => {
       const axes = {};
       DATA.axes.forEach(a => { const c = pt.axes[a] || { ie: true }; axes[a] = { ie: !!c.ie, reason: c.reason || null }; if (scores) axes[a].score = c.score; });
       const out = { period: pt.period, date: pt.date, sessions: pt.sessions, axes,
         review: pt.review && pt.review.status === 'approved' && pt.review.sent_html ? { sent_html: pt.review.sent_html } : null };
-      if (dynamics && pt.transitions) out.transitions = pt.transitions;
+      if (dynamics) out.transitions = trans[i];
       if (scores) out.level = pt.level;
       return out;
     }),
-    recs: p.recs.map(r => ({ text: r.text, axis: r.axis, given_in: r.given_in, status: recStatus(r) })),
+    recs: p.recs.filter(r => !r.pending_approval).map(r => ({ text: r.text, axis: r.axis, given_in: r.given_in,
+      status: recStatus({ verdicts: (r.verdicts || []).filter(v => v.approved !== false) }) })),
   };
 }
 function backLink(frag) {

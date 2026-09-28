@@ -51,6 +51,7 @@ res = run_sr("people", "list", "--workspace", str(root), home=home, cwd=tmp)
 | `test_lock.py` | блокировка между процессами, таймаут (код 1), отказ на Windows (код 2); замок сбора `collect_lock` (B05): ждёт до `COLLECT_WAIT_SECONDS` = 300 с, одна строка ожидания в stderr, если занят дольше `COLLECT_NOTICE_AFTER`, без строки при коротком удержании, таймаут — код 1 с путём и секундами |
 | `test_registry.py` | реестр `~/.sessionretro/workspaces.json`: регистрация, идемпотентность, коллизии id, update/remove, глобальный `plugin-state.json` |
 | `test_registry_cmds.py` | авто-регистрация файлов `cmd_*.py`: дубль имени, файл без `register`, handler не `int` |
+| `test_workspaces_cmd.py` | `workspaces list` (пусто, две записи с отметкой «папки нет», `--json`) и `workspaces remove` (по id — файлы проекта на месте, неизвестный id — код 1 со списком id, `--missing`, `<id>` вместе с `--missing` и без аргументов — код 2, `init` → `remove` → записи нет в реестре) |
 | `test_sr_cli.py` | `sr.py`: справка и код 2 без команды, `--version`, `--workspace` в любой позиции, `init` (self и team, повтор, `--path`, коллизия id), `people` и его коды ошибок |
 | `test_config.py` | загрузка и сохранение `config.json` с проверкой схемы, дефолт из шаблона |
 | `test_people.py` | слияние карточки с `_default.yaml`, список, добавление (кавычки, новая группа, дубль), выжимка `people context` |
