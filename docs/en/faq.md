@@ -1,8 +1,10 @@
 # FAQ
 
+Upgrading from SessionRetro? Follow the [migration guide](migration.md) before initializing a new workspace.
+
 ## Does the plugin assess my code?
 
-No. sessionretro looks only at how you lead the agent: how you frame the task, verify the result and
+No. RetroPair looks only at how you lead the agent: how you frame the task, verify the result and
 keep the decisions in your hands. Code quality, architecture, speed and the outcome of the task are
 not assessed. The eight axes are in [axes.md](axes.md).
 
@@ -13,15 +15,16 @@ Antigravity CLI and other agents are collected through SpecStory exports or a ma
 folder; how to do that for your environment is in the
 [environment guides](../../references/collector-instructions/README.md) (Russian).
 
-Codex and Cursor session files in their own format (JSONL) are not read directly in 0.1: collection
+Codex and Cursor session files in their own format (JSONL) are not read directly in 0.2: collection
 shows a warning. The path for them is SpecStory.
 
 ## How much does it cost and how long does it take?
 
-With the default models (opus judge, sonnet collectors) one period of one person costs about
+Historical measurements before the rebrand, not current pricing or guaranteed estimates:
+with the default models (opus judge, sonnet collectors) one period of one person costs about
 $3–4 and takes 10–15 minutes; a period made only of short sessions costs $0.3–0.6. These are the
 figures of the end-to-end check on real work. You pay through your Claude
-Code: a subscription or an API key. The "Economy" preset in `/sessionretro:setup` is cheaper, but
+Code: a subscription or an API key. The "Economy" preset in `/retropair:setup` is cheaper, but
 you get fewer quotes and subtle points ([setup.md](setup.md), the "Models and effort" question).
 
 ## How far can the assessment be trusted?
@@ -68,7 +71,7 @@ path to the subfolder in `"project"` ([collect.md](collect.md)).
 
 ## Does it work on Windows?
 
-Not in 0.1: log collection and file locking do not work on Windows, and the commands stop with a
+Not in 0.2: log collection and file locking do not work on Windows, and the commands stop with a
 clear error. The path is a manual export of sessions and collection on macOS or Linux.
 
 ## Can I get the texts in English?
@@ -84,7 +87,7 @@ the approved review or the recommendation without the other person's name and re
 ([reports.md](reports.md)). This check skips the workspace title: if it contains
 words from the cards, `report` only warns (`workspace title contains name tokens of: <id>`), and the
 title goes into every personal file. Remove the names from `workspace.title` in
-`.sessionretro/config.json`.
+`.retropair/config.json`.
 
 ## The reviewer report is heavy
 
@@ -101,8 +104,8 @@ session. Details, including what the sanitizer misses, in [privacy.md](privacy.m
 
 Update and remove it through the Claude Code plugin manager (`/plugin`); after an update run
 `/reload-plugins` or open a new session. An update does not touch user state: cards, settings,
-history and project agents stay. When the plugin is removed, the projects' `.sessionretro/` folders
-and `~/.sessionretro/` stay too; delete them by hand if you no longer need them.
+history and project agents stay. When the plugin is removed, the projects' `.retropair/` folders
+and `~/.retropair/` stay too; delete them by hand if you no longer need them.
 
 ## Where can I ask a question?
 

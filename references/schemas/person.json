@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "sessionretro/person.json",
-  "title": "sessionretro person card (after merge with _default.yaml)",
+  "$id": "retropair/person.json",
+  "title": "RetroPair person card (after merge with _default.yaml)",
   "type": "object",
   "required": ["id", "name", "group", "feedback"],
   "properties": {

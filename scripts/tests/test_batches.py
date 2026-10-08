@@ -255,7 +255,7 @@ class ForPersonTest(TempHome, unittest.TestCase):
         self.assertIn("nobody", ctx.exception.message)
 
     def test_person_without_consent_is_1(self):      # B02
-        card = self.root / ".sessionretro" / "people" / "alex.yaml"
+        card = self.root / ".retropair" / "people" / "alex.yaml"
         card.write_text(card.read_text(encoding="utf-8").replace("logs: true", "logs: false"), encoding="utf-8")
         with self.assertRaises(SrError) as ctx:
             batches.for_person(self.root, "alex", measure="index")

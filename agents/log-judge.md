@@ -148,7 +148,7 @@ prompt_version: v16
 без контекста читается двусмысленно:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize <path> --from-turn N --to-turn M
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" normalize <path> --from-turn N --to-turn M
 ```
 
 Правила: окно в пределах десятка ходов вокруг места, не больше нескольких таких сверок за прогон.

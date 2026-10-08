@@ -1,6 +1,6 @@
 """Межпроцессная блокировка файла: advisory `fcntl.flock` на соседний `<path>.lock`.
 
-Замок сбора логов `.sessionretro/collect.lock` (`collect_lock`) держит `collect` на весь проход,
+Замок сбора логов `.retropair/collect.lock` (`collect_lock`) держит `collect` на весь проход,
 а после смены правил санитайзера проход перечищает все снапшоты — это минуты. Поэтому команды,
 которым нужен индекс (`inventory`, ручной `collect`, пометки), ждут его до
 `COLLECT_WAIT_SECONDS` и один раз говорят в stderr, что ждут. Остальные замки (реестр, трекер)
@@ -88,7 +88,7 @@ def collect_lock(state_dir: Path, *, wait: float | None = None, notice: bool = T
     wait = COLLECT_WAIT_SECONDS if wait is None else wait
 
     def _say() -> None:
-        print(f"sessionretro: сбор логов уже идёт (collect.lock), жду до {wait:g} с… "
+        print(f"retropair: сбор логов уже идёт (collect.lock), жду до {wait:g} с… "
               f"({Path(state_dir) / (COLLECT_LOCK + '.lock')})", file=sys.stderr, flush=True)
 
     return file_lock(Path(state_dir) / COLLECT_LOCK, timeout=wait, on_wait=_say if notice else None)

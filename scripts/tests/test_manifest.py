@@ -55,11 +55,14 @@ def frontmatter(path: Path) -> dict[str, str]:
 class ManifestTest(unittest.TestCase):
     def test_plugin_json_fields(self):
         data = read_json(".claude-plugin/plugin.json")
-        self.assertEqual(data["name"], "sessionretro")
+        self.assertEqual(data["name"], "retropair")
+        self.assertEqual(data["displayName"], "RetroPair")
         self.assertEqual(data["version"], VERSION)
         self.assertEqual(data["license"], "MIT")
+        self.assertEqual(data["homepage"], "https://retropair.dev")
+        self.assertIn("human", data["description"].lower())
         self.assertEqual(data["author"], {"name": "ProdfeatAI"})
-        self.assertEqual(data["repository"], "https://github.com/Serg1kk/sessionretro")
+        self.assertEqual(data["repository"], "https://github.com/Serg1kk/retropair")
 
     def test_manifest_format_is_indent2_with_newline(self):
         for rel in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
@@ -70,10 +73,12 @@ class ManifestTest(unittest.TestCase):
 
     def test_marketplace_points_to_self(self):
         data = read_json(".claude-plugin/marketplace.json")
-        self.assertEqual(data["name"], "sessionretro")
+        self.assertEqual(data["name"], "retropair")
         self.assertEqual(len(data["plugins"]), 1)
-        self.assertEqual(data["plugins"][0]["name"], "sessionretro")
+        self.assertEqual(data["plugins"][0]["name"], "retropair")
         self.assertEqual(data["plugins"][0]["source"], "./")
+        self.assertEqual(data["renames"], {"sessionretro": "retropair"})
+        self.assertEqual(data["plugins"][0]["repository"], "https://github.com/Serg1kk/retropair")
         plugin_desc = read_json(".claude-plugin/plugin.json")["description"]
         self.assertEqual(data["metadata"]["description"], plugin_desc)
         self.assertEqual(data["plugins"][0]["description"], plugin_desc)

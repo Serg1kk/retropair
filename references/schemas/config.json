@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "sessionretro/config.json",
-  "title": "sessionretro workspace config",
+  "$id": "retropair/config.json",
+  "title": "RetroPair workspace config",
   "type": "object",
   "required": ["schema_version", "workspace", "mode", "lang", "period", "sources", "hook", "sanitize", "models", "batches", "show_scores", "reviewer_gate", "template", "extensions"],
   "properties": {

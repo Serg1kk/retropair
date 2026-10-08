@@ -1,4 +1,4 @@
-"""Команда `agents`: проектные агенты `.claude/agents/sessionretro-*.md` — write, check, sync."""
+"""Команда `agents`: проектные агенты `.claude/agents/retropair-*.md` — write, check, sync."""
 
 from __future__ import annotations
 

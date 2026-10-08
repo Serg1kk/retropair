@@ -64,7 +64,7 @@ def _files(root: Path, rel_paths) -> list[Path]:
         elif path.is_dir():
             out += sorted(p for p in path.rglob("*") if p.is_file() and p.suffix in SUFFIXES)
         else:
-            raise FileNotFoundError(f"sessionretro: проверка чистоты: нет пути ({path})")
+            raise FileNotFoundError(f"retropair: проверка чистоты: нет пути ({path})")
     return [p for p in out if p.suffix in SUFFIXES]
 
 

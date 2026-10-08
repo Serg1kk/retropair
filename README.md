@@ -1,10 +1,18 @@
 <p align="center"><a href="README.md">English</a> | <a href="README.ru.md">Русский</a></p>
 
-# sessionretro
+# RetroPair
 
-**A retro on how you work with a coding agent. It assesses the process, not the code.**
+**Review the pair. Improve the human.**
 
-sessionretro is a Claude Code plugin that reads your agent session logs for a period and tells you how you lead the agent: how you frame tasks, verify results and keep decisions in your hands. Eight behaviour axes, each judgement backed by a verbatim quote from the log, one to three concrete next steps, a check of those steps in the next period, and progress against your own previous period. People are never compared with each other.
+**A retro on how you work with AI coding agents — not a review of the code they write.**
+
+Human–AI Collaboration Retrospectives: evidence-based coaching for developers working with AI coding agents.
+
+Your sessions reveal how you work. RetroPair shows you how to improve.
+
+RetroPair is a Claude Code plugin that reads your agent session logs for a period and tells you how you lead the agent: how you frame tasks, verify results and keep decisions in your hands. Eight behaviour axes, each judgement backed by a verbatim quote from the log, one to three concrete next steps, a check of those steps in the next period, and progress against your own previous period. People are never compared with each other.
+
+[Product website](https://retropair.dev) · [Private distribution repository](https://github.com/Serg1kk/retropair) · Version **0.2.0**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Changelog](https://img.shields.io/badge/changelog-releases-informational.svg)](CHANGELOG.md)
@@ -42,20 +50,22 @@ You need Claude Code and python3 3.10 or newer (standard library only, nothing t
 In Claude Code:
 
 ```text
-/plugin marketplace add Serg1kk/sessionretro
-/plugin install sessionretro@sessionretro
-/sessionretro:setup
+/plugin marketplace add Serg1kk/retropair
+/plugin install retropair@retropair
+/retropair:setup
 ```
 
-- The repository is private for now: you need access to it and either an SSH key on GitHub or `gh auth setup-git` so that Claude Code can clone it.
-- After installing, run `/reload-plugins` or start a new Claude Code session, then call `/sessionretro:setup`.
+- The distribution repository is private: you need access to it and either an SSH key on GitHub or `gh auth setup-git` so that Claude Code can clone it.
+- After installing, run `/reload-plugins` or start a new Claude Code session, then call `/retropair:setup`.
 - Developing the plugin: `claude --plugin-dir <path to plugin>` runs it from a local folder without installing.
 
-`setup` asks up to 11 questions one at a time and creates the workspace `.sessionretro/` in your project. Then ask Claude Code to "collect my logs" and "run the retro", and open the reports: [the full cycle](#the-full-cycle) below walks through every step.
+`setup` asks up to 11 questions one at a time and creates the workspace `.retropair/` in your project. Then ask Claude Code to "collect my logs" and "run the retro", and open the reports: [the full cycle](#the-full-cycle) below walks through every step.
+
+Already using SessionRetro? Read the [migration guide](docs/en/migration.md) before setup: the new workspace is `.retropair/`; migration previews changes and refuses conflicting old/new directories. `scripts/rp.py` is the preferred CLI; `scripts/sr.py` remains supported for existing scripts.
 
 ## How it works
 
-<p align="center"><img src="docs/images/how-it-works.en.gif" alt="How sessionretro works: session logs pass the sanitizer and parallel collectors to the judge, the run tracker and the reports; the person card changes the wording, not the score; next steps are checked in the next period; the reviewer approves the text before it reaches the person" width="620"></p>
+<p align="center"><img src="docs/images/how-it-works.en.gif" alt="How RetroPair works: session logs pass the sanitizer and parallel collectors to the judge, the run tracker and the reports; the person card changes the wording, not the score; next steps are checked in the next period; the reviewer approves the text before it reaches the person" width="620"></p>
 
 The person card goes to the judge only: it changes the wording, not the score. The judge checks each period's next steps in the next period, and in team and course modes a text reaches the person only after the reviewer approves it. After an approved run the plugin may propose card edits; the card changes only when the reviewer runs `people apply`.
 
@@ -83,15 +93,15 @@ Scripts collect the logs and sanitize them. Collector agents read a period's ses
 
 ## The full cycle
 
-Every step is a skill you can call by name or just ask for in your own words; the same steps are plain `sr.py` commands for scripts and CI (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" <command>`).
+Every step is a skill you can call by name or just ask for in your own words; the same steps are plain `rp.py` commands for scripts and CI (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" <command>`).
 
 | Step | Command | What happens | What appears |
 |---|---|---|---|
-| 1. Setup | `/sessionretro:setup` | up to 11 questions (mode, people, log sources, SpecStory, hook, models, scores, periods, template, log retention, `.gitignore`), then `setup-apply` applies the answers and `doctor` shows the result | `.sessionretro/config.json`, `people/_default.yaml`, `people/<id>.yaml`, project agents `.claude/agents/sessionretro-*.md` with `agents.json`, an entry in `~/.sessionretro/workspaces.json` |
-| 2. Collect | `/sessionretro:collect`, or automatically by the SessionEnd hook | sources are read, every log passes the sanitizer, copies land in the workspace, the inventory gets statuses (new, grown, unchanged, duplicate, gone, excluded) | `logs/<id>/…`, `logs-index.json`, `collect.log` (hook) |
-| 3. Review | `/sessionretro:review <person>` or `--all` | project agents synced; the period's sessions split into batches; collectors run in parallel; `check-collector` verifies every quote against the log; the judge scores and writes; `append` records the run; `level` computes the level; `render-review` builds the text; `verify` checks everything is closed | `runs/pending/<person>/batch-NN.json` and `judge.json`, the history `runs/process-reviews.json`, the text `reviews/<person>/<run_id>.md` |
-| 4. Approve | `/sessionretro:review --approve <person>` or `sr.py approve <person>` | team and course: the reviewer reads the draft and approves it; from this moment its next steps count as received. The skill then runs `people suggestions <person> --refresh`; the bare `sr.py approve` only changes the status, so run that command yourself after it | `status: approved` in the review file, `approved_at` in the run; card suggestions `people/<id>.suggestions.json` (after `--refresh`) |
-| 5. Report | `/sessionretro:report` | HTML reports are rebuilt from the history; a personal file is refused if it mentions other people | `reports/reviewer.html`, `reports/group.html`, `reports/personal/<id>.html`, `~/.sessionretro/reports/index.html` |
+| 1. Setup | `/retropair:setup` | up to 11 questions (mode, people, log sources, SpecStory, hook, models, scores, periods, template, log retention, `.gitignore`), then `setup-apply` applies the answers and `doctor` shows the result | `.retropair/config.json`, `people/_default.yaml`, `people/<id>.yaml`, project agents `.claude/agents/retropair-*.md` with `agents.json`, an entry in `~/.retropair/workspaces.json` |
+| 2. Collect | `/retropair:collect`, or automatically by the SessionEnd hook | sources are read, every log passes the sanitizer, copies land in the workspace, the inventory gets statuses (new, grown, unchanged, duplicate, gone, excluded) | `logs/<id>/…`, `logs-index.json`, `collect.log` (hook) |
+| 3. Review | `/retropair:review <person>` or `--all` | project agents synced; the period's sessions split into batches; collectors run in parallel; `check-collector` verifies every quote against the log; the judge scores and writes; `append` records the run; `level` computes the level; `render-review` builds the text; `verify` checks everything is closed | `runs/pending/<person>/batch-NN.json` and `judge.json`, the history `runs/process-reviews.json`, the text `reviews/<person>/<run_id>.md` |
+| 4. Approve | `/retropair:review --approve <person>` or `rp.py approve <person>` | team and course: the reviewer reads the draft and approves it; from this moment its next steps count as received. The skill then runs `people suggestions <person> --refresh`; the bare `rp.py approve` only changes the status, so run that command yourself after it | `status: approved` in the review file, `approved_at` in the run; card suggestions `people/<id>.suggestions.json` (after `--refresh`) |
+| 5. Report | `/retropair:report` | HTML reports are rebuilt from the history; a personal file is refused if it mentions other people | `reports/reviewer.html`, `reports/group.html`, `reports/personal/<id>.html`, `~/.retropair/reports/index.html` |
 | 6. Next period | collect and review again | only new sessions and the new tails of grown ones are assessed; the judge gives a verdict on every open next step from earlier periods | a new run; verdicts in the recommendation history of every report |
 
 <details>
@@ -139,7 +149,7 @@ Never assessed at all: code quality, architecture, completeness of the solution,
 | **The gate is a ceiling, not a zero** | six triggers that are visible in the log (blind acceptance of a large change, a product choice left to the agent, a warning ignored, a "done" report taken without a check, stated confusion left unresolved, no stance over a long session): one caps the level at Competent, two or more at Developing. Silence never triggers the gate |
 | **What the judge never gets** | past scores and levels, the reviewer's impressions, acceptance criteria of the task, the code itself, project rules files, other people's logs |
 | **The critic** | in team and course, without `--no-ask`, a separate agent reads the draft text and its notes go to the reviewer |
-| **The reviewer's correction** | a run can carry `operator_override` (axes with new scores, `why`, `by`, `at`) in the run history: the level is computed with it, reports mark the score "reviewer override", and it survives a re-assessment with `append --replace`. There is no dedicated command for it in 0.1.13; a wrong run as a whole is retracted with `sr.py retract <run_id> --why "…"` |
+| **The reviewer's correction** | a run can carry `operator_override` (axes with new scores, `why`, `by`, `at`) in the run history: the level is computed with it, reports mark the score "reviewer override", and it survives a re-assessment with `append --replace`. There is no dedicated command for it in 0.2.0; a wrong run as a whole is retracted with `rp.py retract <run_id> --why "…"` |
 
 ## Next steps and the follow-up loop
 
@@ -159,11 +169,11 @@ A recommendation is judged only on logs recorded after the person received it: t
 
 <p align="center"><img src="docs/images/gallery/recommendations-tooltip.en.png" alt="Recommendations in the personal report of the demo participant: a verdict chip per period and the judge's explanation of the latest verdict in a tooltip" width="900"></p>
 
-`sr.py open-recs <person>` lists the open recommendations; `sr.py compare <run_a> <run_b>` compares two runs of the same person.
+`rp.py open-recs <person>` lists the open recommendations; `rp.py compare <run_a> <run_b>` compares two runs of the same person.
 
 ## Personalization
 
-Every person has a card `.sessionretro/people/<id>.yaml` (in self mode `me.yaml`); shared text defaults live in `.sessionretro/people/_default.yaml`, and a card overrides only the fields it lists. The card is validated on every read: an unknown value (for example `tone: soft`) is code `1` with the field name.
+Every person has a card `.retropair/people/<id>.yaml` (in self mode `me.yaml`); shared text defaults live in `.retropair/people/_default.yaml`, and a card overrides only the fields it lists. The card is validated on every read: an unknown value (for example `tone: soft`) is code `1` with the field name.
 
 ```yaml
 id: "alex"
@@ -189,7 +199,7 @@ consent:
   date: 2026-09-01
 ```
 
-**The card changes the wording, not the score.** The same log gets the same score for an architect and for a beginner; "senior, so we expect more" and "beginner, so we forgive" are both forbidden. Collectors never see the card at all, and the text never retells it ("as a senior with nine years of experience" is not written). To see exactly what the judge gets: `sr.py people context <id>`.
+**The card changes the wording, not the score.** The same log gets the same score for an architect and for a beginner; "senior, so we expect more" and "beginner, so we forgive" are both forbidden. Collectors never see the card at all, and the text never retells it ("as a senior with nine years of experience" is not written). To see exactly what the judge gets: `rp.py people context <id>`.
 
 <details open>
 <summary><b>profile</b>: who the person is (all fields optional, empty by default)</summary>
@@ -222,13 +232,13 @@ consent:
 | `value_focus` | `finding` · `full` | `finding` | judge | `finding`: items only about findings of this run; `full`: also about even spots where a cheaper way exists |
 | `show_dynamics` | `true` · `false` | `true` | judge + report | `true`: the verdict on last period's recommendation for the same axis is mentioned in one phrase; in the "dynamics only" report view the transitions are shown only when `true` |
 | `show_scores` | `true` · `false` | not set (from `config.json`) | report | the personal report view: scores and level, or dynamics only ↑ → ↓ ◇. Not given to the judge |
-| `channel` | `file` · `telegram` · `slack` · `email` | `file` | nobody yet | stored and validated; not given to the judge, and in 0.1.13 the renderer produces the same markdown for every channel |
+| `channel` | `file` · `telegram` · `slack` · `email` | `file` | nobody yet | stored and validated; not given to the judge, and in 0.2.0 the renderer produces the same markdown for every channel |
 | `template` | `default` · `workspace` · file name | `default` | renderer | which template lays out the text (below) |
 | `prefix` | string | `""` | renderer | a line before the text, for example a greeting; empty means no line |
 
 </details>
 
-**Text template.** The template only lays out the text: the order of parts, the greeting, a signature. It has exactly five placeholders in double curly braces: `prefix`, `opening`, `actions`, `criteria`, `closing`. Get an editable copy with the "own copy" answer in `setup` (it lands in `.sessionretro/templates/feedback.md`) and set `template: workspace`; keep several templates side by side and pick one per card with `template: short.md`. A missing template file stops rendering with code `1` and the path it looked for; there is no silent fallback. Details: [docs/en/customize.md](docs/en/customize.md).
+**Text template.** The template only lays out the text: the order of parts, the greeting, a signature. It has exactly five placeholders in double curly braces: `prefix`, `opening`, `actions`, `criteria`, `closing`. Get an editable copy with the "own copy" answer in `setup` (it lands in `.retropair/templates/feedback.md`) and set `template: workspace`; keep several templates side by side and pick one per card with `template: short.md`. A missing template file stops rendering with code `1` and the path it looked for; there is no silent fallback. Details: [docs/en/customize.md](docs/en/customize.md).
 
 ### One judge output, two cards
 
@@ -285,7 +295,7 @@ The text is written, exit code `0` (excerpt, lines wrapped):
 Nothing is written, exit code `1` (lines wrapped):
 
 ```text
-sessionretro: текст ревью
+retropair: текст ревью
 demo-course_p02_P6_20260921T201000Z не записан,
 нарушены запреты (1):
   обращение 'твоему' при address: вы
@@ -296,11 +306,11 @@ demo-course_p02_P6_20260921T201000Z не записан,
 </td></tr>
 </table>
 
-What this shows, honestly: the script does not reword anything. It adds the `prefix`, lays the parts out with the `template` and enforces the card: a text written for `ты` cannot go out to a `вы` card, a text with three items cannot go out to a `short` card. The wording for card B is written by the judge in the next run, which gets card B's slice (`sr.py people context p02` prints it). The demo texts are in Russian, and error messages are printed in Russian in 0.1.
+What this shows, honestly: the script does not reword anything. It adds the `prefix`, lays the parts out with the `template` and enforces the card: a text written for `ты` cannot go out to a `вы` card, a text with three items cannot go out to a `short` card. The wording for card B is written by the judge in the next run, which gets card B's slice (`rp.py people context p02` prints it). The demo texts are in Russian, and error messages are printed in Russian in 0.2.0.
 
 ### Card suggestions
 
-After an approved run sessionretro compares the card with what the logs show and proposes edits. It never changes the card by itself: an edit reaches the file only through `people apply`. Suggestions are recomputed by `people suggestions --refresh`; the `review` skill runs it at the end of a run and after `--approve`. The bare `sr.py approve` only changes the status, so after it run `sr.py people suggestions <person> --refresh` yourself.
+After an approved run RetroPair compares the card with what the logs show and proposes edits. It never changes the card by itself: an edit reaches the file only through `people apply`. Suggestions are recomputed by `people suggestions --refresh`; the `review` skill runs it at the end of a run and after `--approve`. The bare `rp.py approve` only changes the status, so after it run `rp.py people suggestions <person> --refresh` yourself.
 
 | Source | What is proposed |
 |---|---|
@@ -311,10 +321,10 @@ After an approved run sessionretro compares the card with what the logs show and
 Never proposed: scores, levels, the review text, and the `feedback` fields tone, length and channel; those are edited by hand only.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions --refresh          # recompute from approved runs
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions alex --all         # with applied and rejected ones
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people apply alex S-alex-001
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --reason "my call"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions --refresh          # recompute from approved runs
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions alex --all         # with applied and rejected ones
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people apply alex S-alex-001
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people reject alex S-alex-002 --reason "my call"
 ```
 
 `apply` changes one line (or adds list items) and keeps the comments and order; if the card then fails validation, the file is restored and the exit code is `1`. A suggestion whose field was edited by hand in the meantime is closed as `stale` by `--refresh`. Suggestions are stored next to the card in `people/<id>.suggestions.json` (field, old and new value, reason, run, status `pending` / `applied` / `rejected` / `stale`); pending ones are shown in `reviewer.html` with ready commands and counted by `doctor` (`card_suggestions_pending`). They never appear in the personal file or in `group.html`.
@@ -323,14 +333,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --re
 
 ## Reports
 
-`/sessionretro:report` (or `sr.py report`) builds self-contained HTML files. Everything a file shows is inside it, so each file is built from a whitelist of what its reader may see: what is cut is absent from the file, not hidden in the browser.
+`/retropair:report` (or `rp.py report`) builds self-contained HTML files. Everything a file shows is inside it, so each file is built from a whitelist of what its reader may see: what is cut is absent from the file, not hidden in the browser.
 
 | File | For whom | What is inside |
 |---|---|---|
 | `reports/reviewer.html` | the reviewer (in self mode, you) | everything: overview, every person's card, axes over time with the judge's explanations, evidence quotes, anti-patterns, flags, drafts and approved texts, dossiers, recommendations, card suggestions, an "As the person sees it" switch |
 | `reports/group.html` | the reviewer, a team lead, an instructor (team and course) | approved runs only: the heatmap "people × axes" in alphabetical order with filters by name, axis and period, the distribution per axis; a click on a row opens the person's card: axes over time, approved texts by period (with an "all" tab), recommendations with verdict history. A "not for distribution" badge on top |
 | `reports/personal/<id>.html` | the person | their card as the reviewer sees it, minus everything reviewer-only |
-| `~/.sessionretro/reports/index.html` | you | all your workspaces with links to their reports |
+| `~/.retropair/reports/index.html` | you | all your workspaces with links to their reports |
 
 <details>
 <summary>Gallery: group card, personal report, texts, recommendations, workspaces page, dark theme</summary>
@@ -396,9 +406,9 @@ A personal report has two views: **scores** (the default: charts with scores 0�
 
 1. the run flag `--scores` or `--trend` (the old names `--show-scores` and `--hide-scores` still work); two view flags at once is code `2`;
 2. `feedback.show_scores: true | false` in the person card (or in `_default.yaml` for everyone);
-3. `show_scores` in `.sessionretro/config.json` (`true` after `setup`).
+3. `show_scores` in `.retropair/config.json` (`true` after `setup`).
 
-When personal reports are built, the `/sessionretro:report` skill asks once "Scores or dynamics only?" and passes the answer as a flag; with `--no-ask` the view comes from the cards and the config. There are never scores in the review text itself.
+When personal reports are built, the `/retropair:report` skill asks once "Scores or dynamics only?" and passes the answer as a flag; with `--no-ask` the view comes from the cards and the config. There are never scores in the review text itself.
 
 </details>
 
@@ -406,51 +416,51 @@ When personal reports are built, the `/sessionretro:report` skill asks once "Sco
 <summary>Group report switches: <code>--no-details</code>, <code>--anon</code></summary>
 
 - `--no-details` (with `--group`) or `"report": {"group_details": false}` in `config.json`: the group report without the person card, numbers and charts only; use it to hide the feedback texts and recommendations from `group.html`.
-- `--anon`, best with `--out-dir <folder>` (without it the anonymized files land in `.sessionretro/reports/` next to the regular ones): an anonymized copy for a demo, an article or an issue. Ids become codes (`p01`…), names become made-up ones, e-mails, profile links, handles and home paths are removed; a file that still contains a real name or id is not written (code `1`).
+- `--anon`, best with `--out-dir <folder>` (without it the anonymized files land in `.retropair/reports/` next to the regular ones): an anonymized copy for a demo, an article or an issue. Ids become codes (`p01`…), names become made-up ones, e-mails, profile links, handles and home paths are removed; a file that still contains a real name or id is not written (code `1`).
 - `group.html` is not written without `--anon` if it contains a word from `sanitize.names`: the old file is deleted, code `1`.
 
 </details>
 
-**Sending a personal file.** Approve the text (drafts never reach the personal file), build with `sr.py report --personal alex`, open `reviewer.html` and press "As the person sees it" to check, then send `reports/personal/alex.html` by any channel you like. It is one self-contained file with no external scripts or fonts; the recipient installs nothing. Before writing it, the command checks it for names and ids of other people in the workspace and for words from `sanitize.names`: if anything is found, that file is not written, the old one is deleted and the exit code is `1`. The plugin never sends anything by itself.
+**Sending a personal file.** Approve the text (drafts never reach the personal file), build with `rp.py report --personal alex`, open `reviewer.html` and press "As the person sees it" to check, then send `reports/personal/alex.html` by any channel you like. It is one self-contained file with no external scripts or fonts; the recipient installs nothing. Before writing it, the command checks it for names and ids of other people in the workspace and for words from `sanitize.names`: if anything is found, that file is not written, the old one is deleted and the exit code is `1`. The plugin never sends anything by itself.
 
 Full page: [docs/en/reports.md](docs/en/reports.md).
 
 ## Collecting logs
 
-`/sessionretro:collect` (or `sr.py collect`) reads the sources from `config.json` and the person cards, passes every log through the sanitizer and writes copies to `.sessionretro/logs/`. It is safe to repeat: originals are never changed, unchanged copies are not rewritten.
+`/retropair:collect` (or `rp.py collect`) reads the sources from `config.json` and the person cards, passes every log through the sanitizer and writes copies to `.retropair/logs/`. It is safe to repeat: originals are never changed, unchanged copies are not rewritten.
 
 | Source type | What it reads | Settings |
 |---|---|---|
 | `claude-jsonl` | Claude Code sessions: `*.jsonl` in `~/.claude/projects/<project folder>/`, with subagent sessions | `"project": "auto"` or a path to another project |
 | `specstory` | SpecStory markdown exports (Claude Code, Codex, Cursor, Antigravity); `collect` runs `specstory sync` first if SpecStory 2.6.0+ is installed | `"path"` relative to the project |
 | `dir` | any folder with `.md`, `.markdown`, `.txt`, `.jsonl` logs, for example a manual `/export` | `"path"` |
-| `git` | a repository with another person's logs, cloned to `~/.sessionretro/clones/` and pulled on the next run (team and course) | `"url"`, optional `"branch"` |
+| `git` | a repository with another person's logs, cloned to `~/.retropair/clones/` and pulled on the next run (team and course) | `"url"`, optional `"branch"` |
 
-`codex-jsonl` and `cursor-jsonl` readers do not exist in 0.1: those agents are collected through SpecStory. Sources can also live in a person card (`sources:`); their logs count as that person's.
+`codex-jsonl` and `cursor-jsonl` readers do not exist in 0.2: those agents are collected through SpecStory. Sources can also live in a person card (`sources:`); their logs count as that person's.
 
-- **Inventory and statuses.** `logs-index.json` keeps every session with a status: `new`, `grown` (assessed, then new turns appeared: only the tail is assessed next time), `unchanged`, `duplicate` (the JSONL is preferred over a SpecStory export of the same session), `gone`, `excluded`. `sr.py inventory` recomputes it from the copies.
-- **The SessionEnd hook.** With `hook.enabled` (on after `setup`) collection starts in the background when a Claude Code session ends; its output goes to `.sessionretro/collect.log`. It runs only for workspaces in your registry `~/.sessionretro/workspaces.json`, so someone else's repository with a committed config cannot collect your logs.
+- **Inventory and statuses.** `logs-index.json` keeps every session with a status: `new`, `grown` (assessed, then new turns appeared: only the tail is assessed next time), `unchanged`, `duplicate` (the JSONL is preferred over a SpecStory export of the same session), `gone`, `excluded`. `rp.py inventory` recomputes it from the copies.
+- **The SessionEnd hook.** With `hook.enabled` (on after `setup`) collection starts in the background when a Claude Code session ends; its output goes to `.retropair/collect.log`. It runs only for workspaces in your registry `~/.retropair/workspaces.json`, so someone else's repository with a committed config cannot collect your logs.
 - **Consent.** `consent.logs: false` in a card stops collection of that person's sources, and snapshots collected earlier are excluded from batches and assessment. `doctor` shows how many cards lack consent.
 - **Retention.** Claude Code deletes its logs after `cleanupPeriodDays` (30 days by default); `setup` offers to raise it to 90, and collected copies stay in the workspace.
-- **Windows** is not supported for collection in 0.1.
+- **Windows** is not supported for collection in 0.2.0.
 
 Details: [docs/en/collect.md](docs/en/collect.md).
 
 ## Privacy
 
-- **Everything runs locally.** The scripts are python on your machine; state lives in `.sessionretro/` of your project and in `~/.sessionretro/`. No server, no account, no telemetry.
+- **Everything runs locally.** The scripts are python on your machine; state lives in `.retropair/` of your project and in `~/.retropair/`. No server, no account, no telemetry.
 - **What goes to a model.** The collector, judge and critic are Claude Code agents in your session, under your account and its terms. Collectors read the sanitized copies; the judge gets the collectors' facts, paths to the copies for pinpoint quote checks, open recommendations and a short card slice. No agent gets past scores, the reviewer's notes or other people's logs.
 - **Network from scripts**: only `git clone`/`git pull` of repositories you listed and `specstory sync` if SpecStory is a source.
 - **The sanitizer runs first.** It replaces with labels: cloud and API keys, tokens, JWT, private keys, secrets in JSON, code and env assignments, passwords in forms, text, tables and CSV, connection strings, 2FA/TOTP secrets, e-mails, phones, passport, card and IBAN numbers, logins in home paths (macOS, Linux, Windows, WSL, Claude Code folder names), internal hosts, private IPs, names from person cards and `sanitize.names`, and your own `sanitize.extra_patterns`. Changing the rules re-cleans existing copies on the next `collect`.
 - **The guard against other people's names.** A personal file that mentions another person of the workspace or a word from `sanitize.names` is not written; `group.html` is not written if it contains a word from `sanitize.names` (participants' names are legitimate in it).
 - **Nothing is sent by the plugin.** Reports are files you share yourself; proposals to the authors are files you file as an issue yourself.
-- **Limits.** The sanitizer is rule-based: a person mentioned inside a log is removed only if they are in a card or in `sanitize.names`, and a client name in free text is visible only to you. Look through a copy in `.sessionretro/logs/` before you hand logs to anyone.
+- **Limits.** The sanitizer is rule-based: a person mentioned inside a log is removed only if they are in a card or in `sanitize.names`, and a client name in free text is visible only to you. Look through a copy in `.retropair/logs/` before you hand logs to anyone.
 
 Details: [docs/en/privacy.md](docs/en/privacy.md).
 
 ## Configuration
 
-The workspace settings are in `.sessionretro/config.json`; `setup` writes them, you can edit them by hand. `setup` does not ask about `reviewer_gate`, `sanitize` and `batches`: those are edited only in the file (a `setup-apply` answer with these keys is rejected with code `2`). For scripts and CI: `sr.py setup-apply --answers <file|->` with a JSON object; `sr.py setup-state` prints the current values.
+The workspace settings are in `.retropair/config.json`; `setup` writes them, you can edit them by hand. `setup` does not ask about `reviewer_gate`, `sanitize` and `batches`: those are edited only in the file (a `setup-apply` answer with these keys is rejected with code `2`). For scripts and CI: `rp.py setup-apply --answers <file|->` with a JSON object; `rp.py setup-state` prints the current values.
 
 | Key | Default | What it changes |
 |---|---|---|
@@ -459,7 +469,7 @@ The workspace settings are in `.sessionretro/config.json`; `setup` writes them, 
 | `sources` | SpecStory + Claude Code of this project | where logs come from: `claude-jsonl`, `specstory`, `dir`, `git` |
 | `hook.enabled`, `hook.providers` | `true`, `["claude"]` | background collection after every Claude Code session; which agents SpecStory exports |
 | `models` | collector `sonnet`/`medium`, judge `opus`/`high`, critic `sonnet`/`medium` | model and effort of each agent |
-| `period.mode` | `run` | periods by run date (`run`) or by date windows (`dates`); `labels` is accepted, but in 0.1 `review` does not ask for a label and such runs stay unlabeled |
+| `period.mode` | `run` | periods by run date (`run`) or by date windows (`dates`); `labels` is accepted, but in 0.2 `review` does not ask for a label and such runs stay unlabeled |
 | `show_scores` | `true` | the personal report view: scores and level, or dynamics only ↑ → ↓ ◇ |
 | `reviewer_gate` | `true` | in team and course a text is a draft until approved; by hand only |
 | `report.group_details` | `true` (optional key) | the person card in `group.html`; `false` means numbers only |
@@ -484,10 +494,10 @@ Models: `sonnet`, `opus`, `haiku`, `inherit`; effort: `low`, `medium`, `high`, `
 <details>
 <summary>Project agents, doctor, the workspace registry, proposals to the authors</summary>
 
-- **Project agents.** `setup` writes `.claude/agents/sessionretro-log-collector.md`, `sessionretro-log-judge.md` and `sessionretro-feedback-critic.md`: their bodies are prompts you may edit (keep the `name:` line). The plugin remembers a fingerprint of each in `.sessionretro/agents.json`: unedited files follow plugin updates by themselves (`agents sync` at the start of every review), edited ones are never overwritten. `sr.py agents check` compares them with `config.json`; `sr.py agents write --force` brings back the plugin's agents.
-- **`sr.py doctor`** checks the workspace, the environment and the registry: sources found, project agents, `.gitignore`, `show_scores`, period mode, template, `cleanupPeriodDays`, people without consent, pending proposals and card suggestions, when the reports were last built.
-- **The registry** `~/.sessionretro/workspaces.json` feeds the page of all workspaces; `sr.py workspaces list` and `workspaces remove <id>|--missing` tidy it up.
-- **Proposals to the authors (`improve`).** When a task hits a limit of the plugin itself, the skill finishes it with a workaround and asks once whether to record a proposal. It is an anonymized file in `.sessionretro/improvements/`; `sr.py improve pack` gathers pending ones into one file and prints a ready `gh issue create` command that you run yourself. Nothing is sent by the plugin.
+- **Project agents.** `setup` writes `.claude/agents/retropair-log-collector.md`, `retropair-log-judge.md` and `retropair-feedback-critic.md`: their bodies are prompts you may edit (keep the `name:` line). The plugin remembers a fingerprint of each in `.retropair/agents.json`: unedited files follow plugin updates by themselves (`agents sync` at the start of every review), edited ones are never overwritten. `rp.py agents check` compares them with `config.json`; `rp.py agents write --force` brings back the plugin's agents.
+- **`rp.py doctor`** checks the workspace, the environment and the registry: sources found, project agents, `.gitignore`, `show_scores`, period mode, template, `cleanupPeriodDays`, people without consent, pending proposals and card suggestions, when the reports were last built.
+- **The registry** `~/.retropair/workspaces.json` feeds the page of all workspaces; `rp.py workspaces list` and `workspaces remove <id>|--missing` tidy it up.
+- **Proposals to the authors (`improve`).** When a task hits a limit of the plugin itself, the skill finishes it with a workaround and asks once whether to record a proposal. It is an anonymized file in `.retropair/improvements/`; `rp.py improve pack` gathers pending ones into one file and prints a ready `gh issue create` command that you run yourself. Nothing is sent by the plugin.
 
 Details: [docs/en/setup.md](docs/en/setup.md), [docs/en/customize.md](docs/en/customize.md), [docs/en/workspace.md](docs/en/workspace.md), [docs/en/feedback.md](docs/en/feedback.md).
 
@@ -495,7 +505,7 @@ Details: [docs/en/setup.md](docs/en/setup.md), [docs/en/customize.md](docs/en/cu
 
 ## Cost, time and quality
 
-**Cost and time.** Measured in the end-to-end check on real work with the plugin installed from the marketplace, default models (opus judge, sonnet collectors):
+**Cost and time.** Historical measurements from the pre-rebrand implementation; they are examples, not current pricing or guaranteed estimates. Measured in the end-to-end check on real work with the plugin installed from the marketplace, default models (opus judge, sonnet collectors):
 
 | What | Cost | Time |
 |---|---|---|
@@ -515,14 +525,14 @@ An honest caveat: ±1 is a weak bar when most scores sit between 2 and 4, and th
 
 ## Demo
 
-The plugin ships an anonymized demo workspace: a real learning group with fictional names, 15 people, five periods, approved review texts in Russian. Every `sr.py` command updates `.sessionretro/plugin-state.json` of its workspace, so run the demo on a copy. From the plugin folder:
+The plugin ships an anonymized demo workspace: a real learning group with fictional names, 15 people, five periods, approved review texts in Russian. Every `rp.py` command updates `.retropair/plugin-state.json` of its workspace, so run the demo on a copy. From the plugin folder:
 
 ```bash
-cp -R demo/workspace /tmp/sessionretro-demo-ws
-python3 scripts/sr.py --workspace /tmp/sessionretro-demo-ws report --group --all-personal --reviewer --out-dir /tmp/sessionretro-demo
+cp -R demo/workspace /tmp/retropair-demo-ws
+python3 scripts/rp.py --workspace /tmp/retropair-demo-ws report --group --all-personal --reviewer --out-dir /tmp/retropair-demo
 ```
 
-Then open `group.html`, `reviewer.html` and `personal/*.html` in `/tmp/sessionretro-demo`. What is inside and how it was anonymized: [demo/README.md](demo/README.md).
+Then open `group.html`, `reviewer.html` and `personal/*.html` in `/tmp/retropair-demo`. What is inside and how it was anonymized: [demo/README.md](demo/README.md).
 
 ## FAQ
 
@@ -565,10 +575,10 @@ More answers: [docs/en/faq.md](docs/en/faq.md).
 
 ## How it differs
 
-- Claude Code's `/insights` shows where a session with Claude got stuck. sessionretro looks at your way of working across a period: eight axes, anti-patterns and change against your own previous period.
-- Usage trackers count tokens and money; session archivers such as SpecStory keep the history. sessionretro assesses the process itself and reads SpecStory exports as one of its sources.
+- Claude Code's `/insights` shows where a session with Claude got stuck. RetroPair looks at your way of working across a period: eight axes, anti-patterns and change against your own previous period.
+- Usage trackers count tokens and money; session archivers such as SpecStory keep the history. RetroPair assesses the process itself and reads SpecStory exports as one of its sources.
 - Rule-based coaching counts patterns. Here every judgement stands on a verbatim quote with the session and turn, and a missing signal is "insufficient data".
-- Single-session reviewers look at the last chat. sessionretro reviews many sessions of a period and follows up on its own recommendations next period.
+- Single-session reviewers look at the last chat. RetroPair reviews many sessions of a period and follows up on its own recommendations next period.
 - Roles for a team lead and an instructor, with a reviewer gate before a text reaches a person. No rankings and no leaderboards.
 
 ## Documentation
@@ -579,7 +589,9 @@ More answers: [docs/en/faq.md](docs/en/faq.md).
 
 ## Roadmap
 
-0.1 is done and checked on Claude Code; logs of Cursor, Codex, Antigravity and other agents are collected through SpecStory, the assessment runs from Claude Code. Next: running the assessment from Codex and Cursor, readers for their session files, Windows support, English axis references. Never: rankings of people, token analytics, code review. Details (in Russian): [ROADMAP.md](ROADMAP.md).
+The 0.2.0 rebrand preserves the existing Claude Code workflow; logs of Cursor, Codex, Antigravity and other agents are collected through SpecStory, the assessment runs from Claude Code. Next: running the assessment from Codex and Cursor, readers for their session files, Windows support, English axis references. Never: rankings of people, token analytics, code review. Details (in Russian): [ROADMAP.md](ROADMAP.md).
+
+A convenience `/retropair:retro` command (Collect → Review → Report) is planned, not implemented. It must keep explicit reviewer approval in team/course modes.
 
 ## Contributing
 
@@ -588,3 +600,5 @@ Start with an issue: templates for a bug, a proposal and a privacy leak. Questio
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+Created by [Prodfeat.ai](https://prodfeat.ai). RetroPair is an independent product.

@@ -4,7 +4,7 @@
 на подложенных секретах. Отдельный вопрос, пишет ли расширение VS Code на диск вообще,
 закрыт: пишет.
 
-Ставить ничего, кроме sessionretro, не нужно: плагин читает сессии Claude Code напрямую.
+Ставить ничего, кроме RetroPair, не нужно: плагин читает сессии Claude Code напрямую.
 SpecStory — по желанию, если нужна ещё и markdown-копия (раздел в конце).
 
 ## Куда пишутся ваши логи
@@ -35,10 +35,10 @@ ls -lt ~/.claude/projects/$(pwd | sed 's/[^A-Za-z0-9]/-/g')/*.jsonl | head -3
 Один раз в корне проекта создайте workspace, если его ещё нет:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
-В `.sessionretro/config.json` в поле `sources` добавьте источник Claude Code:
+В `.retropair/config.json` в поле `sources` добавьте источник Claude Code:
 
 ```json
 "sources": [
@@ -51,24 +51,24 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
 ## Шаг 3. Соберите и вычистите
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
-Команда копирует каждую сессию снимком в `.sessionretro/logs/me/` и по дороге вычищает его
+Команда копирует каждую сессию снимком в `.retropair/logs/me/` и по дороге вычищает его
 встроенным санитайзером: секреты, пароли, почту, телефоны, строки подключения, имя
 пользователя ОС в путях. Исходные файлы сессий не меняются, `*.orig` плагин не пишет.
 В конце — сводка: сколько сессий новых, выросших, без изменений и что где заменено.
 
 Имена собственные регулярным выражением не ловятся. Впишите свои названия и фамилии —
-компанию, коллег, внутренние системы — в `.sessionretro/config.json`:
+компанию, коллег, внутренние системы — в `.retropair/config.json`:
 
 ```json
 "sanitize": {"names": ["ООО Ромашка", "Иванов"], "extra_patterns": []}
 ```
 
 Учтите срок: Claude Code сам удаляет свои транскрипты примерно через тридцать дней.
-Снимок в `.sessionretro/logs/` остаётся, но собрать надо успеть. Проще всего включить
-автосбор в конце каждой сессии Claude Code — в `.sessionretro/config.json`:
+Снимок в `.retropair/logs/` остаётся, но собрать надо успеть. Проще всего включить
+автосбор в конце каждой сессии Claude Code — в `.retropair/config.json`:
 
 ```json
 "hook": {"enabled": true, "providers": ["claude"]}
@@ -77,7 +77,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
 ## Шаг 4. Посмотрите своими глазами
 
 ```bash
-grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretro/logs | head
+grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .retropair/logs | head
 ```
 
 Затем откройте один снимок целиком и пролистайте: автоматика ловит форматы, а название
@@ -94,7 +94,7 @@ grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretr
 а не сырые сессии:
 
 ```bash
-git add .sessionretro/logs
+git add .retropair/logs
 git commit -m "логи сессий"
 git push origin
 ```
@@ -105,7 +105,7 @@ git push origin
 ## По желанию: markdown-копия через SpecStory
 
 SpecStory разворачивает сессии в обычные markdown-файлы в `.specstory/history/` —
-удобно читать глазами. Для sessionretro это второй источник той же сессии: при дубле
+удобно читать глазами. Для RetroPair это второй источник той же сессии: при дубле
 побеждает `claude-jsonl`, в нём больше данных.
 
 Установка:

@@ -1,6 +1,6 @@
 # Reports: what each reader sees
 
-Once a period is assessed, sessionretro builds HTML reports from the results. They are ordinary
+Once a period is assessed, RetroPair builds HTML reports from the results. They are ordinary
 files: they open in any browser, work without the internet and send nothing anywhere. All the data
 is already inside the file, so the main rule is simple: **each file gets only what its reader is
 supposed to see**. Everything else is cut when the file is built, not hidden in the browser.
@@ -11,15 +11,15 @@ plugin; the demo review texts are in Russian, the interface is switched to Engli
 ## How to build
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" report
 ```
 
 ```text
-/home/user/work/my-app/.sessionretro/reports/group.html · 84.9 КБ
-/home/user/work/my-app/.sessionretro/reports/reviewer.html · 171.2 КБ
-/home/user/work/my-app/.sessionretro/reports/personal/alex.html · 87.6 КБ
-/home/user/work/my-app/.sessionretro/reports/personal/sam.html · 87.5 КБ
-/home/user/.sessionretro/reports/index.html · 4.4 КБ
+/home/user/work/my-app/.retropair/reports/group.html · 84.9 КБ
+/home/user/work/my-app/.retropair/reports/reviewer.html · 171.2 КБ
+/home/user/work/my-app/.retropair/reports/personal/alex.html · 87.6 КБ
+/home/user/work/my-app/.retropair/reports/personal/sam.html · 87.5 КБ
+/home/user/.retropair/reports/index.html · 4.4 КБ
 ```
 
 Without flags it builds everything that fits the workspace mode: in `self`, the reviewer report,
@@ -28,7 +28,7 @@ well. Reports are built from the assessment history, so at least one assessment 
 first.
 
 You can rebuild as often as you like: report files are overwritten whole, and the command changes
-no other workspace data. Inside Claude Code the `/sessionretro:report` skill does the same.
+no other workspace data. Inside Claude Code the `/retropair:report` skill does the same.
 
 ## Reports and the workspaces page
 
@@ -37,7 +37,7 @@ no other workspace data. Inside Claude Code the `/sessionretro:report` skill doe
 | `reports/reviewer.html` | the reviewer (in `self` mode, you) | everything: overview, person cards, axes over time, evidence from the logs, anti-patterns, flags, drafts and approved review texts, dossiers, recommendations and their history, card suggestions |
 | `reports/group.html` | the reviewer, a team lead, an instructor; shown to the group, not forwarded (`team`, `course`) | approved runs only. Overview: summary numbers, axes per person, the distribution of scores; a click on a person opens their card: axes over time, approved review texts by period and recommendations with verdicts. With `--no-details`, numbers and charts only |
 | `reports/personal/<id>.html` | the person | their card as the reviewer sees it, minus the reviewer-only parts: axes over time (with scores and level, or dynamics only ↑ → ↓ ◇), agents and models, recommendations with status and verdicts by period, approved review texts |
-| `~/.sessionretro/reports/index.html` | you | all your workspaces with links to their reports |
+| `~/.retropair/reports/index.html` | you | all your workspaces with links to their reports |
 
 Dates in the reports are the dates of the period's logs (the "Logs: …" line in the header, the
 "log dates" tile, the chart labels), not the day the assessment ran; the reviewer sees the
@@ -97,7 +97,7 @@ A click on a person opens their card:
   as in the personal report), and an "all" tab with all texts in a row under period headings;
 - "Recommendations and what became of them": as in the personal report, status and verdicts by
   period, the verdict explanation in a tooltip (machine paths in it are cut: a path inside
-  `.sessionretro/` becomes `logs/<id>/<file>`, any other becomes a file name).
+  `.retropair/` becomes `logs/<id>/<file>`, any other becomes a file name).
 
 <p align="center"><img src="../images/gallery/group-person-card.en.png" alt="Person card inside the group report: axes over time, approved review texts by period and recommendations with verdict history" width="900"></p>
 
@@ -114,9 +114,9 @@ stay in the reviewer report.
 The card is on by default. To hide the feedback texts and recommendations from `group.html` and
 keep numbers and charts only, turn it off:
 
-- for one run: `sr.py report --group --no-details` (without the `--group` target the flag gives
+- for one run: `rp.py report --group --no-details` (without the `--group` target the flag gives
   code `2`);
-- always: `"report": {"group_details": false}` in `.sessionretro/config.json`.
+- always: `"report": {"group_details": false}` in `.retropair/config.json`.
 
 Participants' names are legitimate in the group report, so the names and ids of workspace people
 are not searched for in it. Words from `sanitize.names` are always searched for, as in personal
@@ -142,7 +142,7 @@ without the parts that belong to the reviewer. It has:
   ("P2 ✓ Followed", "P3 ◐ Partly followed"), with the explanation in a tooltip on hover; a
   recommendation not checked yet says "not checked yet". The person sees the explanation as text:
   machine paths in it are reduced to a file name when the file is built (a path inside
-  `.sessionretro/` becomes `logs/<id>/<file>`), and the OS login is removed; the reviewer sees the
+  `.retropair/` becomes `logs/<id>/<file>`), and the OS login is removed; the reviewer sees the
   explanation as is in their report;
 - the review texts the reviewer approved, only the part that is sent; the "all" tab shows them in
   a row under period headings.
@@ -229,10 +229,10 @@ The view is chosen like this; the first one that is set decides:
    call error, code `2`;
 2. the person card: `show_scores: true` or `false` in the `feedback` section of
    `people/<id>.yaml`, the view for this person (see [the person card](workspace.md#the-person-card));
-3. `show_scores` in `.sessionretro/config.json`: `true` (as `setup` creates it) means scores,
+3. `show_scores` in `.retropair/config.json`: `true` (as `setup` creates it) means scores,
    `false` means dynamics only.
 
-When personal reports are built, the `/sessionretro:report` skill asks once "Scores or dynamics
+When personal reports are built, the `/retropair:report` skill asks once "Scores or dynamics
 only?" and passes the answer as a flag; with `--no-ask` it does not ask, and the view comes from
 the cards and the config.
 
@@ -248,7 +248,7 @@ levels, with any flag.
 
 1. Approve the review text for the period: only approved texts get into the personal report, a
    draft never does, with any flags.
-2. Build the reports: `sr.py report`, or for one person only, `sr.py report --personal alex`.
+2. Build the reports: `rp.py report`, or for one person only, `rp.py report --personal alex`.
 3. Open `reports/reviewer.html`, find the person and press "As the person sees it": this is
    exactly what ends up in their file.
 4. Send `reports/personal/alex.html` any way you like: e-mail, a messenger, a shared folder. It is
@@ -261,7 +261,7 @@ The plugin sends nothing by itself. You decide what goes to whom.
 Before writing a personal file, the command checks it for names and ids of other people in this
 workspace. You can add your own words that must never get into personal files or the group report
 (names of internal projects, colleagues outside the workspace) with the `sanitize.names` list in
-`.sessionretro/config.json`. The group report is checked only for these words: participants' names
+`.retropair/config.json`. The group report is checked only for these words: participants' names
 are legitimate in it.
 
 ```json
@@ -272,7 +272,7 @@ If the check finds something, that person's file (or `group.html`) is not writte
 is deleted so that an outdated version is not sent by mistake. The other files are built as usual:
 
 ```text
-sessionretro: чужие токены в /home/user/work/my-app/.sessionretro/reports/personal/alex.html: sam: Sam → «Sam» — файл не записан; старый файл удалён
+retropair: чужие токены в /home/user/work/my-app/.retropair/reports/personal/alex.html: sam: Sam → «Sam» — файл не записан; старый файл удалён
 ```
 
 ("other people's tokens in …: the file is not written; the old file is deleted"). The exit code is
@@ -286,7 +286,7 @@ the check does not look at it: the word "Demo" in "Demo team" is not taken for t
 writes the files and prints a warning with the ids of those cards, without the names themselves:
 
 ```text
-предупреждение: workspace title contains name tokens of: sam — заголовок workspace показывается в каждом личном файле и гейтом чужих имён не проверяется; уберите имена из workspace.title в .sessionretro/config.json
+предупреждение: workspace title contains name tokens of: sam — заголовок workspace показывается в каждом личном файле и гейтом чужих имён не проверяется; уберите имена из workspace.title в .retropair/config.json
 ```
 
 ("warning: … the workspace title is shown in every personal file and is not checked by the name
@@ -298,7 +298,7 @@ Need an example report for a demo, an article or a question in an issue? Build a
 in a separate folder:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report --anon --out-dir ~/sessionretro-demo
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" report --anon --out-dir ~/retropair-demo
 ```
 
 In anonymized files:
@@ -318,16 +318,16 @@ workspace is still in it (in a personal file, the recipient's own too), the file
 exit code `1`.
 
 `--out-dir` is needed here so that anonymized files do not land next to the regular ones in
-`.sessionretro/reports/`. The page of all workspaces is not anonymized: it is only for you and is
-always written to `~/.sessionretro/reports/`.
+`.retropair/reports/`. The page of all workspaces is not anonymized: it is only for you and is
+always written to `~/.retropair/reports/`.
 
 ## The page of all workspaces
 
-`~/.sessionretro/reports/index.html` is built together with the reports (or separately with the
+`~/.retropair/reports/index.html` is built together with the reports (or separately with the
 `--index` flag). It lists all workspaces from the registry: title, mode, groups, date of the last
 run and links to the built reports. If a report has not been built yet, the page says "not built"
 instead of a link; if the project folder is gone, "folder not found". The links lead to
-`.sessionretro/reports/` of each project, so reports built with `--out-dir` are not visible here.
+`.retropair/reports/` of each project, so reports built with `--out-dir` are not visible here.
 
 When the reviewer report was last built is shown by `doctor` in the `reports_built_at` line.
 
@@ -353,17 +353,17 @@ remembered in the browser.
 | `--anon` | anonymize (see above) |
 | `--scores` · `--trend` | the view of personal reports for this run: scores and level · dynamics only ↑ → ↓ ◇ (see "Scores and level"); old names `--show-scores` · `--hide-scores` |
 | `--lang ru\|en` | the report language; by default from `config.json`. The file itself has a language switch too |
-| `--out-dir <folder>` | where to write instead of `.sessionretro/reports/` (the workspaces page is still written to `~/.sessionretro/reports/`) |
+| `--out-dir <folder>` | where to write instead of `.retropair/reports/` (the workspaces page is still written to `~/.retropair/reports/`) |
 | `--json` | print the list of built files as JSON: kind, person, path, size |
 | `--workspace <folder>` | name the project explicitly, as in any command |
 
-Target flags can be combined: `sr.py report --reviewer --personal alex`,
-`sr.py report --group --all-personal --out-dir <folder>`. `--personal` and `--all-personal` do not
+Target flags can be combined: `rp.py report --reviewer --personal alex`,
+`rp.py report --group --all-personal --out-dir <folder>`. `--personal` and `--all-personal` do not
 work together (code `2`), and neither do view flags (`--scores`, `--trend` and their old names).
 
 ## Common errors
 
-Messages are printed in Russian in 0.1; the first column shows them as printed.
+Messages are printed in Russian in 0.2; the first column shows them as printed.
 
 | Message | What it means and what to do |
 |---|---|
@@ -372,7 +372,7 @@ Messages are printed in Russian in 0.1; the first column shows them as printed.
 | `нет прогонов для отчёта` | no runs for a report: all runs are retracted, nothing to build |
 | `прогон …: нет карточки человека …` | the history has a person whose card was deleted; put the card back into `people/` |
 | `прогон …: score / revision … должно быть …` or `элемент runs[N] трекера не объект` | the history was edited by hand and a field has the wrong type; fix the named field |
-| `report --personal: нет карточки человека …` (code `2`) | a typo in the id; the list is `sr.py people list` |
+| `report --personal: нет карточки человека …` (code `2`) | a typo in the id; the list is `rp.py people list` |
 | `report --personal: у человека … нет живых прогонов` | this person has not been assessed yet |
 | `в режиме self групповой отчёт не собирается` | in `self` there is one person and no group report; if there were no other targets, code `1` |
 | `чужие токены в …` | the guard against other people's names fired, see above |
@@ -403,6 +403,6 @@ Exit codes: `0` everything is built, `1` the data did not add up or a check fire
 
 ## More
 
-- [Workspace: where sessionretro keeps your data](workspace.md)
+- [Workspace: where RetroPair keeps your data](workspace.md)
 - [Customizing: cards, the text template, card suggestions](customize.md)
 - [Русская версия](../ru/reports.md)

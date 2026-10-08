@@ -1,6 +1,8 @@
 # Настройка под себя: карточки, шаблон текста и проектные агенты
 
-После `/sessionretro:setup` всё работает на значениях по умолчанию. Эта страница — о том, что
+Переходите с SessionRetro? Перед созданием нового workspace прочитайте [инструкцию миграции](migration.md).
+
+После `/retropair:setup` всё работает на значениях по умолчанию. Эта страница — о том, что
 можно подстроить руками: как писать текст конкретному человеку, как выглядит сам текст и какие
 модели и промпты у агентов в вашем проекте. Всё это — файлы в вашем проекте; обновление плагина
 их не трогает.
@@ -8,13 +10,13 @@
 Посмотреть, с какими настройками плагин работает сейчас:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show me --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people show me --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents check
 ```
 
 ## Карточка человека
 
-Каждому человеку — файл `.sessionretro/people/<id>.yaml` (в режиме self — `me.yaml`). Карточку
+Каждому человеку — файл `.retropair/people/<id>.yaml` (в режиме self — `me.yaml`). Карточку
 создаёт `setup`; повторный запуск её не перезаписывает, так что правьте файл смело.
 
 ```yaml
@@ -45,7 +47,7 @@ feedback:
 
 ## Общие настройки текста: `_default.yaml`
 
-`.sessionretro/people/_default.yaml` задаёт настройки текста для всех карточек workspace сразу.
+`.retropair/people/_default.yaml` задаёт настройки текста для всех карточек workspace сразу.
 Поменяли здесь — поменялось у всех, кроме тех, у кого в карточке своё значение.
 
 | Поле | Допустимые значения | По умолчанию | Что меняет |
@@ -61,7 +63,7 @@ feedback:
 | `avoid` | список строк | пусто | чего не делать в тексте: сравнений, сленга, эмодзи |
 | `value_focus` | `finding` · `full` | `finding` | ценность в находках, которых человек не видел, или полный проход по всем осям |
 | `show_dynamics` | `true` · `false` | `true` | показывать ли изменения с прошлого периода |
-| `channel` | `file` · `telegram` · `slack` · `email` | `file` | куда пойдёт текст; пока только метка: хранится и проверяется, но в 0.1.13 текст собирается одинаково для любого канала |
+| `channel` | `file` · `telegram` · `slack` · `email` | `file` | куда пойдёт текст; пока только метка: хранится и проверяется, но в 0.2.0 текст собирается одинаково для любого канала |
 | `template` | `default` · `workspace` · имя файла | `default` | какой шаблон текста взять (ниже) |
 | `prefix` | строка | `""` | что поставить перед текстом, например приветствие |
 | `show_scores` | `true` · `false` | нет (как `show_scores` в `config.json`) | вид личного отчёта: с баллами и уровнем или только динамика ↑ → ↓ ◇; флаг `report --scores`/`--trend` сильнее; строка в `_default.yaml` действует на всех и сильнее `config.json`. Оценщику не подаётся |
@@ -82,7 +84,7 @@ feedback:
 
 ## Карточка обновляется по предложениям
 
-После одобренного разбора sessionretro сверяет карточку с тем, что видно в логах, и копит
+После одобренного разбора RetroPair сверяет карточку с тем, что видно в логах, и копит
 предложения правок. Сам он карточку не меняет: правка попадает в файл только после вашей команды
 `people apply`. Баллы, уровни и текст разбора от предложений не зависят.
 
@@ -99,16 +101,16 @@ feedback:
   длина, канал — правятся только руками.
 
 Скилл `review` в конце прогона и после `--approve` пересчитывает предложения и показывает их в
-сводке вместе с командами, но сам их не применяет. Голая `sr.py approve` их не пересчитывает:
+сводке вместе с командами, но сам их не применяет. Голая `rp.py approve` их не пересчитывает:
 после неё запустите `people suggestions --refresh` сами. Те же действия вручную:
 
 ```bash
 # ожидающие решения предложения всех людей; --refresh — пересчитать по одобренным прогонам
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions --refresh
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions --refresh
 # одного человека, вместе с применёнными и отклонёнными
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions alex --all
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people apply alex S-alex-001
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --reason "сам решу"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions alex --all
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people apply alex S-alex-001
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people reject alex S-alex-002 --reason "сам решу"
 ```
 
 Без `--refresh` команда только читает файлы, `--json` отдаёт то же одним объектом. `apply` меняет
@@ -126,7 +128,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --re
 закомментирован: `apply` раскомментирует строку `# feedback:` и нужный ключ, остальные строки
 остаются комментариями, и их можно раскомментировать как обычно.
 
-Предложения хранятся рядом с карточкой, в `.sessionretro/people/<id>.suggestions.json`: поле,
+Предложения хранятся рядом с карточкой, в `.retropair/people/<id>.suggestions.json`: поле,
 старое и новое значение, основание, прогон, статус (`pending`, `applied`, `rejected`, `stale`), когда и
 почему решено. Файл живёт вместе с workspace, как и сама карточка.
 
@@ -140,10 +142,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --re
 Шаблон задаёт только оформление текста человеку: порядок частей, приветствие, подпись. Что
 написано в частях, решают оценка и настройки выше.
 
-1. Получите копию шаблона плагина: на вопрос «Шаблон текста» в `/sessionretro:setup` ответьте
+1. Получите копию шаблона плагина: на вопрос «Шаблон текста» в `/retropair:setup` ответьте
    «Своя копия шаблона» или примените ответ `{"template": "workspace"}` (см. [setup.md](setup.md)).
-   Копия ляжет в `.sessionretro/templates/feedback.md`; уже лежащая копия не перезаписывается.
-2. Подключите её к текстам: в `.sessionretro/people/_default.yaml` (для всех) или в карточке
+   Копия ляжет в `.retropair/templates/feedback.md`; уже лежащая копия не перезаписывается.
+2. Подключите её к текстам: в `.retropair/people/_default.yaml` (для всех) или в карточке
    человека (для одного) поставьте
 
    ```yaml
@@ -151,11 +153,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --re
      template: workspace
    ```
 
-3. Правьте `.sessionretro/templates/feedback.md`. Комментарий в начале файла объясняет формат и
+3. Правьте `.retropair/templates/feedback.md`. Комментарий в начале файла объясняет формат и
    адресату не уходит. В шаблоне пять подстановок в двойных фигурных скобках: `prefix`,
    `opening`, `actions`, `criteria`, `closing`; других нет.
 
-Можно держать несколько шаблонов: положите файл, например `short.md`, в `.sessionretro/templates/`
+Можно держать несколько шаблонов: положите файл, например `short.md`, в `.retropair/templates/`
 и укажите в карточке `template: short.md` (только имя файла, без папок). Файла нет — сборка текста
 остановится с кодом `1` и путём, который она искала; тихой подмены шаблоном плагина нет.
 
@@ -169,9 +171,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --re
 
 | Роль | Файл в проекте | Модель в `config.json` |
 |---|---|---|
-| коллектор | `.claude/agents/sessionretro-log-collector.md` | `models.collector` |
-| судья | `.claude/agents/sessionretro-log-judge.md` | `models.judge` |
-| критик | `.claude/agents/sessionretro-feedback-critic.md` | `models.critic` |
+| коллектор | `.claude/agents/retropair-log-collector.md` | `models.collector` |
+| судья | `.claude/agents/retropair-log-judge.md` | `models.judge` |
+| критик | `.claude/agents/retropair-feedback-critic.md` | `models.critic` |
 
 Если файл в проекте есть, ретро зовёт его; нет — берёт агента плагина. Правленые вами файлы
 обновление плагина не трогает: ваши правки остаются (как обновляются непроправленные — ниже,
@@ -181,10 +183,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --re
 
 Модель и effort агента живут в двух местах: в `config.json` (`models.<роль>`) и в строках
 `model:` и `effort:` в начале файла агента. Меняйте их через настройку — повторный
-`/sessionretro:setup`, блок «Модели», или напрямую:
+`/retropair:setup`, блок «Модели», или напрямую:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers - <<'EOF'
 {"models": {"judge": {"model": "opus", "effort": "max"}}}
 EOF
 ```
@@ -193,7 +195,7 @@ EOF
 Поправили `config.json` руками — выполните `agents write`, чтобы файлы догнали конфиг:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents write
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents write
 ```
 
 Модели: `sonnet`, `opus`, `haiku`, `inherit` (как у основной сессии); effort: `low`, `medium`,
@@ -210,13 +212,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents write
 ### Проверка: `agents check`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents check
 ```
 
 ```text
-collector: ok (.claude/agents/sessionretro-log-collector.md)
-judge: тело правлено вручную (.claude/agents/sessionretro-log-judge.md)
-critic: ok (.claude/agents/sessionretro-feedback-critic.md)
+collector: ok (.claude/agents/retropair-log-collector.md)
+judge: тело правлено вручную (.claude/agents/retropair-log-judge.md)
+critic: ok (.claude/agents/retropair-feedback-critic.md)
 ```
 
 По каждой роли: есть ли файл (`нет файла`), совпадают ли модель и effort с `config.json`
@@ -227,7 +229,7 @@ critic: ok (.claude/agents/sessionretro-feedback-critic.md)
 
 ### После обновления плагина
 
-При каждой записи агента плагин запоминает отпечаток его тела в `.sessionretro/agents.json`
+При каждой записи агента плагин запоминает отпечаток его тела в `.retropair/agents.json`
 (`{"<роль>": {"sha256", "plugin_version"}}`). Так он отличает два случая, когда файл расходится с
 промптом новой версии:
 
@@ -237,20 +239,20 @@ critic: ok (.claude/agents/sessionretro-feedback-critic.md)
 - **файл правили** — тело не совпадает ни с отпечатком, ни с новым промптом: пометка
   «тело правлено вручную», файл не трогается, как описано выше.
 
-Руками это делать не нужно: `/sessionretro:review` в начале каждого прогона, до запуска агентов,
+Руками это делать не нужно: `/retropair:review` в начале каждого прогона, до запуска агентов,
 выполняет `agents sync`. Она обновляет только непроправленные файлы до промпта текущей версии с
 моделями из `config.json`, правленые не трогает, отсутствующие не создаёт и всегда выходит с
 кодом `0`, так что ретро не встаёт. Её строки ретро показывает вам, а при `--no-ask` кладёт в
 итоговую сводку:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents sync
 ```
 
 ```text
-обновлён: collector (.claude/agents/sessionretro-log-collector.md)
-без изменений: critic (.claude/agents/sessionretro-feedback-critic.md)
-правлен вручную: judge (.claude/agents/sessionretro-log-judge.md) — не тронут, промпт новой версии плагина в него не попал; взять агента плагина (ваши правки пропадут): `agents write --force`
+обновлён: collector (.claude/agents/retropair-log-collector.md)
+без изменений: critic (.claude/agents/retropair-feedback-critic.md)
+правлен вручную: judge (.claude/agents/retropair-log-judge.md) — не тронут, промпт новой версии плагина в него не попал; взять агента плагина (ваши правки пропадут): `agents write --force`
 ```
 
 Файлов агентов нет — печатается «проектных агентов нет», ретро берёт агентов плагина. `--json`
@@ -263,7 +265,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
 ### Вернуть агента плагина: `agents write --force`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents write --force
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents write --force
 ```
 
 Перезаписывает все три файла свежими копиями из плагина с моделями из `config.json`. **Ваши правки
@@ -271,7 +273,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents write --force
 команда правленые файлы не трогает и выходит с кодом `1`, перечислив их:
 
 ```text
-sessionretro: agents write: правлены вручную и не перезаписаны: .claude/agents/sessionretro-log-judge.md — перезаписать: agents write --force
+retropair: agents write: правлены вручную и не перезаписаны: .claude/agents/retropair-log-judge.md — перезаписать: agents write --force
 ```
 
 Удалить файл агента из `.claude/agents/` тоже можно: тогда ретро возьмёт агента плагина. Копию
@@ -280,5 +282,5 @@ sessionretro: agents write: правлены вручную и не переза
 ## Подробнее
 
 - [Настройка: первый и повторный запуск setup](setup.md)
-- [Workspace: где sessionretro хранит данные](workspace.md)
+- [Workspace: где RetroPair хранит данные](workspace.md)
 - [Предложения авторам плагина](feedback.md)

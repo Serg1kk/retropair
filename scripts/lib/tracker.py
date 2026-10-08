@@ -1,4 +1,4 @@
-"""Трекер прогонов оценки v2 (`.sessionretro/runs/process-reviews.json`): загрузка, запись, инварианты.
+"""Трекер прогонов оценки v2 (`.retropair/runs/process-reviews.json`): загрузка, запись, инварианты.
 
 Прогон — одна оценка одного человека за период: баллы осей под цитаты, гейт, рекомендации,
 части текста ревью, пометки логов. Схема файла — `references/schemas/tracker.json`; условия,
@@ -893,7 +893,7 @@ def _touch_registry(root: Path, reviewed_at: str) -> list[str]:
     try:
         entry = registry.find_by_path(root)
         if entry is None:
-            return [f"workspace не в реестре ~/.sessionretro/workspaces.json, "
+            return [f"workspace не в реестре ~/.retropair/workspaces.json, "
                     f"last_run_at не записан ({root})"]
         registry.update(entry["id"], last_run_at=reviewed_at)
     except SrError as err:

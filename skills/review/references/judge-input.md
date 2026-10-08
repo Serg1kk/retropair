@@ -20,8 +20,8 @@ judge_input_version: v2
 
 | Поле | Кому | Тип | Что это |
 |---|---|---|---|
-| `plugin_root` | оба | строка | Абсолютный путь к корню плагина. От него читаются референсы, схемы и `sr.py` |
-| `workspace_root` | оба | строка | Абсолютный путь к папке `.sessionretro/` проекта. Агент из неё только читает; пишет он в один файл, `output_path` |
+| `plugin_root` | оба | строка | Абсолютный путь к корню плагина. От него читаются референсы, схемы и `rp.py` |
+| `workspace_root` | оба | строка | Абсолютный путь к папке `.retropair/` проекта. Агент из неё только читает; пишет он в один файл, `output_path` |
 | `workspace_id` | оба | строка | id workspace из его `config.json`. Коллектор копирует его в `batch.workspace` |
 | `person_id` | оба | строка | id карточки участника (`[a-z0-9-]+`). Из него собирается id рекомендации `REC-<person_id>-<NNN>` |
 | `period{label,from,to,anchor}` | оба | объект | `label` имя периода, обязательно; `from`, `to` календарные края `YYYY-MM-DD` или `null`; `anchor` опорная точка периода (дата встречи, тег релиза) или `null`. Коллектор копирует объект в `batch.period` как есть |
@@ -79,17 +79,17 @@ judge_input_version: v2
 
 ```json
 {
-  "plugin_root": "/home/user/.claude/plugins/sessionretro",
-  "workspace_root": "/home/user/work/shop-api/.sessionretro",
+  "plugin_root": "/home/user/.claude/plugins/retropair",
+  "workspace_root": "/home/user/work/shop-api/.retropair",
   "workspace_id": "shop-api",
   "person_id": "dev-a",
   "period": {"label": "sprint-14", "from": "2026-03-02", "to": "2026-03-13", "anchor": null},
   "run_id": "shop-api_sprint-14_20260314T101500",
   "lang": "ru",
-  "output_path": "/home/user/work/shop-api/.sessionretro/runs/pending/dev-a.collector.2.json",
+  "output_path": "/home/user/work/shop-api/.retropair/runs/pending/dev-a.collector.2.json",
   "log_paths": [
-    {"path": "/home/user/work/shop-api/.sessionretro/logs/dev-a/2026-03-10_s-7f3a.md", "session_id": "s-7f3a", "state": "new", "from_turn": null},
-    {"path": "/home/user/work/shop-api/.sessionretro/logs/dev-a/2026-03-04_s-1c9e.md", "session_id": "s-1c9e", "state": "grown", "from_turn": 38}
+    {"path": "/home/user/work/shop-api/.retropair/logs/dev-a/2026-03-10_s-7f3a.md", "session_id": "s-7f3a", "state": "new", "from_turn": null},
+    {"path": "/home/user/work/shop-api/.retropair/logs/dev-a/2026-03-04_s-1c9e.md", "session_id": "s-1c9e", "state": "grown", "from_turn": 38}
   ],
   "batch": {"index": 2, "total": 2},
   "task_summary": "перенос выгрузки отчётов на новую очередь",
@@ -104,12 +104,12 @@ judge_input_version: v2
 
 ```json
 {
-  "output_path": "/home/user/work/shop-api/.sessionretro/runs/pending/dev-a.judge.json",
+  "output_path": "/home/user/work/shop-api/.retropair/runs/pending/dev-a.judge.json",
   "collector_outputs": [
-    "/home/user/work/shop-api/.sessionretro/runs/pending/dev-a.collector.1.json",
-    "/home/user/work/shop-api/.sessionretro/runs/pending/dev-a.collector.2.json"
+    "/home/user/work/shop-api/.retropair/runs/pending/dev-a.collector.1.json",
+    "/home/user/work/shop-api/.retropair/runs/pending/dev-a.collector.2.json"
   ],
-  "excluded_sessions": [{"session_id": "s-44b0", "path": "/home/user/work/shop-api/.sessionretro/logs/dev-a/2026-03-05_s-44b0.md", "status": "transcript_too_short", "status_note": null}],
+  "excluded_sessions": [{"session_id": "s-44b0", "path": "/home/user/work/shop-api/.retropair/logs/dev-a/2026-03-05_s-44b0.md", "status": "transcript_too_short", "status_note": null}],
   "sessions_total": 9,
   "card_slice": "profile: backend developer, senior, 9 лет; стек Python, Postgres; инструменты Claude Code\nfeedback: address ты; length detailed; tone direct; practices true; value_focus finding; show_dynamics true"
 }
@@ -119,10 +119,10 @@ judge_input_version: v2
 
 ```json
 {
-  "plugin_root": "/home/user/.claude/plugins/sessionretro",
+  "plugin_root": "/home/user/.claude/plugins/retropair",
   "lang": "ru",
-  "draft_path": "/home/user/work/shop-api/.sessionretro/runs/pending/dev-a.draft.md",
+  "draft_path": "/home/user/work/shop-api/.retropair/runs/pending/dev-a.draft.md",
   "card_slice": "profile: backend developer, senior, 9 лет; стек Python, Postgres; инструменты Claude Code\nfeedback: address ты; length detailed; tone direct",
-  "output_path": "/home/user/work/shop-api/.sessionretro/runs/pending/dev-a.critic.md"
+  "output_path": "/home/user/work/shop-api/.retropair/runs/pending/dev-a.critic.md"
 }
 ```

@@ -101,7 +101,7 @@ class ApplyNew(_Proj):
         cfg = self.cfg()
         self.assertEqual(cfg["workspace"]["groups"], ["team-a", "team-b"])
         self.assertIn(ALEX_SRC, cfg["sources"])
-        entries = json.loads((self.home / ".sessionretro" / "workspaces.json").read_text("utf-8"))
+        entries = json.loads((self.home / ".retropair" / "workspaces.json").read_text("utf-8"))
         entry = [e for e in entries if e["path"] == str(self.proj)]
         self.assertEqual(len(entry), 1)
         self.assertEqual(entry[0]["mode"], "team")
@@ -196,8 +196,8 @@ class ApplyRerun(_Proj):
         import hook_session_end
         from lib import marks
 
-        for line in (f".sessionretro/{hook_session_end.LOG_NAME}",
-                     f".sessionretro/{marks.COLLECT_LOCK}.lock"):
+        for line in (f".retropair/{hook_session_end.LOG_NAME}",
+                     f".retropair/{marks.COLLECT_LOCK}.lock"):
             self.assertIn(line, setup.GITIGNORE_LINES)
 
     def test_gitignore_not_duplicated(self):
@@ -253,9 +253,9 @@ class ApplyRerun(_Proj):
 
 class ApplyErrors(_Proj):
     def assert_nothing_created(self) -> None:
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
         self.assertFalse((self.proj / ".gitignore").exists())
-        self.assertFalse((self.home / ".sessionretro").exists())
+        self.assertFalse((self.home / ".retropair").exists())
 
     def assert_code(self, answers, code: int, needle: str) -> None:
         with self.assertRaises(SrError) as ctx:
@@ -322,7 +322,7 @@ class ApplyErrors(_Proj):
         res = self.sr("setup-apply", "--answers", str(self.answers_file("{mode: team")))
         self.assertEqual(res.returncode, 2, res.stderr)
         self.assertIn("answers.json", res.stderr)
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
 
     def test_cli_unknown_key(self):
         res = self.sr("setup-apply", "--answers", "-", stdin=json.dumps({**TEAM, "colour": 1}))
@@ -361,7 +361,7 @@ class CleanupSettings(_Proj):
             self.apply({**TEAM, "cleanup_period_days": {"value": 90, "write": True}})
         self.assertEqual(ctx.exception.code, 1)
         self.assertEqual(self.settings().read_text("utf-8"), "{broken")
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
 
 
 class StateRoundtrip(_Proj):
@@ -490,8 +490,8 @@ class ReviewFixes(_Proj):
         self.assertEqual(res.returncode, 2, res.stderr)
         self.assertIn(str(other), res.stderr)
         self.assertIn(str(self.proj), res.stderr)
-        self.assertFalse((self.proj / ".sessionretro").exists())
-        self.assertFalse((other / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
+        self.assertFalse((other / ".retropair").exists())
 
     def test_cli_workspace_same_as_path_ok(self):
         res = self.sr("--workspace", str(self.proj), "setup-apply", "--answers", "-",
@@ -519,9 +519,9 @@ class ReviewFixes(_Proj):
         self.assertEqual(len(before), len(after))
         self.assertEqual(len(diff), 1, diff)
         self.assertIn("template: workspace", diff[0][1])
-        self.assertIn(".sessionretro/people/_default.yaml", report["changed"])
+        self.assertIn(".retropair/people/_default.yaml", report["changed"])
         report = self.apply({"template": "workspace"})
-        self.assertNotIn(".sessionretro/people/_default.yaml", report["changed"])
+        self.assertNotIn(".retropair/people/_default.yaml", report["changed"])
 
     def test_template_file_must_exist(self):
         self.apply(SELF)
@@ -568,7 +568,7 @@ class ReviewFixes(_Proj):
         ):
             with self.subTest(answers=answers):
                 self.assert_code(answers, 2, needle)
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
 
     def test_period_windows_ok(self):
         windows = [{"label": "s1", "from": "2026-09-01", "to": "2026-09-14"},
@@ -580,7 +580,7 @@ class ReviewFixes(_Proj):
     # M1 — в self только карточка me
     def test_self_rejects_other_people(self):
         self.assert_code({**SELF, "people": [{"id": "bob", "name": "Bob Demo"}]}, 2, "people")
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
 
     # M2 — неизвестные поля источника
     def test_unknown_source_key(self):

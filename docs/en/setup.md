@@ -1,16 +1,18 @@
-# Setup: how to connect sessionretro to a project
+# Setup: how to connect RetroPair to a project
 
-To start working in a project, sessionretro needs a workspace: the `.sessionretro/` folder with
+Upgrading from SessionRetro? Follow the [migration guide](migration.md) before initializing a new workspace.
+
+To start working in a project, RetroPair needs a workspace: the `.retropair/` folder with
 the settings, person cards and a place for logs. The simplest way to create it is a dialogue: open
 Claude Code in the project folder and call the skill.
 
 ```text
-/sessionretro:setup
+/retropair:setup
 ```
 
-Plain words work too: "set up sessionretro", "connect the session retro". The skill asks up to 11
+Plain words work too: "set up RetroPair", "connect the RetroPair". The skill asks up to 11
 questions one at a time, shows a summary and applies the answers with one command. It writes no
-files itself: everything is written by the plugin CLI `sr.py`, so you can get the same result
+files itself: everything is written by the plugin CLI `rp.py`, so you can get the same result
 without a dialogue, from a script (see "Without a dialogue" below).
 
 ## First run
@@ -19,7 +21,7 @@ The skill first looks at what is already there: a workspace, Claude Code logs of
 SpecStory folder, the log retention period. For that it runs:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-state --json
 ```
 
 It sets up the root of the git repository in which you opened Claude Code; if the folder is not in
@@ -33,16 +35,16 @@ you answer. At the end the skill shows a "question → value" table, applies the
 This is what the result of a first run in self mode looks like (a workspace with `lang: en`):
 
 ```text
-created: .sessionretro/config.json
-created: .sessionretro/people/_default.yaml
-created: .sessionretro/plugin-state.json
+created: .retropair/config.json
+created: .retropair/people/_default.yaml
+created: .retropair/plugin-state.json
 created: me
 created: .gitignore
-created: .claude/agents/sessionretro-log-collector.md
-created: .claude/agents/sessionretro-log-judge.md
-created: .claude/agents/sessionretro-feedback-critic.md
+created: .claude/agents/retropair-log-collector.md
+created: .claude/agents/retropair-log-judge.md
+created: .claude/agents/retropair-feedback-critic.md
 advice: Claude Code deletes session logs older than cleanupPeriodDays days (now: not set, default 30); to keep logs until the review, set 90 in ~/.claude/settings.json
-Open a new Claude Code session in this project, type anything, exit with `/exit`, and a minute later run `sr.py doctor`: last_collect_at should be updated
+Open a new Claude Code session in this project, type anything, exit with `/exit`, and a minute later run `rp.py doctor`: last_collect_at should be updated
 ```
 
 The `created`, `changed` and `unchanged` lines list files and fields, `advice` says what is worth
@@ -93,15 +95,15 @@ and reports stay, and the output advises you to check the groups and cards.
    reviewer's card; `false` shows the dynamics only ↑ → ↓ ◇. The review text never has scores.
 8. **Periods**: how to split the work into periods: by run date (each run is its own period
    labelled `run-YYYYMMDD`) or by date windows (`sprint-1: 2026-09-01 — 2026-09-14`). The config
-   accepts a third option, `labels`, but in 0.1 the `review` skill does not ask for the label: runs
+   accepts a third option, `labels`, but in 0.2 the `review` skill does not ask for the label: runs
    are recorded without a period label. If you need your own period names, set them as date
    windows.
-9. **Text template**: the plugin template or your own copy in `.sessionretro/templates/feedback.md`
+9. **Text template**: the plugin template or your own copy in `.retropair/templates/feedback.md`
    to edit (how to connect it to the texts: [customize.md](customize.md)).
 10. **Log retention**: asked only if `cleanupPeriodDays` in `~/.claude/settings.json` is below 90
     or not set. Details below.
-11. **.gitignore**: add the lines `.sessionretro/logs/`, `.sessionretro/runs/pending/`,
-    `.sessionretro/reports/`, `.sessionretro/collect.log`, `.sessionretro/collect.lock` to the
+11. **.gitignore**: add the lines `.retropair/logs/`, `.retropair/runs/pending/`,
+    `.retropair/reports/`, `.retropair/collect.log`, `.retropair/collect.lock` to the
     project's `.gitignore`: the logs hold your code and conversation, drafts and reports are
     personal texts, and the collection log and lock are machine service files.
 
@@ -110,7 +112,7 @@ workspace title from the project folder name unless you name it yourself.
 
 ## Running it again
 
-Call `/sessionretro:setup` again. The skill shows the current values as a table and asks what to
+Call `/retropair:setup` again. The skill shows the current values as a table and asks what to
 change; you can pick several blocks:
 
 - mode, people and sources (questions 1–4);
@@ -123,39 +125,39 @@ Only changed answers are applied; the rest is left alone. If nothing changed, th
 shows `doctor`.
 
 A repeated run does not overwrite existing person cards, it only adds new ones. Edit a person's
-name, group or profile in the file `.sessionretro/people/<id>.yaml`; see
+name, group or profile in the file `.retropair/people/<id>.yaml`; see
 [customize.md](customize.md).
 
 ## The SessionEnd hook and how to check it
 
 The hook runs log collection in the background when a Claude Code session ends, so the logs are
 already in place for the retro. The session does not wait for collection, and the output and errors
-go to `.sessionretro/collect.log`. It is turned on by the automatic option in question 5
+go to `.retropair/collect.log`. It is turned on by the automatic option in question 5
 (`hook.enabled` in the config).
 
 Check that the hook fires. The setup command prints an instruction; here it is verbatim:
 
 ```text
-Open a new Claude Code session in this project, type anything, exit with `/exit`, and a minute later run `sr.py doctor`: last_collect_at should be updated
+Open a new Claude Code session in this project, type anything, exit with `/exit`, and a minute later run `rp.py doctor`: last_collect_at should be updated
 ```
 
 That is, open a new session, type any message, exit with `/exit` and a minute later run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 The `last_collect_at` line should show a time that just passed. If it shows `нет` (none) or an old
-date, look into `.sessionretro/collect.log`: it has a `hook session=…` line for every run and the
-error text if collection failed. The hook fires only in projects with `.sessionretro/config.json`.
+date, look into `.retropair/collect.log`: it has a `hook session=…` line for every run and the
+error text if collection failed. The hook fires only in projects with `.retropair/config.json`.
 
 ## Manual mode
 
 The hook is optional. Choose the manual option in question 5 (`"hook": false`) and collect logs
-when you need to, with the `/sessionretro:collect` skill or the command:
+when you need to, with the `/retropair:collect` skill or the command:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
 Details on collection, sources and the sanitizer: [collect.md](collect.md).
@@ -182,7 +184,7 @@ or through stdin (`-`):
 
 ```bash
 cd ~/work/my-app
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers - <<'EOF'
 {
   "mode": "team",
   "title": "Platform team",
@@ -210,7 +212,7 @@ EOF
 Or from a file:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers answers.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers answers.json
 ```
 
 All keys are optional except `mode` on the first run. On a repeated run only the keys you pass
@@ -232,7 +234,7 @@ change, for example only the judge model:
 | `models` | per role `collector`, `judge`, `critic`: `{"model", "effort"}`; one role is enough |
 | `show_scores` | `true` · `false` |
 | `period` | `{"mode": "run"}`, `{"mode": "labels"}` or `{"mode": "dates", "windows": [{"label", "from", "to"}]}`; the bounds are `YYYY-MM-DD` dates (or ISO time), `from` no later than `to`, an open bound is `null`, window labels do not repeat |
-| `template` | `default`, `workspace` or the name of an existing file in `.sessionretro/templates/`; the value also goes into `feedback.template` of `people/_default.yaml`, which the text is built from. Cards with their own `feedback.template` do not change; their ids come back as advice |
+| `template` | `default`, `workspace` or the name of an existing file in `.retropair/templates/`; the value also goes into `feedback.template` of `people/_default.yaml`, which the text is built from. Cards with their own `feedback.template` do not change; their ids come back as advice |
 | `cleanup_period_days` | `{"value": <days>, "write": true\|false}`; `true` writes `~/.claude/settings.json` (to the target if it is a symlink), but never lowers the period: if it is already higher, the file is not touched and you get advice |
 | `gitignore` | `true` adds the missing lines to `.gitignore` |
 
@@ -241,7 +243,7 @@ If the project is not the current folder, use the `path` key in the answers or t
 names both paths:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --workspace ~/work/my-app setup-apply --answers answers.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --workspace ~/work/my-app setup-apply --answers answers.json
 ```
 
 `--json` prints the report as one object: `root`, the lists `created`, `changed`, `unchanged`,
@@ -249,10 +251,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --workspace ~/work/my-app setup-ap
 
 Exit codes: `0` applied; `2` the answers failed validation, the error names the field, nothing is
 written; `1` a data problem (for example, a broken `~/.claude/settings.json`). An example of a
-rejection (error messages are in Russian in 0.1):
+rejection (error messages are in Russian in 0.2):
 
 ```text
-sessionretro: setup: ответ mode: допустимо self | team | course (получено: 'sel')
+retropair: setup: ответ mode: допустимо self | team | course (получено: 'sel')
 ```
 
 That is: answer `mode`, allowed `self | team | course`, got `'sel'`.
@@ -260,7 +262,7 @@ That is: answer `mode`, allowed `self | team | course`, got `'sel'`.
 ## Current values: `setup-state`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-state
 ```
 
 ```text
@@ -286,11 +288,11 @@ the JSON (it holds the source project's folder) and run `setup-apply` with
 ## What `doctor` shows
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 The basic lines are described in [workspace.md](workspace.md). After setup the output has a few
-more (the values are printed in Russian in 0.1):
+more (the values are printed in Russian in 0.2):
 
 ```text
 cleanup_period_days: не задан
@@ -309,9 +311,9 @@ template: default
 | `improvements_pending` | how many of your proposals to the plugin authors are recorded and not sent yet; see [feedback.md](feedback.md) |
 | `sources_found` | how many local sources (`claude-jsonl`, `specstory`, `dir`) from the config and the `people/<id>.yaml` cards have a folder (`папок найдено`, folders found) and which do not (`нет`); `git` sources are not checked, only counted. A missing folder before the first session or export is not an error |
 | `project_agents` | the project agents: `3/3 совпадают с config.models` (3/3 match config.models) means all is well; `нет` (none) means there are no files and the plugin agents run; `расходятся: judge` (differ: judge) means compare them with `agents check` ([customize.md](customize.md)) |
-| `gitignore` | whether all five sessionretro lines from question 11 are in the project's `.gitignore`: `да` (yes) if all are; otherwise "no — add it: sr.py setup-apply with {"gitignore": true}" in the workspace language |
+| `gitignore` | whether all five RetroPair lines from question 11 are in the project's `.gitignore`: `да` (yes) if all are; otherwise "no — add it: rp.py setup-apply with {"gitignore": true}" in the workspace language |
 | `show_scores` | whether scores are shown in personal reports |
-| `period_mode` | how periods are split: `run`, `dates` or `labels` (in 0.1, runs without a label) |
+| `period_mode` | how periods are split: `run`, `dates` or `labels` (in 0.2, runs without a label) |
 | `template` | which text template was chosen during setup |
 
 ## More
@@ -319,4 +321,4 @@ template: default
 - [Customizing: cards, the text template, project agents](customize.md)
 - [Proposals to the plugin authors](feedback.md)
 - [Collecting logs](collect.md)
-- [Workspace: where sessionretro keeps its data](workspace.md)
+- [Workspace: where RetroPair keeps its data](workspace.md)

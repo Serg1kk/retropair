@@ -150,11 +150,11 @@ def load_schema(name: str) -> dict:
     """
     path = schema_path(name)
     if not path.is_file():
-        raise FileNotFoundError(f"sessionretro: схема не найдена: нет файла ({path})")
+        raise FileNotFoundError(f"retropair: схема не найдена: нет файла ({path})")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"sessionretro: схема не разбирается: {exc} ({path})") from exc
+        raise ValueError(f"retropair: схема не разбирается: {exc} ({path})") from exc
 
 
 def validate(obj, name: str) -> list[str]:

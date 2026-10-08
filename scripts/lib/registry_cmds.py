@@ -92,13 +92,13 @@ def build_parser(modules=None) -> argparse.ArgumentParser:
     if modules is None:
         modules = discover()
     parser = argparse.ArgumentParser(
-        prog="sr.py", description="sessionretro: ретро работы с кодинг-агентом по логам сессий.",
+        prog=Path(sys.argv[0]).name if Path(sys.argv[0]).name in ("sr.py", "rp.py") else "rp.py", description="retropair: ретро работы с кодинг-агентом по логам сессий.",
         # без сокращений: `--works X` иначе попадал бы в --workspace и молча терялся
         allow_abbrev=False,
     )
     parser.add_argument("--workspace", metavar="DIR",
-                        help="корень проекта или папка .sessionretro (по умолчанию поиск вверх от cwd)")
-    parser.add_argument("--version", action="version", version=f"sessionretro {__version__}")
+                        help="корень проекта или папка .retropair (по умолчанию поиск вверх от cwd)")
+    parser.add_argument("--version", action="version", version=f"retropair {__version__}")
     subparsers = parser.add_subparsers(dest="command", metavar="<команда>")
     guard = _GuardedSubparsers(subparsers, {})
     for module in modules:
@@ -113,7 +113,7 @@ def build_parser(modules=None) -> argparse.ArgumentParser:
 
 
 def _stamp_warning(path: Path, reason: str) -> None:
-    print(f"sessionretro: предупреждение: plugin-state.json {path}: {reason}, не изменён",
+    print(f"retropair: предупреждение: plugin-state.json {path}: {reason}, не изменён",
           file=sys.stderr)
 
 
@@ -133,7 +133,13 @@ def _sync_one(path: Path, store_kind: str) -> None:
 def sync_plugin_stamps(args: argparse.Namespace) -> None:
     """Сдвигает отметки `plugin-state.json` (глобальную и workspace, если он найден) на
     текущую версию плагина. Сбой — одна строка предупреждения в stderr, команда идёт дальше."""
-    _sync_one(registry.sr_home() / "plugin-state.json", "global")
+    try:
+        global_state = registry.sr_home() / "plugin-state.json"
+    except SrError as err:
+        # Local validation/report commands must not depend on migrating another store.
+        _stamp_warning(Path.home() / ".retropair" / "plugin-state.json", err.message)
+    else:
+        _sync_one(global_state, "global")
     try:
         root = find_workspace(Path.cwd(), getattr(args, "workspace", None))
     except (SrError, OSError):
@@ -148,7 +154,8 @@ def dispatch(args: argparse.Namespace) -> int:
         raise RuntimeError(
             f"команда '{args.command}' не задала handler через set_defaults(func=…)"
         )
-    sync_plugin_stamps(args)
+    if args.command != "migrate":
+        sync_plugin_stamps(args)
     rc = func(args)
     if not isinstance(rc, int) or isinstance(rc, bool):
         raise RuntimeError(

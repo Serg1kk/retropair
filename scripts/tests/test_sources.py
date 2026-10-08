@@ -201,7 +201,7 @@ class ResolveTest(_Base):
     def test_dir_skips_state_and_subagents(self):
         _touch(self.root / "s.jsonl")
         _touch(self.root / "s" / "subagents" / "agent-1.jsonl")
-        _touch(self.root / ".sessionretro" / "logs" / "me" / "k.md")
+        _touch(self.root / ".retropair" / "logs" / "me" / "k.md")
         cfg = _cfg(srcs=[{"type": "dir", "path": "."}])
         files, _, _ = sources.resolve(self.root, cfg, [{"id": "me"}])
         self.assertEqual(self.names(files), ["s.jsonl"])
@@ -262,7 +262,7 @@ class ResolveTest(_Base):
         people = [{"id": "p1", "sources": [{"type": "git", "url": str(bare)}]}]
 
         files, warnings, _ = sources.resolve(self.root, _cfg(mode="team"), people)
-        clones = Path.home() / ".sessionretro" / "clones"
+        clones = Path.home() / ".retropair" / "clones"
         dirs = list(clones.iterdir())
         self.assertEqual(len(dirs), 1)
         self.assertRegex(dirs[0].name, r"^ws-p1-[0-9a-f]{8}$")

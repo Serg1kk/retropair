@@ -84,7 +84,7 @@ class DoctorCliTest(unittest.TestCase):
 
     def test_workspace_not_in_registry(self):
         self.assertEqual(self.sr("init", "--mode", "team").returncode, 0)
-        (self.home / ".sessionretro" / "workspaces.json").write_text("[]\n", encoding="utf-8")
+        (self.home / ".retropair" / "workspaces.json").write_text("[]\n", encoding="utf-8")
         data = json.loads(self.sr("doctor", "--json").stdout)
         self.assertEqual(data["last_run_at"], "не в реестре")
         self.assertEqual(data["last_collect_at"], "не в реестре")

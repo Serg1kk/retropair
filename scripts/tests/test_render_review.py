@@ -542,14 +542,14 @@ class WriteReviewTest(TrackerCase):
         self.assertNotIn(str(self.root.resolve()), text)
         self.assertNotIn(str(self.home), text)
         doc = parse_review(text)
-        # «Что не вошло»: сессия со статусом не reviewed — путь от .sessionretro/
+        # «Что не вошло»: сессия со статусом не reviewed — путь от .retropair/
         self.assertIn(f"`{self.SESSIONS[2]}`", doc["service"])
         # таблица досье
         for rel in self.SESSIONS:
             self.assertIn(f"| `{rel}` |", doc["dossier"])
         # строки normalize — путь, который сработает из корня проекта
-        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[0]}`", doc["dossier"])
-        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[1]} --from-turn 10`", doc["dossier"])
+        self.assertIn(f"`sr.py normalize .retropair/{self.SESSIONS[0]}`", doc["dossier"])
+        self.assertIn(f"`sr.py normalize .retropair/{self.SESSIONS[1]} --from-turn 10`", doc["dossier"])
         # трекер не переписан: там по-прежнему абсолютные пути
         run = tracker.find_run(tracker.load(self.root), RUN_P1)
         self.assertEqual([s["path"] for s in run["sessions_reviewed"]],
@@ -560,7 +560,7 @@ class WriteReviewTest(TrackerCase):
         self.set_session_paths({rel: str(resolved / rel) for rel in self.SESSIONS})
         text = self.write_review().read_text(encoding="utf-8")
         self.assertNotIn(str(resolved), text)
-        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[0]}`", text)
+        self.assertIn(f"`sr.py normalize .retropair/{self.SESSIONS[0]}`", text)
 
     def test_abs_path_outside_workspace_shown_as_file_name(self):
         outside = {rel: str(self.home / "elsewhere" / "logs" / Path(rel).name) for rel in self.SESSIONS}
@@ -582,7 +582,7 @@ class WriteReviewTest(TrackerCase):
         self.assertIn(f"`{self.SESSIONS[2]}`", doc["service"])
         for rel in self.SESSIONS:
             self.assertIn(f"| `{rel}` |", doc["dossier"])
-        self.assertIn(f"`sr.py normalize .sessionretro/{self.SESSIONS[0]}`", doc["dossier"])
+        self.assertIn(f"`sr.py normalize .retropair/{self.SESSIONS[0]}`", doc["dossier"])
 
     def test_shown_path_rules(self):
         state = self.paths["state_dir"]

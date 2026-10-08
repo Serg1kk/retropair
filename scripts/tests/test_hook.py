@@ -46,7 +46,7 @@ class HookBase(TempHome, unittest.TestCase):
 
     def workspace(self, enabled: bool = True, registered: bool = True) -> Path:
         root = copy_fixture("workspace-min", self.tmp)
-        cfg_path = root / ".sessionretro" / "config.json"
+        cfg_path = root / ".retropair" / "config.json"
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         cfg["hook"]["enabled"] = enabled
         cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
@@ -55,8 +55,8 @@ class HookBase(TempHome, unittest.TestCase):
         return root
 
     def register(self, root: Path) -> None:
-        """Запись в реестре `~/.sessionretro/workspaces.json` временного HOME (как после setup)."""
-        path = self.home / ".sessionretro" / "workspaces.json"
+        """Запись в реестре `~/.retropair/workspaces.json` временного HOME (как после setup)."""
+        path = self.home / ".retropair" / "workspaces.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         entries = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         entries.append({"id": f"ws-{len(entries) + 1}", "path": str(root.resolve()), "title": "t",
@@ -96,7 +96,7 @@ class IdleTest(HookBase):
         self.assertEqual(after, set())
 
     def test_global_state_dir_is_not_workspace(self):
-        glob = self.home / ".sessionretro"
+        glob = self.home / ".retropair"
         glob.mkdir()
         (glob / "config.json").write_text(json.dumps({"hook": {"enabled": True}}), encoding="utf-8")
         sub = self.home / "x"
@@ -110,7 +110,7 @@ class IdleTest(HookBase):
         rc, out, err, _, popen = self.run_main(payload(root))
         self.assertEqual((rc, out, err), (0, "", ""))
         popen.assert_not_called()
-        self.assertFalse((root / ".sessionretro" / "collect.log").exists())
+        self.assertFalse((root / ".retropair" / "collect.log").exists())
 
 
 class RegistryTest(HookBase):
@@ -122,9 +122,9 @@ class RegistryTest(HookBase):
         self.assertEqual((rc, out), (0, ""))
         popen.assert_not_called()
         self.assertIn("workspace не зарегистрирован", err)
-        self.assertIn("/sessionretro:setup", err)
+        self.assertIn("/retropair:setup", err)
         self.assertEqual(len(err.strip().splitlines()), 1, err)
-        self.assertFalse((root / ".sessionretro" / "collect.log").exists())
+        self.assertFalse((root / ".retropair" / "collect.log").exists())
 
     def test_other_path_in_registry_does_not_launch(self):
         root = self.workspace(registered=False)
@@ -145,7 +145,7 @@ class RegistryTest(HookBase):
 
     def test_broken_registry_reported_no_launch(self):
         root = self.workspace(registered=False)
-        path = self.home / ".sessionretro" / "workspaces.json"
+        path = self.home / ".retropair" / "workspaces.json"
         path.parent.mkdir(parents=True)
         for text in ("{broken", json.dumps({"path": str(root)})):
             with self.subTest(text=text):
@@ -154,7 +154,7 @@ class RegistryTest(HookBase):
                 self.assertEqual((rc, out), (0, ""))
                 popen.assert_not_called()
                 self.assertIn("workspaces.json", err)
-                self.assertFalse((root / ".sessionretro" / "collect.log").exists())
+                self.assertFalse((root / ".retropair" / "collect.log").exists())
 
 
 class LaunchTest(HookBase):
@@ -172,7 +172,7 @@ class LaunchTest(HookBase):
         self.assertIs(kwargs["start_new_session"], True)
         self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
         self.assertEqual(kwargs["stderr"], subprocess.STDOUT)
-        log = root / ".sessionretro" / "collect.log"
+        log = root / ".retropair" / "collect.log"
         self.assertEqual(Path(kwargs["stdout"].name), log)
         text = log.read_text(encoding="utf-8")
         self.assertIn("hook session=abc-123", text)
@@ -203,11 +203,11 @@ class LaunchTest(HookBase):
 
     def test_broken_config_logged_exit0(self):
         root = self.workspace()
-        (root / ".sessionretro" / "config.json").write_text("{broken", encoding="utf-8")
+        (root / ".retropair" / "config.json").write_text("{broken", encoding="utf-8")
         rc, out, _, _, popen = self.run_main(payload(root))
         self.assertEqual((rc, out), (0, ""))
         popen.assert_not_called()
-        text = (root / ".sessionretro" / "collect.log").read_text(encoding="utf-8")
+        text = (root / ".retropair" / "collect.log").read_text(encoding="utf-8")
         self.assertIn("config.json", text)
         self.assertIn("session=abc-123", text)
 
@@ -216,12 +216,12 @@ class LaunchTest(HookBase):
         boom = mock.MagicMock(side_effect=OSError("нет прав"))
         rc, out, _, _, _ = self.run_main(payload(root), popen=boom)
         self.assertEqual((rc, out), (0, ""))
-        text = (root / ".sessionretro" / "collect.log").read_text(encoding="utf-8")
+        text = (root / ".retropair" / "collect.log").read_text(encoding="utf-8")
         self.assertIn("нет прав", text)
 
     def test_big_log_trimmed(self):
         root = self.workspace()
-        log = root / ".sessionretro" / "collect.log"
+        log = root / ".retropair" / "collect.log"
         log.write_bytes(b"a" * (1024 * 1024) + b"TAIL-MARK\n")
         self.run_main(payload(root))
         data = log.read_bytes()
@@ -232,7 +232,7 @@ class LaunchTest(HookBase):
 
     def test_small_log_kept(self):
         root = self.workspace()
-        log = root / ".sessionretro" / "collect.log"
+        log = root / ".retropair" / "collect.log"
         log.write_text("старое\n", encoding="utf-8")
         self.run_main(payload(root))
         self.assertTrue(log.read_text(encoding="utf-8").startswith("старое\n"))
@@ -264,7 +264,7 @@ class ProcessTest(HookBase):
         src = self.tmp / "src"
         src.mkdir()
         shutil.copy(FIXTURES / "logs" / "specstory-claude.md", src / "s.md")
-        cfg_path = root / ".sessionretro" / "config.json"
+        cfg_path = root / ".retropair" / "config.json"
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         cfg["sources"] = [{"type": "dir", "path": str(src), "person": "alex"}]
         cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
@@ -274,11 +274,11 @@ class ProcessTest(HookBase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual((proc.stdout, proc.stderr), ("", ""))
         self.assertLess(spent, 5)
-        index = root / ".sessionretro" / "logs-index.json"
+        index = root / ".retropair" / "logs-index.json"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline and not index.is_file():
             time.sleep(0.1)
-        self.assertTrue(index.is_file(), (root / ".sessionretro" / "collect.log").read_text())
+        self.assertTrue(index.is_file(), (root / ".retropair" / "collect.log").read_text())
         time.sleep(0.5)                    # дать фоновому процессу выйти до чистки tmp
         data = json.loads(index.read_text(encoding="utf-8"))
         self.assertEqual(len(data["logs"]), 1)

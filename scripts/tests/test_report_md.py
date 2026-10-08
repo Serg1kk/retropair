@@ -53,7 +53,7 @@ class FixtureTest(unittest.TestCase):
 
     def test_fixture_3x3_files_and_tracker(self) -> None:
         root = report_fixture.make_workspace(self.tmp / "ws")
-        state = root / ".sessionretro"
+        state = root / ".retropair"
         for rel in ("config.json", "plugin-state.json", "people/_default.yaml",
                     "runs/process-reviews.json"):
             self.assertTrue((state / rel).is_file(), rel)
@@ -116,7 +116,7 @@ class FixtureTest(unittest.TestCase):
 
     def test_fixture_reviews_statuses_and_addressee(self) -> None:
         root = report_fixture.make_workspace(self.tmp / "ws")
-        state = root / ".sessionretro"
+        state = root / ".retropair"
         files = sorted((state / "reviews").rglob("*.md"))
         self.assertEqual(len(files), 9)
         names = {c["id"]: c["name"] for c in list_people(root)}
@@ -137,14 +137,14 @@ class FixtureTest(unittest.TestCase):
     def test_fixture_self_mode_has_one_card(self) -> None:
         root = report_fixture.make_workspace(self.tmp / "ws", mode="self", periods=2)
         self.assertEqual([c["id"] for c in list_people(root)], ["me"])
-        tracker = json.loads((root / ".sessionretro/runs/process-reviews.json")
+        tracker = json.loads((root / ".retropair/runs/process-reviews.json")
                              .read_text(encoding="utf-8"))
         self.assertEqual({r["person_id"] for r in tracker["runs"]}, {"me"})
         self.assertEqual(load_config(root)["mode"], "self")
 
     def test_fixture_realistic_sizes(self) -> None:
         root = report_fixture.make_workspace(self.tmp / "ws", people=1, periods=1, realistic=True)
-        state = root / ".sessionretro"
+        state = root / ".retropair"
         run = json.loads((state / "runs/process-reviews.json").read_text(encoding="utf-8"))["runs"][0]
         self.assertGreaterEqual(len(run["feedback_draft"].encode("utf-8")), 5000)
         self.assertTrue(all(len(a["evidence"]) == 3 for a in run["axes"] if a["score"] is not None))
@@ -284,7 +284,7 @@ class LoadReviewsTest(unittest.TestCase):
 
     def test_fixture_reviews_keyed_by_run_id(self) -> None:
         root = report_fixture.make_workspace(self.tmp / "ws")
-        state = root / ".sessionretro"
+        state = root / ".retropair"
         runs = json.loads((state / "runs/process-reviews.json").read_text(encoding="utf-8"))["runs"]
         superseded = {
             r["run_id"] for r in runs

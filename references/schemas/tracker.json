@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "sessionretro/tracker.json",
-  "title": "sessionretro tracker v2 (runs/process-reviews.json)",
+  "$id": "retropair/tracker.json",
+  "title": "RetroPair tracker v2 (runs/process-reviews.json)",
   "description": "Прогоны оценки по людям workspace. Условия, которых подмножество схем не выражает (балл под цитату, потолок гейта, REC-id), проверяет validate.",
   "type": "object",
   "required": [

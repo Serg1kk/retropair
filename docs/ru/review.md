@@ -14,15 +14,15 @@
 вызовите скилл явно:
 
 ```text
-/sessionretro:review alex
-/sessionretro:review --all --task-summary "перенос выгрузки отчётов на новую очередь"
-/sessionretro:review me --no-ask
+/retropair:review alex
+/retropair:review --all --task-summary "перенос выгрузки отчётов на новую очередь"
+/retropair:review me --no-ask
 ```
 
 Без участия человека, например по расписанию:
 
 ```bash
-claude -p "/sessionretro:review --all --no-ask"
+claude -p "/retropair:review --all --no-ask"
 ```
 
 ## Аргументы
@@ -57,7 +57,7 @@ claude -p "/sessionretro:review --all --no-ask"
 4. Оценщик сводит факты, ставит оценки под цитаты, выносит вердикты по прошлым рекомендациям
    и пишет части текста.
 5. Скрипт проверяет результат (оценка только под цитату, «мало данных» без оценки, запреты
-   текста) и записывает прогон в историю `.sessionretro/runs/process-reviews.json`. Сессии
+   текста) и записывает прогон в историю `.retropair/runs/process-reviews.json`. Сессии
    отмечаются оценёнными и в следующий раз не подаются повторно; продолженная сессия
    подаётся только новым хвостом. Когда период задан по дате запуска (режим `run`), метку
    ставит сам скрипт: `run-<ГГГГММДД>` по дате UTC, а второй и следующие ретро за те же
@@ -96,7 +96,7 @@ course, свой черновик на одобрение. Для `--all --no-as
 
 ## Текст ревью
 
-Файл `.sessionretro/reviews/<person>/<run_id>.md` состоит из трёх частей:
+Файл `.retropair/reviews/<person>/<run_id>.md` состоит из трёх частей:
 
 - **служебная часть** для ревьюера: сколько сессий и пачек, что не вошло и почему,
   предупреждения оценщика;
@@ -117,18 +117,18 @@ course, свой черновик на одобрение. Для `--all --no-as
 | team, course при `reviewer_gate: false` | `approved` |
 
 `reviewer_gate` скилл `setup` не спрашивает, и `setup-apply` такой ключ не принимает: гейт
-выключается только правкой `.sessionretro/config.json` руками.
+выключается только правкой `.retropair/config.json` руками.
 
 Прочитали черновик и согласны — одобрите:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" approve alex
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" approve alex <run_id>
 ```
 
 Без `<run_id>` одобряется последний действующий прогон человека. То же делает
-`/sessionretro:review --approve alex`, а затем запускает `sr.py people suggestions alex --refresh`
-— пересчёт предложений правок карточки по одобренным прогонам. Голая `sr.py approve` меняет только
+`/retropair:review --approve alex`, а затем запускает `rp.py people suggestions alex --refresh`
+— пересчёт предложений правок карточки по одобренным прогонам. Голая `rp.py approve` меняет только
 статус: после неё запустите `people suggestions alex --refresh` сами.
 
 В team и course при `reviewer_gate: true` рекомендации из текста начинают учитываться только
@@ -143,23 +143,23 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex <run_id>
 (если оценщик взял занятый, запись сама перенумерует их и предупредит).
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" retract <run_id> --why "оценщик перепутал сессии"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" retract <run_id> --why "оценщик перепутал сессии"
 ```
 
 Текст пересобрать после правки шаблона или карточки:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" render-review .sessionretro/runs/pending/alex/judge.json --person alex --run <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" render-review .retropair/runs/pending/alex/judge.json --person alex --run <run_id>
 ```
 
 ## Другие команды
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" open-recs alex          # открытые рекомендации
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" compare <run_a> <run_b>  # два прогона одного человека
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" verify                   # всё ли закрыто до конца
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" validate                 # история прогонов цела
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" self-test                # самопроверка движка оценки
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" open-recs alex          # открытые рекомендации
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" compare <run_a> <run_b>  # два прогона одного человека
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" verify                   # всё ли закрыто до конца
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" validate                 # история прогонов цела
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" self-test                # самопроверка движка оценки
 ```
 
 `compare` полезен для замера воспроизводимости: насколько расходятся две оценки одного и того

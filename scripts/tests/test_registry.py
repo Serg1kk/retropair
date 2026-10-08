@@ -1,4 +1,4 @@
-"""lib.registry: глобальный реестр workspaces в ~/.sessionretro."""
+"""lib.registry: глобальный реестр workspaces в ~/.retropair."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ class RegistryTest(TempHome, unittest.TestCase):
         self.proj.mkdir()
 
     def test_paths_follow_home(self):
-        self.assertEqual(registry.sr_home(), self.home / ".sessionretro")
-        self.assertEqual(registry.workspaces_path(), self.home / ".sessionretro" / "workspaces.json")
+        self.assertEqual(registry.sr_home(), self.home / ".retropair")
+        self.assertEqual(registry.workspaces_path(), self.home / ".retropair" / "workspaces.json")
 
     def test_load_empty_when_missing(self):
         self.assertEqual(registry.load(), [])

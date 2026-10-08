@@ -148,7 +148,7 @@ class JsonIoTest(TempHome, unittest.TestCase):
         self.assertIn(str(target), ctx.exception.message)
 
     def test_module_constant(self):
-        self.assertEqual(workspace.STATE_DIR, ".sessionretro")
+        self.assertEqual(workspace.STATE_DIR, ".retropair")
 
 
 class PortablePathTest(TempHome, unittest.TestCase):

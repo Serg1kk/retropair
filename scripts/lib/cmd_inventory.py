@@ -1,7 +1,7 @@
-"""Команда `inventory`: пересчёт `logs-index.json` по снапшотам `.sessionretro/logs/`.
+"""Команда `inventory`: пересчёт `logs-index.json` по снапшотам `.retropair/logs/`.
 
 Источники не читаются и снапшоты не пишутся (это делает `collect`); только скан снапшотов,
-слияние с прежним индексом и атомарная запись под блокировкой `.sessionretro/collect.lock`.
+слияние с прежним индексом и атомарная запись под блокировкой `.retropair/collect.lock`.
 Идёт сбор (например, хук SessionEnd перечищает снапшоты) — ждёт его до `lock.COLLECT_WAIT_SECONDS`
 с одной строкой в stderr; не дождался — код 1 с путём lock-файла.
 Записи людей с `consent.logs: false` исключаются так же, как в `collect`.

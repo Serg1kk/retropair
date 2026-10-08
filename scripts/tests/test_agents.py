@@ -23,10 +23,10 @@ from lib.workspace import SrError
 
 SELF = {"mode": "self", "title": "Pet", "lang": "ru", "hook": True, "gitignore": True,
         "models": {"collector": {"model": "haiku", "effort": "low"}}}
-JUDGE_REL = ".claude/agents/sessionretro-log-judge.md"
-GITIGNORE_NO_RU = 'нет — добавьте: sr.py setup-apply с {"gitignore": true}'
-GITIGNORE_SKIPPED_RU = ('строки sessionretro в .gitignore не дописаны — добавьте: '
-                        'sr.py setup-apply с {"gitignore": true}')
+JUDGE_REL = ".claude/agents/retropair-log-judge.md"
+GITIGNORE_NO_RU = 'нет — добавьте: rp.py setup-apply с {"gitignore": true}'
+GITIGNORE_SKIPPED_RU = ('строки RetroPair в .gitignore не дописаны — добавьте: '
+                        'rp.py setup-apply с {"gitignore": true}')
 
 
 def split_frontmatter(text: str) -> tuple[list[str], str]:
@@ -49,7 +49,7 @@ class Render(unittest.TestCase):
         text = agents.render("judge", "opus", "high")
         self.assertNotIn("{{", text)
         fm, body = split_frontmatter(text)
-        self.assertIn("name: sessionretro-log-judge", fm)
+        self.assertIn("name: retropair-log-judge", fm)
         self.assertIn("model: opus", fm)
         self.assertIn("effort: high", fm)
         _, plugin_body = split_frontmatter((PLUGIN / "agents" / "log-judge.md").read_text("utf-8"))
@@ -59,7 +59,7 @@ class Render(unittest.TestCase):
         for role, name in agents.ROLES.items():
             with self.subTest(role=role):
                 fm, _ = split_frontmatter(agents.render(role, "sonnet", "medium"))
-                self.assertIn(f"name: sessionretro-{name}", fm)
+                self.assertIn(f"name: retropair-{name}", fm)
                 self.assertIn("model: sonnet", fm)
                 self.assertIn("effort: medium", fm)
 
@@ -83,7 +83,7 @@ class Render(unittest.TestCase):
     def test_target(self):
         root = Path("/home/user/proj")
         self.assertEqual(agents.target(root, "critic"),
-                         root / ".claude" / "agents" / "sessionretro-feedback-critic.md")
+                         root / ".claude" / "agents" / "retropair-feedback-critic.md")
 
 
 class _Proj(TempHome, unittest.TestCase):
@@ -180,7 +180,7 @@ class PluginUpdate(_Proj):
         self.assertEqual(set(data), set(agents.ROLES))
         self.assertEqual(set(data["judge"]), {"sha256", "plugin_version"})
         self.assertEqual(agents.record_path(self.proj),
-                         self.proj / ".sessionretro" / "agents.json")
+                         self.proj / ".retropair" / "agents.json")
 
     def test_untouched_file_updated_to_new_stub(self):
         agents.write(self.proj, self.cfg)
@@ -476,7 +476,7 @@ class SetupWritesAgents(TempHome, unittest.TestCase):
         self.apply(SELF)
         report = self.apply({"models": {"judge": {"model": "sonnet", "effort": "max"}}})
         self.assertIn(JUDGE_REL, report["changed"])
-        self.assertIn(".claude/agents/sessionretro-log-collector.md", report["unchanged"])
+        self.assertIn(".claude/agents/retropair-log-collector.md", report["unchanged"])
 
     def test_missing_file_recreated_without_models(self):
         self.apply(SELF)
@@ -537,7 +537,7 @@ class DoctorLines(TempHome, unittest.TestCase):
         cfg["models"]["judge"]["model"] = "haiku"
         save_config(self.proj, cfg)
         self.assertEqual(self.lines()["project_agents"], "расходятся: judge")
-        edit_body(self.proj / ".claude/agents/sessionretro-feedback-critic.md")
+        edit_body(self.proj / ".claude/agents/retropair-feedback-critic.md")
         self.assertEqual(self.lines()["project_agents"], "расходятся: judge, critic")
         for role in agents.ROLES:
             agents.target(self.proj, role).unlink()
@@ -571,7 +571,7 @@ class DoctorLines(TempHome, unittest.TestCase):
         """m3: неполный `.gitignore` — строка doctor с подсказкой, как исправить; полный — True."""
         setup.apply({"mode": "team", "title": "T"}, self.proj, self.home)
         self.assertEqual(self.lines()["gitignore"], GITIGNORE_NO_RU)
-        self.assertIn('sr.py setup-apply', GITIGNORE_NO_RU)
+        self.assertIn('rp.py setup-apply', GITIGNORE_NO_RU)
         self.assertIn('{"gitignore": true}', GITIGNORE_NO_RU)
         setup.apply({"gitignore": True}, self.proj, self.home)
         self.assertIs(self.lines()["gitignore"], True)

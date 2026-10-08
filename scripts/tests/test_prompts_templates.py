@@ -86,7 +86,7 @@ def _frontmatter_lines(text: str, label: str) -> list[str]:
 
 def stub_problems(agent_text: str, stub_text: str, name: str) -> list[str]:
     """Расхождения болванки с агентом плагина `name`; пустой список — болванка годна."""
-    expected = {"name": f"name: sessionretro-{name}", "model": "model: " + ph("model"),
+    expected = {"name": f"name: retropair-{name}", "model": "model: " + ph("model"),
                 "effort": "effort: " + ph("effort")}
     agent_lines = _frontmatter_lines(agent_text, f"agents/{name}.md")
     stub_lines = _frontmatter_lines(stub_text, f"templates/agents/{name}.md")
@@ -178,7 +178,7 @@ def stub_of(agent_text: str, name: str = "log-collector") -> str:
     for line in lines:
         key = line.partition(":")[0]
         if key == "name" and line.startswith("name: "):
-            line = f"name: sessionretro-{name}"
+            line = f"name: retropair-{name}"
         elif line.startswith("model: "):
             line = "model: " + ph("model")
         elif line.startswith("effort: "):
@@ -265,7 +265,7 @@ class TemplatesReal(unittest.TestCase):
                 stub_path = AGENT_STUBS / f"{name}.md"
                 self.assertEqual(stub_problems(agent, stub_path.read_text(encoding="utf-8"), name), [])
                 fm = frontmatter(stub_path)
-                self.assertEqual(fm["name"], f"sessionretro-{name}")
+                self.assertEqual(fm["name"], f"retropair-{name}")
                 self.assertEqual(fm["model"], ph("model"))
                 self.assertEqual(fm["effort"], ph("effort"))
 

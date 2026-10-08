@@ -1,7 +1,7 @@
 # Privacy: what stays with you and where things go
 
 Agent session logs are your conversation, your code and everything the agent read: configs,
-command output, sometimes keys. This page is about where sessionretro keeps that data, what the
+command output, sometimes keys. This page is about where RetroPair keeps that data, what the
 models see, what goes over the network and what the automation does not catch.
 
 ## In short
@@ -18,18 +18,18 @@ models see, what goes over the network and what the automation does not catch.
 
 | Folder | What is there | Who sees it |
 |---|---|---|
-| `.sessionretro/` in the project | config, person cards, sanitized log copies, run history, review texts, reports | you and whoever shares the repository with you |
-| `~/.sessionretro/` | the registry of your workspaces, shared defaults, the page of all workspaces | only you |
-| `~/.sessionretro/clones/` | clones of git repositories you listed as log sources (team and course modes) | only you |
+| `.retropair/` in the project | config, person cards, sanitized log copies, run history, review texts, reports | you and whoever shares the repository with you |
+| `~/.retropair/` | the registry of your workspaces, shared defaults, the page of all workspaces | only you |
+| `~/.retropair/clones/` | clones of git repositories you listed as log sources (team and course modes) | only you |
 
-What to commit from `.sessionretro/` and what not is in [workspace.md](workspace.md), "What to
+What to commit from `.retropair/` and what not is in [workspace.md](workspace.md), "What to
 commit to git". In short: do not commit `logs/`, `runs/pending/`, `reports/`, `collect.log` and
 `collect.lock`; `setup` offers to add them to `.gitignore`. Person cards in team and course modes
 hold names and profiles: commit them to a shared repository only with the people's consent.
 
 The SessionEnd hook runs collection only in workspaces from your registry
-`~/.sessionretro/workspaces.json`, that is, the ones your own `/sessionretro:setup` created. Someone
-else's repository with a committed `.sessionretro/config.json` does not start collection: the hook
+`~/.retropair/workspaces.json`, that is, the ones your own `/retropair:setup` created. Someone
+else's repository with a committed `.retropair/config.json` does not start collection: the hook
 prints to stderr that the workspace is not registered and exits ([collect.md](collect.md), "The
 hook").
 
@@ -39,7 +39,7 @@ Three Claude Code agents do the assessment: the collector, the judge and the tex
 in your Claude Code session like any other agent: whatever they read goes to the model through
 your Claude Code under its rules. The plugin has no channel of its own.
 
-- **Collectors** read the sanitized copies in `.sessionretro/logs/`. They do not get the person
+- **Collectors** read the sanitized copies in `.retropair/logs/`. They do not get the person
   card.
 - **The judge** gets the collectors' facts, paths to the log copies to verify quotes, open
   recommendations from earlier periods and a short slice of the card: role, grade, experience,
@@ -47,7 +47,7 @@ your Claude Code under its rules. The plugin has no channel of its own.
 - **No agent gets** past scores and levels, the reviewer's notes about the person, or logs and
   texts of other people.
 
-You choose the models: the "Models" question in `/sessionretro:setup` or `models` in
+You choose the models: the "Models" question in `/retropair:setup` or `models` in
 `config.json` ([customize.md](customize.md)).
 
 ## What goes over the network
@@ -59,7 +59,7 @@ The plugin's scripts do not go online except in two cases you turn on yourself:
   own settings; the plugin only calls the export into the project's `.specstory/history`.
 
 Reports are HTML files with no external scripts or fonts; they open without a network, and you
-send them yourself. Proposals to the plugin authors are written to `.sessionretro/improvements/`
+send them yourself. Proposals to the plugin authors are written to `.retropair/improvements/`
 and leave only when you open an issue yourself ([feedback.md](feedback.md)).
 
 ## The sanitizer
@@ -100,7 +100,7 @@ participants: show it rather than forward it; to hide the texts and recommendati
 numbers and charts only, use `--no-details` or
 `"report": {"group_details": false}`, and hand out the `--anon` copy. Before a verdict explanation
 reaches a reader it is cleaned: machine paths (macOS, Linux and Windows home folders, `/tmp/…`)
-become the file name, a path inside `.sessionretro/` becomes `logs/<id>/<file>`, the OS login,
+become the file name, a path inside `.retropair/` becomes `logs/<id>/<file>`, the OS login,
 e-mails and phone numbers are replaced with labels. This cleaning does not touch people's names: in
 the personal report they are caught by the check for other people's names; in the group report
 participant names are legitimate, so only the words from `sanitize.names` are looked for there — if
@@ -110,7 +110,7 @@ reviewer report.
 
 ## What the automation does not catch
 
-The honest limits of version 0.1:
+The honest limits of version 0.2:
 
 - **Names of people mentioned inside a log.** The sanitizer only knows the names from person cards
   and from `sanitize.names`. A colleague, a client or a fellow group member named in the conversation but not
@@ -122,17 +122,17 @@ The honest limits of version 0.1:
   letters or more. A one- or two-letter name in free text is not removed.
 - **Names in free text.** A regular expression cannot tell a client, project or city name from an
   ordinary word. Before you hand logs to anyone, look through at least one copy in
-  `.sessionretro/logs/` yourself.
+  `.retropair/logs/` yourself.
 - **Extra replacements.** The phone, card and passport rules sometimes fire on numbers in tool
   output. That spoils a number in the copy but exposes nothing.
-- **Windows.** Collection is not supported on Windows in 0.1; the path is a manual export and
+- **Windows.** Collection is not supported on Windows in 0.2; the path is a manual export and
   collection on macOS or Linux ([collect.md](collect.md), "Windows").
 
 ## How long logs live
 
 Claude Code deletes its session logs older than `cleanupPeriodDays` days (30 by default). The
 SessionEnd hook takes a sanitized copy after every session, and `setup` offers to raise the limit
-to 90 days. Copies in `.sessionretro/logs/` live until you delete them. You can delete a copy at
+to 90 days. Copies in `.retropair/logs/` live until you delete them. You can delete a copy at
 any time: it drops out of the next assessment, and the session stays in the inventory with the
 status `gone`.
 
@@ -146,7 +146,7 @@ handled first.
 ## More
 
 - [Collecting logs and the sanitizer](collect.md)
-- [Workspace: where sessionretro keeps its data](workspace.md)
+- [Workspace: where RetroPair keeps its data](workspace.md)
 - [Reports: what each one shows](reports.md)
 - [FAQ](faq.md)
 - [How the assessment works](how-it-works.md)

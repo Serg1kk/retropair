@@ -37,7 +37,7 @@ INSTRUCTIONS = [
 ]
 # Файлы-указатели без собственного пути сбора: отсылают к соседним инструкциям.
 POINTER_FILES = {"ne-vybral.md", "visual-studio.md"}
-COLLECT_CMD = 'sr.py" collect'
+COLLECT_CMD = 'rp.py" collect'
 
 # Запрещённые фрагменты собираются в рантайме: гейт чистоты сканирует и сам этот файл.
 _FORBIDDEN_PARTS = [
@@ -192,7 +192,7 @@ class CollectorInstructionsTest(unittest.TestCase):
         # ревьюеру — папку logs/<id>/ после проверки глазами.
         text = (INSTRUCTIONS_DIR / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("закоммитьте эту папку", text)
-        for needle in (".sessionretro/logs/<ваш id>/", "глазами", "без логина", "self"):
+        for needle in (".retropair/logs/<ваш id>/", "глазами", "без логина", "self"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, text)
 
@@ -230,11 +230,11 @@ class CollectPagesTest(unittest.TestCase):
         self.assertGreater(len(self.body.splitlines()), 25)
 
     def test_skill_runs_collect_with_plugin_root_and_fallback(self) -> None:
-        self.assertIn(f'python3 "{PLUGIN_ROOT_VAR}/scripts/sr.py" collect', self.body)
+        self.assertIn(f'python3 "{PLUGIN_ROOT_VAR}/scripts/rp.py" collect', self.body)
         self.assertIn("два уровня выше", self.body)
 
     def test_skill_explains_orig_slug_setup_and_hook(self) -> None:
-        for needle in ("*.orig", "слаг", "/sessionretro:setup", "hook.enabled", ".sessionretro/logs/"):
+        for needle in ("*.orig", "слаг", "/retropair:setup", "hook.enabled", ".retropair/logs/"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.body)
 
@@ -255,7 +255,7 @@ class CollectPagesTest(unittest.TestCase):
     def test_doc_replace_lock_commit_and_reclean(self) -> None:
         for needle in ("--replace", "300 секунд", "сбор уже идёт; повтор запрошен", "collect.again",
                        "сбор логов уже идёт (collect.lock)", "другая сессия",
-                       ".sessionretro/logs/<ваш id>/", "не коммитьте", "без логина", "перечист"):
+                       ".retropair/logs/<ваш id>/", "не коммитьте", "без логина", "перечист"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.doc)
         self.assertNotIn("не стоит коммитить в общий репозиторий", self.doc)
@@ -263,7 +263,7 @@ class CollectPagesTest(unittest.TestCase):
     def test_doc_shows_commands_with_examples(self) -> None:
         for cmd in ("collect", "inventory", "normalize"):
             with self.subTest(cmd=cmd):
-                self.assertIn(f'scripts/sr.py" {cmd}', self.doc)
+                self.assertIn(f'scripts/rp.py" {cmd}', self.doc)
         for flag in ("--json", "--quiet", "--provider"):
             with self.subTest(flag=flag):
                 self.assertIn(flag, self.doc)
@@ -271,7 +271,7 @@ class CollectPagesTest(unittest.TestCase):
     def test_doc_covers_sources_hook_and_config(self) -> None:
         for needle in ("`claude-jsonl`", "`specstory`", "`dir`", "`git`", "SessionEnd",
                        "hook.enabled", "hook.providers", "collect.log", "sanitize.names",
-                       "extra_patterns", "*.orig", ".sessionretro/logs/"):
+                       "extra_patterns", "*.orig", ".retropair/logs/"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.doc)
 

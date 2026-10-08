@@ -1,8 +1,8 @@
-"""Команда `workspaces`: записи глобального реестра `~/.sessionretro/workspaces.json`.
+"""Команда `workspaces`: записи глобального реестра `~/.retropair/workspaces.json`.
 
 `list` показывает все записи и отмечает те, у которых на диске нет
-`<path>/.sessionretro/config.json`; `remove <id>` и `remove --missing` убирают записи из
-реестра. Файлы проектов и их `.sessionretro/` команда не трогает. Реестр глобальный,
+`<path>/.retropair/config.json`; `remove <id>` и `remove --missing` убирают записи из
+реестра. Файлы проектов и их `.retropair/` команда не трогает. Реестр глобальный,
 поэтому `--workspace` здесь не используется.
 """
 
@@ -35,7 +35,7 @@ def register(subparsers) -> None:
 
 
 def is_missing(entry: dict) -> bool:
-    """Нет `<path>/.sessionretro/config.json` (или у записи нет пути)."""
+    """Нет `<path>/.retropair/config.json` (или у записи нет пути)."""
     path = entry.get("path")
     if not isinstance(path, str) or not path:
         return True

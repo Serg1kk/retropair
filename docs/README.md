@@ -1,13 +1,16 @@
-# sessionretro documentation
+# RetroPair documentation
 
 The plugin overview, quick start and privacy summary are in the [README](../README.md)
 ([на русском](../README.ru.md)). Every page exists in English and in Russian.
+
+[Product website](https://retropair.dev) · [Private distribution repository](https://github.com/Serg1kk/retropair)
 
 ## English
 
 | Page | What it covers |
 |---|---|
-| [Setup](en/setup.md) | first and repeated run of `/sessionretro:setup`, three modes, the questions in order, the hook, `setup-apply` for scripts |
+| [Migration](en/migration.md) | SessionRetro → RetroPair: plugin reinstall, workspace preview, conflicts and compatibility |
+| [Setup](en/setup.md) | first and repeated run of `/retropair:setup`, three modes, the questions in order, the hook, `setup-apply` for scripts |
 | [Collecting logs](en/collect.md) | sources, the collection summary, session statuses, the sanitizer, the SessionEnd hook, manual mode, Windows |
 | [How the assessment works](en/how-it-works.md) | the eight axes, two stages, batches, scores only under quotes, insufficient data, the level formula, what the person sees, how well it works |
 | [The eight axes](en/axes.md) | what each axis looks at, the gate, levels, anti-patterns, what the person sees |
@@ -23,7 +26,8 @@ The plugin overview, quick start and privacy summary are in the [README](../READ
 
 | Страница | О чём |
 |---|---|
-| [Настройка](ru/setup.md) | первый и повторный запуск `/sessionretro:setup`, три режима, вопросы по порядку, хук, `setup-apply` для скриптов |
+| [Миграция](ru/migration.md) | SessionRetro → RetroPair: переустановка плагина, предпросмотр переноса, конфликты и совместимость |
+| [Настройка](ru/setup.md) | первый и повторный запуск `/retropair:setup`, три режима, вопросы по порядку, хук, `setup-apply` для скриптов |
 | [Сбор логов](ru/collect.md) | источники, сводка сбора, статусы сессий, санитайзер, хук SessionEnd, ручной режим, Windows |
 | [Как устроена оценка](ru/how-it-works.md) | две ступени, пачки, оценка только под цитату, «мало данных», формула уровня, рекомендации |
 | [Восемь осей](ru/axes.md) | что смотрится по каждой оси, гейт, уровни, антипаттерны, что видит человек |

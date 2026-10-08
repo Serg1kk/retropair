@@ -1,9 +1,9 @@
 """Индекс логов `logs-index.json` и пометки сессий прогона: reviewed / excluded, откат, покрытие.
 
 Индекс — формат сбора логов: `{schema_version: 1, workspace, updated_at, logs: [], warnings: []}`,
-`path` записи относительно `.sessionretro/`. Читается (`inventory.load_index`) и пишется
+`path` записи относительно `.retropair/`. Читается (`inventory.load_index`) и пишется
 (`inventory.save_index`) под тем же замком, что берут `collect` и `inventory`:
-`lock.collect_lock(<.sessionretro>)` → lock-файл `collect.lock` (`index_lock`, ждёт идущий сбор
+`lock.collect_lock(<.retropair>)` → lock-файл `collect.lock` (`index_lock`, ждёт идущий сбор
 до `lock.COLLECT_WAIT_SECONDS`). Если нужен и
 замок трекера, порядок всегда «трекер → индекс». Пометка трогает только поля `MARK_FIELDS`.
 
@@ -60,7 +60,7 @@ def _index_path(root: Path) -> Path:
 
 @contextlib.contextmanager
 def index_lock(root: Path, timeout: float | None = None):
-    """Замок сбора логов `lock.collect_lock(.sessionretro)` (файл `collect.lock`), тот же, что у
+    """Замок сбора логов `lock.collect_lock(.retropair)` (файл `collect.lock`), тот же, что у
     `collect` и `inventory`; повторный вход в процессе — без ожидания. `None` → `INDEX_LOCK_TIMEOUT`,
     а он `None` → `lock.COLLECT_WAIT_SECONDS` с одной строкой ожидания в stderr."""
     state_dir = ws_paths(root)["state_dir"]

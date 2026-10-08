@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-09
+
+### Changed
+
+- SessionRetro переименован в **RetroPair**: плагин/marketplace `retropair`, команды `/retropair:setup`, `collect`, `review`, `report`, новые проектные агенты `retropair-*`.
+- Позиционирование: Human–AI Collaboration Retrospectives. **Review the pair. Improve the human.** Обратная связь о наблюдаемой работе человека с AI-агентом, с доказательствами из логов.
+- Canonical website: https://retropair.dev; приватный дистрибутив: https://github.com/Serg1kk/retropair. История 0.1.x сохранена ниже под прежним именем.
+- EN/RU документация, отчёты, галерея и анимированные схемы пересобраны под новый бренд.
+
+### Added
+
+- `scripts/rp.py` — основной CLI; `scripts/sr.py` остаётся поддерживаемым входом.
+- `rp.py migrate [--apply] [--global] --workspace DIR`: предпросмотр, блокировка конфликтов и активных операций, атомарный перенос `.sessionretro/` → `.retropair/`, проверка SHA-256 и откат при несовпадении. Исходные данные не копируются и не переписываются. Аудит переноса — отдельный локальный файл.
+- Совместимость исторических путей логов и старых пользовательских агентов; JSON-ключи, run/recommendation IDs, approval и оценки сохраняются. Старую установку нужно остановить перед переносом; marketplace сменяется по инструкции переустановки.
+- Проверки миграции, повторного запуска, конфликтов, CLI и legacy agent selection.
+
 ## [0.1.14] — 2026-09-28
 
 ### Fixed

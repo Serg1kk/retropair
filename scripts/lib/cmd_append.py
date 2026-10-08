@@ -34,8 +34,8 @@ def handle(args) -> int:
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     for line in result["warnings"]:
-        print(f"sessionretro: предупреждение: {line}", file=sys.stderr)
+        print(f"retropair: предупреждение: {line}", file=sys.stderr)
     if result["warnings_other_runs"]:
-        print("sessionretro: в трекере есть проблемные прогоны, запись они не блокируют:\n  "
+        print("retropair: в трекере есть проблемные прогоны, запись они не блокируют:\n  "
               + "\n  ".join(result["warnings_other_runs"]), file=sys.stderr)
     return 0

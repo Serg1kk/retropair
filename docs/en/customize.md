@@ -1,6 +1,8 @@
 # Customizing: person cards, the text template and project agents
 
-After `/sessionretro:setup` everything works on defaults. This page is about what you can tune by
+Upgrading from SessionRetro? Follow the [migration guide](migration.md) before initializing a new workspace.
+
+After `/retropair:setup` everything works on defaults. This page is about what you can tune by
 hand: how to write to a particular person, what the text itself looks like, and which models and
 prompts the agents in your project use. All of these are files in your project; plugin updates
 leave them alone.
@@ -8,13 +10,13 @@ leave them alone.
 To see which settings the plugin is working with right now:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show me --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people show me --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents check
 ```
 
 ## Person card
 
-Each person has a file `.sessionretro/people/<id>.yaml` (in self mode, `me.yaml`). `setup` creates
+Each person has a file `.retropair/people/<id>.yaml` (in self mode, `me.yaml`). `setup` creates
 the card; running it again does not overwrite it, so edit the file freely.
 
 ```yaml
@@ -46,7 +48,7 @@ code `1` and the field name. More on the card fields in [workspace.md](workspace
 
 ## Shared text settings: `_default.yaml`
 
-`.sessionretro/people/_default.yaml` sets the text settings for all cards of the workspace at once.
+`.retropair/people/_default.yaml` sets the text settings for all cards of the workspace at once.
 Change it here and it changes for everyone, except those who have their own value in the card.
 
 | Field | Allowed values | Default | What it changes |
@@ -62,7 +64,7 @@ Change it here and it changes for everyone, except those who have their own valu
 | `avoid` | list of strings | empty | what not to do in the text: comparisons, slang, emoji |
 | `value_focus` | `finding` · `full` | `finding` | value in findings the person did not see, or a full pass over all axes |
 | `show_dynamics` | `true` · `false` | `true` | whether to show changes since the previous period |
-| `channel` | `file` · `telegram` · `slack` · `email` | `file` | where the text goes; only a label for now: stored and validated, but in 0.1.13 the text is built the same way for every channel |
+| `channel` | `file` · `telegram` · `slack` · `email` | `file` | where the text goes; only a label for now: stored and validated, but in 0.2.0 the text is built the same way for every channel |
 | `template` | `default` · `workspace` · file name | `default` | which text template to use (below) |
 | `prefix` | string | `""` | what to put before the text, for example a greeting |
 | `show_scores` | `true` · `false` | none (follows `show_scores` in `config.json`) | the view of the personal report: scores and level, or dynamics only ↑ → ↓ ◇; the `report --scores`/`--trend` flag wins; a line in `_default.yaml` applies to everyone and beats `config.json`. Not given to the judge |
@@ -84,7 +86,7 @@ the lines you need.
 
 ## The card is updated through suggestions
 
-After an approved review, sessionretro compares the card with what the logs show and collects
+After an approved review, RetroPair compares the card with what the logs show and collects
 suggested edits. It never changes the card itself: an edit reaches the file only after your
 `people apply` command. Scores, levels and the review text do not depend on suggestions.
 
@@ -101,16 +103,16 @@ Where suggestions come from (approved runs only, retracted runs do not count):
   (tone, length, channel) are edited by hand only.
 
 The `review` skill recalculates suggestions at the end of a run and after `--approve`, and lists
-them in its summary with the commands, but never applies them. The bare `sr.py approve` does not
+them in its summary with the commands, but never applies them. The bare `rp.py approve` does not
 recalculate them: after it, run `people suggestions --refresh` yourself. The same by hand:
 
 ```bash
 # pending suggestions for everyone; --refresh recalculates from approved runs
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions --refresh
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions --refresh
 # one person, including applied and rejected ones
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions alex --all
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people apply alex S-alex-001
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people reject alex S-alex-002 --reason "my call"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions alex --all
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people apply alex S-alex-001
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people reject alex S-alex-002 --reason "my call"
 ```
 
 Without `--refresh` the command only reads files; `--json` prints the same as one object. `apply`
@@ -128,7 +130,7 @@ list lives in the card, and edits to `_default.yaml` no longer affect it. In a c
 `people add` the `feedback:` block is commented out: `apply` uncomments the `# feedback:` line and
 the key it needs, the other lines stay commented and can be uncommented as usual.
 
-Suggestions are stored next to the card, in `.sessionretro/people/<id>.suggestions.json`: the
+Suggestions are stored next to the card, in `.retropair/people/<id>.suggestions.json`: the
 field, the old and new value, the reason, the run, the status (`pending`, `applied`, `rejected`, `stale`),
 and when and why it was decided. The file lives with the workspace, like the card itself.
 
@@ -143,10 +145,10 @@ The template only sets the layout of the text: order of the parts, greeting, sig
 parts say is decided by the assessment and the settings above.
 
 1. Get a copy of the plugin template: answer "Own copy of the template" to the "Text template"
-   question in `/sessionretro:setup`, or apply the answer `{"template": "workspace"}` with
-   `setup-apply` (see [setup.md](setup.md)). The copy goes to `.sessionretro/templates/feedback.md`; an existing copy is not
+   question in `/retropair:setup`, or apply the answer `{"template": "workspace"}` with
+   `setup-apply` (see [setup.md](setup.md)). The copy goes to `.retropair/templates/feedback.md`; an existing copy is not
    overwritten.
-2. Connect it to the texts: in `.sessionretro/people/_default.yaml` (for everyone) or in a person
+2. Connect it to the texts: in `.retropair/people/_default.yaml` (for everyone) or in a person
    card (for one person) set
 
    ```yaml
@@ -154,11 +156,11 @@ parts say is decided by the assessment and the settings above.
      template: workspace
    ```
 
-3. Edit `.sessionretro/templates/feedback.md`. The comment at the top of the file explains the
+3. Edit `.retropair/templates/feedback.md`. The comment at the top of the file explains the
    format and is not sent to the person. The template has five substitutions in double curly
    braces: `prefix`, `opening`, `actions`, `criteria`, `closing`; there are no others.
 
-You can keep several templates: put a file such as `short.md` into `.sessionretro/templates/` and
+You can keep several templates: put a file such as `short.md` into `.retropair/templates/` and
 set `template: short.md` in the card (file name only, no folders). If the file is missing, building
 the text stops with code `1` and the path it looked for; there is no silent fallback to the plugin
 template.
@@ -174,9 +176,9 @@ into your project:
 
 | Role | File in the project | Model in `config.json` |
 |---|---|---|
-| collector | `.claude/agents/sessionretro-log-collector.md` | `models.collector` |
-| judge | `.claude/agents/sessionretro-log-judge.md` | `models.judge` |
-| critic | `.claude/agents/sessionretro-feedback-critic.md` | `models.critic` |
+| collector | `.claude/agents/retropair-log-collector.md` | `models.collector` |
+| judge | `.claude/agents/retropair-log-judge.md` | `models.judge` |
+| critic | `.claude/agents/retropair-feedback-critic.md` | `models.critic` |
 
 If the file exists in the project, the retro uses it; if not, it uses the plugin's agent. Plugin
 updates do not touch files you edited: your edits stay (how unedited ones are updated: see
@@ -186,10 +188,10 @@ updates do not touch files you edited: your edits stay (how unedited ones are up
 
 An agent's model and effort live in two places: in `config.json` (`models.<role>`) and in the
 `model:` and `effort:` lines at the top of the agent file. Change them through setup (run
-`/sessionretro:setup` again, the "Models" block) or directly:
+`/retropair:setup` again, the "Models" block) or directly:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers - <<'EOF'
 {"models": {"judge": {"model": "opus", "effort": "max"}}}
 EOF
 ```
@@ -199,7 +201,7 @@ file. If you edited `config.json` by hand, run `agents write` so the files catch
 config:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents write
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents write
 ```
 
 Models: `sonnet`, `opus`, `haiku`, `inherit` (same as the main session); effort: `low`, `medium`,
@@ -216,18 +218,18 @@ lines by hand with the same values as in `config.json`.
 ### Checking: `agents check`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents check
 ```
 
 ```text
-collector: ok (.claude/agents/sessionretro-log-collector.md)
-judge: тело правлено вручную (.claude/agents/sessionretro-log-judge.md)
-critic: ok (.claude/agents/sessionretro-feedback-critic.md)
+collector: ok (.claude/agents/retropair-log-collector.md)
+judge: тело правлено вручную (.claude/agents/retropair-log-judge.md)
+critic: ok (.claude/agents/retropair-feedback-critic.md)
 ```
 
 For each role it shows whether the file exists (`нет файла`, no file), whether the model and effort
 match `config.json` (`model ≠ config …`, `effort ≠ config …`), and whether the body was edited by
-hand (`тело правлено вручную`, body edited by hand); these markers are printed in Russian in 0.1.
+hand (`тело правлено вручную`, body edited by hand); these markers are printed in Russian in 0.2.0.
 All `ok` gives code `0`, anything else code `1`. `--json` prints the same per role. The same summary is the `project_agents` line in `doctor`.
 
 "Body edited by hand" is not a failure, it is a reminder that your agent differs from the plugin's.
@@ -235,7 +237,7 @@ All `ok` gives code `0`, anything else code `1`. `--json` prints the same per ro
 ### After a plugin update
 
 Every time it writes an agent, the plugin remembers a fingerprint of its body in
-`.sessionretro/agents.json` (`{"<role>": {"sha256", "plugin_version"}}`). That is how it tells two
+`.retropair/agents.json` (`{"<role>": {"sha256", "plugin_version"}}`). That is how it tells two
 cases apart when a file differs from the new version's prompt:
 
 - **the file was not edited**: the body matches the fingerprint. `agents check` reports it as
@@ -246,20 +248,20 @@ cases apart when a file differs from the new version's prompt:
 - **the file was edited**: the body matches neither the fingerprint nor the new prompt. It is
   marked "edited by hand" and left alone, as described above.
 
-You do not have to do this by hand: `/sessionretro:review` runs `agents sync` at the start of
+You do not have to do this by hand: `/retropair:review` runs `agents sync` at the start of
 every run, before any agent is launched. It updates only unedited files to the current prompt
 with the models from `config.json`, leaves edited ones alone, creates no missing files and always
 exits with code `0`, so the retro does not stop. The retro shows you its lines; with `--no-ask`
 it puts them into the final summary:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents sync
 ```
 
 ```text
-updated: collector (.claude/agents/sessionretro-log-collector.md)
-unchanged: critic (.claude/agents/sessionretro-feedback-critic.md)
-edited by hand: judge (.claude/agents/sessionretro-log-judge.md) — left as is, the new plugin prompt is not in it; to take the plugin agent (your edits are lost): `agents write --force`
+updated: collector (.claude/agents/retropair-log-collector.md)
+unchanged: critic (.claude/agents/retropair-feedback-critic.md)
+edited by hand: judge (.claude/agents/retropair-log-judge.md) — left as is, the new plugin prompt is not in it; to take the plugin agent (your edits are lost): `agents write --force`
 ```
 
 The lines follow the workspace language (above is `lang: en`). No agent files: it prints "no
@@ -274,17 +276,17 @@ from then on. `agents.json` can be kept in git together with `.claude/agents/`.
 ### Back to the plugin's agent: `agents write --force`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents write --force
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents write --force
 ```
 
 Overwrites all three files with fresh copies from the plugin with the models from `config.json`.
 **Your edits to the body are lost**: if you need them, save the file first and move the edits over
 afterwards. Without `--force` the command leaves edited files alone and exits with code `1`,
-listing them (the message is in Russian in 0.1: edited by hand and not overwritten, overwrite with
+listing them (the message is in Russian in 0.2: edited by hand and not overwritten, overwrite with
 `agents write --force`):
 
 ```text
-sessionretro: agents write: правлены вручную и не перезаписаны: .claude/agents/sessionretro-log-judge.md — перезаписать: agents write --force
+retropair: agents write: правлены вручную и не перезаписаны: .claude/agents/retropair-log-judge.md — перезаписать: agents write --force
 ```
 
 You can also delete an agent file from `.claude/agents/`: the retro then uses the plugin's agent.
@@ -293,7 +295,7 @@ You can also delete an agent file from `.claude/agents/`: the retro then uses th
 ## More
 
 - [Setup: first and repeated run](setup.md)
-- [Workspace: where sessionretro keeps its data](workspace.md)
+- [Workspace: where RetroPair keeps its data](workspace.md)
 - [Proposals to the plugin authors](feedback.md)
 - [How the assessment works](how-it-works.md)
 - [Privacy](privacy.md)

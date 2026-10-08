@@ -36,7 +36,7 @@ class SrCliTest(unittest.TestCase):
         return run_sr(*args, home=self.home, cwd=cwd or self.proj)
 
     def registry(self) -> list[dict]:
-        return json.loads((self.home / ".sessionretro" / "workspaces.json").read_text(encoding="utf-8"))
+        return json.loads((self.home / ".retropair" / "workspaces.json").read_text(encoding="utf-8"))
 
     # --- диспетчер ---
 
@@ -48,7 +48,7 @@ class SrCliTest(unittest.TestCase):
     def test_version(self):
         res = self.sr("--version")
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn(f"sessionretro {__version__}", res.stdout)
+        self.assertIn(f"retropair {__version__}", res.stdout)
 
     def test_unknown_command_exit2(self):
         self.assertEqual(self.sr("nope").returncode, 2)
@@ -58,7 +58,7 @@ class SrCliTest(unittest.TestCase):
     def test_init_self_creates_files(self):
         res = self.sr("init", "--mode", "self", "--title", "T")
         self.assertEqual(res.returncode, 0, res.stderr)
-        state = self.proj / ".sessionretro"
+        state = self.proj / ".retropair"
         for rel in ("config.json", "people/_default.yaml", "people/me.yaml", "plugin-state.json"):
             self.assertTrue((state / rel).is_file(), rel)
         cfg = json.loads((state / "config.json").read_text(encoding="utf-8"))
@@ -81,7 +81,7 @@ class SrCliTest(unittest.TestCase):
 
     def test_init_me_card_valid_ru(self):
         self.assertEqual(self.sr("init", "--mode", "self").returncode, 0)
-        people = self.proj / ".sessionretro" / "people"
+        people = self.proj / ".retropair" / "people"
         text = (people / "me.yaml").read_text(encoding="utf-8")
         self.assertNotIn("{{", text)
         self.assertIn('name: "Я"', text)
@@ -100,14 +100,14 @@ class SrCliTest(unittest.TestCase):
 
     def test_init_me_card_en(self):
         self.assertEqual(self.sr("init", "--mode", "self", "--lang", "en").returncode, 0)
-        text = (self.proj / ".sessionretro" / "people" / "me.yaml").read_text(encoding="utf-8")
+        text = (self.proj / ".retropair" / "people" / "me.yaml").read_text(encoding="utf-8")
         self.assertIn('name: "Me"', text)
-        cfg = json.loads((self.proj / ".sessionretro" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((self.proj / ".retropair" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["lang"], "en")
 
     def test_init_default_title_is_folder_name(self):
         self.assertEqual(self.sr("init", "--mode", "team").returncode, 0)
-        cfg = json.loads((self.proj / ".sessionretro" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((self.proj / ".retropair" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["workspace"]["title"], "proj")
         self.assertEqual(cfg["workspace"]["id"], "proj")
 
@@ -116,28 +116,28 @@ class SrCliTest(unittest.TestCase):
         other.mkdir()
         res = self.sr("init", "--mode", "course", "--path", str(other))
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertTrue((other / ".sessionretro" / "config.json").is_file())
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertTrue((other / ".retropair" / "config.json").is_file())
+        self.assertFalse((self.proj / ".retropair").exists())
 
     def test_init_missing_path_exit2(self):
         res = self.sr("init", "--mode", "team", "--path", str(self.base / "missing"))
         self.assertEqual(res.returncode, 2)
-        self.assertIn("sessionretro:", res.stderr)
+        self.assertIn("retropair:", res.stderr)
 
     def test_init_twice_exit1(self):
         self.assertEqual(self.sr("init", "--mode", "self").returncode, 0)
         res = self.sr("init", "--mode", "self")
         self.assertEqual(res.returncode, 1)
         self.assertIn("workspace уже создан", res.stderr)
-        self.assertTrue(res.stderr.startswith("sessionretro: "))
+        self.assertTrue(res.stderr.startswith("retropair: "))
 
     def test_init_bogus_mode_exit2(self):
         self.assertEqual(self.sr("init", "--mode", "bogus").returncode, 2)
-        self.assertFalse((self.proj / ".sessionretro").exists())
+        self.assertFalse((self.proj / ".retropair").exists())
 
     def test_init_team_no_me_card(self):
         self.assertEqual(self.sr("init", "--mode", "team").returncode, 0)
-        people = self.proj / ".sessionretro" / "people"
+        people = self.proj / ".retropair" / "people"
         self.assertTrue((people / "_default.yaml").is_file())
         self.assertFalse((people / "me.yaml").exists())
 
@@ -147,7 +147,7 @@ class SrCliTest(unittest.TestCase):
         self.assertEqual(self.sr("init", "--mode", "team", "--title", "App").returncode, 0)
         res = self.sr("init", "--mode", "team", "--title", "App", cwd=second)
         self.assertEqual(res.returncode, 0, res.stderr)
-        cfg = json.loads((second / ".sessionretro" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((second / ".retropair" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["workspace"]["id"], "app-2")
         ids = {e["path"]: e["id"] for e in self.registry()}
         self.assertEqual(ids[str(second)], "app-2")
@@ -185,11 +185,11 @@ class SrCliTest(unittest.TestCase):
     def test_init_in_home_exit2_nothing_written(self):
         res = self.sr("init", "--mode", "team", "--path", str(self.home))
         self.assertEqual(res.returncode, 2, res.stderr)
-        self.assertIn("sessionretro:", res.stderr)
-        self.assertFalse((self.home / ".sessionretro").exists())
+        self.assertIn("retropair:", res.stderr)
+        self.assertFalse((self.home / ".retropair").exists())
 
     def test_init_in_home_with_existing_global_dir_exit2(self):
-        glob = self.home / ".sessionretro"
+        glob = self.home / ".retropair"
         glob.mkdir()
         res = self.sr("init", "--mode", "team", cwd=self.home)
         self.assertEqual(res.returncode, 2, res.stderr)
@@ -220,20 +220,20 @@ class InitOrderTest(_util.TempHome, unittest.TestCase):
             with self.assertRaises(OSError):
                 cmd_init.handle(self.args())
         self.assertEqual(registry.load(), [])
-        self.assertFalse((self.home / ".sessionretro" / "workspaces.json").exists())
+        self.assertFalse((self.home / ".retropair" / "workspaces.json").exists())
 
     def test_failed_registration_after_files(self):
         with mock.patch("lib.cmd_init.registry.register", side_effect=OSError("нет места")):
             with self.assertRaises(OSError):
                 cmd_init.handle(self.args())
-        self.assertTrue((self.proj / ".sessionretro" / "plugin-state.json").is_file())
+        self.assertTrue((self.proj / ".retropair" / "plugin-state.json").is_file())
         self.assertEqual(registry.load(), [])
 
     def test_id_matches_registry_on_collision(self):
         registry.register(self.home / "elsewhere", "App", "team", ["default"])
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(cmd_init.handle(self.args()), 0)
-        cfg = json.loads((self.proj / ".sessionretro" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((self.proj / ".retropair" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["workspace"]["id"], "app-2")
         self.assertEqual(registry.find_by_path(self.proj)["id"], "app-2")
 
@@ -248,7 +248,7 @@ class InitOrderTest(_util.TempHome, unittest.TestCase):
         with mock.patch("lib.cmd_init.registry.register", side_effect=racing):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(cmd_init.handle(self.args()), 0)
-        cfg = json.loads((self.proj / ".sessionretro" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((self.proj / ".retropair" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["workspace"]["id"], registry.find_by_path(self.proj)["id"])
         self.assertEqual(cfg["workspace"]["id"], "app-2")
 
@@ -274,7 +274,7 @@ class PeopleCliTest(unittest.TestCase):
         res = self.add_alex()
         self.assertIn("alex.yaml", res.stdout)
         self.assertIn("team-a", res.stdout)
-        cfg = json.loads((self.proj / ".sessionretro" / "config.json").read_text(encoding="utf-8"))
+        cfg = json.loads((self.proj / ".retropair" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["workspace"]["groups"], ["default", "team-a"])
 
     def test_add_defaults_name_and_group(self):
@@ -327,7 +327,7 @@ class PeopleCliTest(unittest.TestCase):
     def test_show_unknown_exit2(self):
         res = self.sr("people", "show", "nobody")
         self.assertEqual(res.returncode, 2)
-        self.assertTrue(res.stderr.startswith("sessionretro: "), res.stderr)
+        self.assertTrue(res.stderr.startswith("retropair: "), res.stderr)
 
     def test_context_unknown_exit2(self):
         self.assertEqual(self.sr("people", "context", "nobody").returncode, 2)

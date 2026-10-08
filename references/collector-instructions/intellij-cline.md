@@ -4,7 +4,7 @@
 Зато Cline, в отличие от многих, хранит свои задачи обычными файлами на диске, так что
 историю найти можно всегда.
 
-Одна оговорка: задачи Cline лежат в формате `.json`, а его sessionretro 0.1 не разбирает.
+Одна оговорка: задачи Cline лежат в формате `.json`, а его RetroPair 0.2 не разбирает.
 Поэтому переписку задачи надо сохранить в markdown — из панели Cline или вручную.
 
 ## Шаг 1. Найдите, где лежат ваши задачи
@@ -33,10 +33,10 @@ find ~ -maxdepth 6 -type d -iname "*cline*" 2>/dev/null | grep -v Trash | head
 ```bash
 cd путь/к/проекту
 mkdir -p ai-logs
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
-Последняя команда нужна один раз, если workspace ещё нет. В `.sessionretro/config.json`
+Последняя команда нужна один раз, если workspace ещё нет. В `.retropair/config.json`
 в поле `sources` добавьте папку:
 
 ```json
@@ -74,15 +74,15 @@ Date: 2026-01-15
 ## Шаг 4. Соберите и вычистите
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
 Этот шаг обязательный: никакой встроенной вычистки у Cline нет, файлы лежат как есть.
-Команда копирует каждый файл снимком в `.sessionretro/logs/me/` и по дороге вычищает его
+Команда копирует каждый файл снимком в `.retropair/logs/me/` и по дороге вычищает его
 встроенным санитайзером. Файлы в `ai-logs/` не меняются, `*.orig` плагин не пишет.
 
 Имена собственные регулярным выражением не ловятся. Впишите свои названия, фамилии
-и внутренние системы в `.sessionretro/config.json`:
+и внутренние системы в `.retropair/config.json`:
 
 ```json
 "sanitize": {"names": ["ООО Ромашка", "Иванов"], "extra_patterns": []}
@@ -91,7 +91,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
 Отдельно посмотрите глазами хотя бы один снимок:
 
 ```bash
-grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretro/logs | head
+grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .retropair/logs | head
 ```
 
 В историю Cline попадает содержимое файлов, которые агент читал, то есть ваш код, и раз
@@ -103,7 +103,7 @@ grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretr
 а не сырую папку `ai-logs`:
 
 ```bash
-git add .sessionretro/logs
+git add .retropair/logs
 git commit -m "логи сессий"
 git push origin
 ```

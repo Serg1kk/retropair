@@ -2,13 +2,13 @@
 
 Правило для скиллов `setup`, `collect`, `review` и `report`: как записать предложение по улучшению
 самого плагина, когда работа упёрлась в его ограничение. Предложения лежат в
-`.sessionretro/improvements/` проекта пользователя и никуда не уходят сами: отправляет только
+`.retropair/improvements/` проекта пользователя и никуда не уходят сами: отправляет только
 пользователь, своей командой.
 
 Все команды — через CLI плагина:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve <действие> …
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve <действие> …
 ```
 
 Если литерал `${CLAUDE_PLUGIN_ROOT}` не подставился — корень плагина на два уровня выше папки
@@ -37,7 +37,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve <действие> …
 2. **Дедуп.** Посмотрите, нет ли уже такого предложения:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve list
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve list
    ```
 
    Тот же компонент и тот же симптом в `pending` или `sent` — новое не пишется; скажите
@@ -47,7 +47,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve <действие> …
 4. **Запись только по согласию** («да», «ок», «запиши»):
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve add \
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve add \
      --component "<скилл или часть движка>" \
      --symptom "<что не вышло и в какой ситуации — обезличенно>" \
      --workaround "<как обошли в этот раз>" \
@@ -78,7 +78,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve <действие> …
 предложения», «собери пакет для авторов»). Не предлагайте его по своей инициативе.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve pack
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve pack
 ```
 
 Команда собирает все `pending` в один файл `improvements/pack-ГГГГММДД-<hex4>.md`, ещё раз
@@ -95,7 +95,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve pack
 3. После отправки отметьте предложения:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve sent <ID> …
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve sent <ID> …
    ```
 
 ## Статусы

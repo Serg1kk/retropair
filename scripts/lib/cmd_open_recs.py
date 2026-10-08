@@ -43,7 +43,7 @@ def handle(args) -> int:
     result = tracker.open_recs(tracker.load(root), args.person, gated=gated, sessions=sessions)
     result["warnings"] = index_warnings + result["warnings"]
     for line in result["warnings"]:
-        print(f"sessionretro: предупреждение: {line}", file=sys.stderr)
+        print(f"retropair: предупреждение: {line}", file=sys.stderr)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

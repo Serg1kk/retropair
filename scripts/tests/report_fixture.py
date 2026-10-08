@@ -1,7 +1,7 @@
 """Генератор синтетического workspace для тестов и живого экрана отчётов.
 
 `make_workspace(dst, people=3, periods=3, mode="team", lang="ru", realistic=False)` пишет
-корень проекта с `.sessionretro/`: config.json, plugin-state.json, карточки людей
+корень проекта с `.retropair/`: config.json, plugin-state.json, карточки людей
 (+ карточка `nora` без прогонов), трекер v2 `runs/process-reviews.json` и файлы ревью
 `reviews/<id>/<run_id>.md`. Все данные вымышленные, пути только `/home/user/…`.
 

@@ -1,5 +1,5 @@
 ---
-name: sessionretro-log-collector
+name: retropair-log-collector
 description: "Первая ступень оценки: по нормализованным логам одного участника за период собирает факты и цитаты по восьми осям и антипаттернам, баллов не ставит. Вход и выход — только файлы workspace. Вызывается скиллом review на стадии сбора фактов. Триггеры: «собери факты по логам», «первая ступень ретро», «collect evidence from logs», «stage one of the retro»."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: {{model}}
@@ -86,7 +86,7 @@ collector_version: v6
 ### Нормализация и порядок чтения
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize <path>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" normalize <path>
 ```
 
 Команда отдаёт `turns[]` с `index`, `role`, `model`, `ts`, `text`, `tools[]`, плюс `session_id`,

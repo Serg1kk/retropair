@@ -1,20 +1,20 @@
 ---
 name: setup
-description: "Sets up sessionretro in a project: creates the .sessionretro/ workspace, picks the mode (self, team or course), adds people cards, chooses models and effort for the agents, and turns the SessionEnd hook on or off. Use when the user wants to start using sessionretro, configure or reconfigure it, add or edit a person, change models, or check the workspace health. Триггеры: «настрой sessionretro», «подключи ретро сессий», «добавь человека в ретро», «поменяй модели ретро», «проверь workspace», «set up sessionretro», «configure session retro», «add a person to the retro». Do NOT use for collecting logs (collect), assessing a period (review) or building reports (report)."
+description: "Sets up RetroPair in a project: creates the .retropair/ workspace, picks the mode (self, team or course), adds people cards, chooses models and effort for the agents, and turns the SessionEnd hook on or off. Use when the user wants to start using RetroPair, configure or reconfigure it, add or edit a person, change models, or check the workspace health. Триггеры: «настрой RetroPair», «подключи ретро сессий», «добавь человека в ретро», «поменяй модели ретро», «проверь workspace», «set up RetroPair», «configure RetroPair», «add a person to the retro». Do NOT use for collecting logs (collect), assessing a period (review) or building reports (report)."
 ---
 
-# setup — настроить sessionretro в проекте
+# setup — настроить RetroPair в проекте
 
 Скилл ведёт онбординг диалогом: узнаёт текущее состояние, задаёт до 11 вопросов по одному,
 собирает ответы в один JSON и применяет их одной командой `setup-apply`. Сам скилл файлов не
-пишет: всё пишет `sr.py`. Повторный запуск показывает текущие значения и меняет только выбранное.
+пишет: всё пишет `rp.py`. Повторный запуск показывает текущие значения и меняет только выбранное.
 
 Формулировки, варианты ответов и JSON каждого вопроса — [references/questions.md](references/questions.md).
 Прочитай его целиком перед первым вопросом.
 
 ## Шаг 0. Корень плагина
 
-Каждая команда вызывается так: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" <команда> …`.
+Каждая команда вызывается так: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" <команда> …`.
 Если в пути остался литерал `${CLAUDE_PLUGIN_ROOT}` (хост его не подставил), корень плагина —
 папка два уровня выше этого `SKILL.md` (`skills/setup/SKILL.md` → корень): подставь её абсолютный
 путь, в команде — в кавычках (в пути бывают пробелы). В файлы пользователя абсолютные пути плагина
@@ -24,16 +24,34 @@ description: "Sets up sessionretro in a project: creates the .sessionretro/ work
 строка в stderr: что упало, почему, с какими параметрами. Перескажи её и назови, что поправить;
 не продолжай на значениях по умолчанию.
 
-## Шаг 1. Состояние
+## Шаг 1. Миграция и состояние
+
+До `setup-state` проверь наличие `.sessionretro/` и `~/.sessionretro/` (старые пути SessionRetro).
+Если старый workspace найден, сначала покажи безопасный предварительный план:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --workspace "<папка проекта>" migrate
+```
+
+Preview ничего не записывает. Если старый и новый workspace существуют одновременно, остановись:
+не объединяй историю, не перезаписывай данные, перескажи конфликт. После согласия на перенос вызови
+ту же команду с `migrate --apply`; для старого глобального реестра — `migrate --global` сначала
+без `--apply`, затем с `--apply` после согласия. Перенос сохраняет карточки, историю, рекомендации,
+настройки, согласования и санитизированные снимки; пользовательские исходные логи не переписываются.
+Повторный вызов не должен повторять оценки. При ошибке миграции не запускай новый setup поверх
+существующих данных. Пользовательские проектные агенты старого имени `sessionretro-*.md`
+не удаляются и не перезаписываются: проверь `agents check`, а изменения согласуй отдельно.
+
+Затем состояние:
 
 Из папки проекта пользователя:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-state --json
 ```
 
 Настраивается корень git-репозитория от текущей папки (не git — сама папка). Пользователь назвал
-другой проект — добавь глобальный флаг перед командой: `sr.py" --workspace "<папка проекта>" setup-state --json`,
+другой проект — добавь глобальный флаг перед командой: `rp.py" --workspace "<папка проекта>" setup-state --json`,
 и ту же папку передай ключом `path` в ответах.
 
 - `"workspace": null` → **первый запуск**: вопросы 1–11 по порядку (раздел «Первый запуск»).
@@ -98,7 +116,7 @@ self / team / course (учебная группа, преподаватель). 
 судья opus/high, критик sonnet/medium; «Экономно» — haiku/low, sonnet/medium, haiku/low;
 «Максимум» — opus/high, opus/max, opus/medium; «Свой» — через Other. JSON каждого пресета — в
 `references/questions.md`. По `models` `setup-apply` пишет проектных агентов
-`.claude/agents/sessionretro-*.md`.
+`.claude/agents/retropair-*.md`.
 
 ### Вопрос 7. Баллы → `show_scores`
 
@@ -107,12 +125,12 @@ self / team / course (учебная группа, преподаватель). 
 
 ### Вопрос 8. Периоды → `period`
 
-`run` (по дате запуска, рекомендуемое), `dates` с окнами из Other, `labels` (в 0.1 скилл `review`
+`run` (по дате запуска, рекомендуемое), `dates` с окнами из Other, `labels` (в 0.2 скилл `review`
 метку не спрашивает, прогоны пишутся без метки; своё имя периода — через окна `dates`).
 
 ### Вопрос 9. Шаблон текста → `template`
 
-`default` — шаблон плагина; `workspace` — копия в `.sessionretro/templates/feedback.md` для правки.
+`default` — шаблон плагина; `workspace` — копия в `.retropair/templates/feedback.md` для правки.
 Выбор ложится и в `feedback.template` файла `people/_default.yaml` — по нему строится текст.
 
 ### Вопрос 10. Хранение логов → `cleanup_period_days` (`write` только после «да»)
@@ -141,7 +159,7 @@ self / team / course (учебная группа, преподаватель). 
 
 Блоки: люди и источники · хук, cleanup, gitignore · модели · баллы, периоды, шаблон.
 Существующие карточки людей `setup-apply` не перезаписывает: имя или группу человека правят в
-файле `.sessionretro/people/<id>.yaml`.
+файле `.retropair/people/<id>.yaml`.
 
 ## Применение
 
@@ -149,7 +167,7 @@ self / team / course (учебная группа, преподаватель). 
 ответами в heredoc (кавычки у `'EOF'` обязательны: шелл не трогает текст внутри):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers - <<'EOF'
 {
   "mode": "team",
   "lang": "ru",
@@ -191,23 +209,23 @@ EOF
 Затем состояние всех пунктов:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 Объясни строки онбординга: `sources_found` (папки каких источников найдены), `project_agents`
 (`3/3 совпадают с config.models` — ок; `расходятся: …` — сверить командой
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents check`), `gitignore`, `show_scores`,
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents check`), `gitignore`, `show_scores`,
 `period_mode`, `template`, `hook_enabled` и срок хранения логов Claude Code. Совет «агент правлен вручную» —
 перезапись `agents write --force` только по явной просьбе пользователя: она сотрёт его правки.
 
-Следующий шаг для пользователя: собрать логи `/sessionretro:collect`, затем ретро `/sessionretro:review`.
+Следующий шаг для пользователя: собрать логи `/retropair:collect`, затем ретро `/retropair:review`.
 
 ## Что скилл вправе писать
 
-Писать можешь ТОЛЬКО через `sr.py`:
+Писать можешь ТОЛЬКО через `rp.py`:
 
-- `.sessionretro/` проекта (конфиг, карточки, шаблон) и строка реестра в `~/.sessionretro/` — через `setup-apply`;
-- `.claude/agents/sessionretro-*.md` проекта — через `setup-apply` или `agents write`;
+- `.retropair/` проекта (конфиг, карточки, шаблон) и строка реестра в `~/.retropair/` — через `setup-apply`;
+- `.claude/agents/retropair-*.md` проекта — через `setup-apply` или `agents write`;
 - `.gitignore` проекта — через `setup-apply` при `"gitignore": true`;
 - `~/.claude/settings.json` — только через `setup-apply` при `cleanup_period_days.write: true` после явного «да».
 

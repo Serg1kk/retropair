@@ -343,7 +343,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/alex/judge-p1.json",
+        "path": ".retropair/runs/pending/alex/judge-p1.json",
         "sha256": "b560dcd39c4e999edd5d885b9b6040e74600303dda5968b63806711d2666b5fb"
       },
       "approved_at": "2026-09-07T19:30:00Z"
@@ -651,7 +651,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/sam/judge-p1.json",
+        "path": ".retropair/runs/pending/sam/judge-p1.json",
         "sha256": "944d1390b3b6a1f12e6619968049760aa4c3a4758368b265f5080084b056f979"
       },
       "approved_at": "2026-09-07T19:40:00Z"
@@ -882,7 +882,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/kim/judge-p1.json",
+        "path": ".retropair/runs/pending/kim/judge-p1.json",
         "sha256": "a9889869f20945e7c1cfcdb00192c1d8830426990975a5e8ee53df6c95786258"
       },
       "approved_at": "2026-09-07T19:50:00Z"
@@ -1199,7 +1199,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/alex/judge-p2.json",
+        "path": ".retropair/runs/pending/alex/judge-p2.json",
         "sha256": "7fc035fad99d07c5a286d479978abd0d7d6e3382ec2fb79e15a4dff4da056625"
       },
       "approved_at": "2026-09-14T20:00:00Z"
@@ -1481,7 +1481,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/sam/judge-p2.json",
+        "path": ".retropair/runs/pending/sam/judge-p2.json",
         "sha256": "597b7863d3e379f75a6951a236a16bb12d19bf57a85495dcb07ed6944c9f2b92"
       },
       "approved_at": "2026-09-14T19:40:00Z"
@@ -1792,7 +1792,7 @@
       "review_status": "draft",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/kim/judge-p2-first.json",
+        "path": ".retropair/runs/pending/kim/judge-p2-first.json",
         "sha256": "911747daf6439697a37f5b2b1f98d32ba9e88b4e5ec5316aabe9005d04e11c45"
       },
       "retracted": {
@@ -2127,7 +2127,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/kim/judge-p2.json",
+        "path": ".retropair/runs/pending/kim/judge-p2.json",
         "sha256": "64bfc703f9dc03a8069f7944eac50b6393d9d94fd57eee75a2f7591a2df7c4b0"
       },
       "approved_at": "2026-09-14T21:50:00Z"
@@ -2455,7 +2455,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/alex/judge-p3.json",
+        "path": ".retropair/runs/pending/alex/judge-p3.json",
         "sha256": "8a5db7822fd0b498225e7783a9a7e84c14bf44814fefec0433c5fef51c224f47"
       },
       "approved_at": "2026-09-21T20:00:00Z"
@@ -2774,7 +2774,7 @@
       "review_status": "draft",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/sam/judge-p3.json",
+        "path": ".retropair/runs/pending/sam/judge-p3.json",
         "sha256": "0fd7c52dab1d07493c0162d29cfebf05a3db74f34dc03f0dbcf6190ed14b6053"
       }
     },
@@ -3094,7 +3094,7 @@
       "review_status": "approved",
       "artifact": null,
       "source": {
-        "path": ".sessionretro/runs/pending/kim/judge-p3.json",
+        "path": ".retropair/runs/pending/kim/judge-p3.json",
         "sha256": "e3408fd09915f7fdb8e9278d16f44c0f725c360d94c8d252e93c4282cfca1753"
       },
       "approved_at": "2026-09-21T20:20:00Z"

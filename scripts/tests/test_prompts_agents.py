@@ -71,7 +71,7 @@ DRAFT_NEGATION = re.compile(r"не пишешь|не писать|НИКОГДА
 VERSION_WINDOW = 10
 PLUGIN_PATH = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([\w./-]+)")
 CHECKED_DIRS = ("references/", "skills/", "agents/", "templates/")
-SCRIPT_ENTRY = "scripts/sr.py"
+SCRIPT_ENTRY = "scripts/rp.py"
 
 
 def body(text: str) -> str:
@@ -158,7 +158,7 @@ class AgentsSynthetic(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-agents-")
         self.root = Path(self._tmp.name)
-        for rel in ("references/a.md", "references/schemas/c.json", "scripts/sr.py", "scripts/other.py"):
+        for rel in ("references/a.md", "references/schemas/c.json", "scripts/rp.py", "scripts/other.py"):
             (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
             (self.root / rel).write_text("x\n", encoding="utf-8")
 
@@ -167,7 +167,7 @@ class AgentsSynthetic(unittest.TestCase):
 
     def test_existing_paths_pass(self) -> None:
         text = ("см. `${CLAUDE_PLUGIN_ROOT}/references/a.md`, схема ${CLAUDE_PLUGIN_ROOT}/references/schemas/c.json.\n"
-                'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize x\n')
+                'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" normalize x\n')
         self.assertEqual(bad_paths(self.root, text), [])
 
     def test_missing_file_caught(self) -> None:
@@ -184,9 +184,9 @@ class AgentsSynthetic(unittest.TestCase):
         hits = bad_paths(self.root, "${CLAUDE_PLUGIN_ROOT}/scripts/other.py")
         self.assertEqual(len(hits), 1)
         self.assertIn("scripts/other.py", hits[0])
-        (self.root / "scripts/sr.py").unlink()
-        self.assertEqual(bad_paths(self.root, "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py"),
-                         ["scripts/sr.py: файла нет"])
+        (self.root / "scripts/rp.py").unlink()
+        self.assertEqual(bad_paths(self.root, "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py"),
+                         ["scripts/rp.py: файла нет"])
 
     def test_placeholder_path_skipped_explicitly(self) -> None:
         text = ("шаблон `${CLAUDE_PLUGIN_ROOT}/templates/feedback.<lang>.md`, "

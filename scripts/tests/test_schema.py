@@ -111,7 +111,7 @@ class PluginSchemasTest(unittest.TestCase):
 
     def test_schema_ids(self):
         for name in ("config", "person"):
-            self.assertEqual(schema.load_schema(name)["$id"], f"sessionretro/{name}.json")
+            self.assertEqual(schema.load_schema(name)["$id"], f"retropair/{name}.json")
 
     def test_all_plugin_schemas_use_supported_keywords(self):
         paths = sorted(SCHEMAS.glob("*.json"))

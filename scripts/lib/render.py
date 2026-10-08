@@ -119,7 +119,7 @@ def _strings(i18n: dict, lang: str):
 
 
 def _config_groups(root: Path) -> list[str] | None:
-    """Группы из `<root>/.sessionretro/config.json`; конфиг не читается или не по схеме → None."""
+    """Группы из `<root>/.retropair/config.json`; конфиг не читается или не по схеме → None."""
     try:
         cfg = load_config(root)
     except (SrError, OSError, UnicodeDecodeError):

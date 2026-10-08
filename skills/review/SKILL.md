@@ -8,7 +8,7 @@ description: "Assesses how a person worked with a coding agent over a period: ru
 Скилл ведёт один прогон оценки на человека за период: разведка логов, нарезка на пачки,
 первая ступень (коллекторы собирают факты и цитаты, баллов не ставят), вторая ступень (судья
 ставит оценки только под цитату и пишет части текста), запись в трекер, уровень по формуле,
-текст ревью по шаблону и сверка. Всё состояние живёт в `.sessionretro/` проекта. Скилл
+текст ревью по шаблону и сверка. Всё состояние живёт в `.retropair/` проекта. Скилл
 координирует: сам логи не оценивает и JSON агентов не правит.
 
 Брифы агентов, образец стаба, перезапуск и коды выхода каждой команды —
@@ -17,15 +17,15 @@ description: "Assesses how a person worked with a coding agent over a period: ru
 
 ## Как звать скрипты
 
-Каждая команда вызывается ровно так: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" <команда> …`.
+Каждая команда вызывается ровно так: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" <команда> …`.
 Если в пути остался литерал `${CLAUDE_PLUGIN_ROOT}` (хост его не подставил), корень плагина —
 папка два уровня выше этого `SKILL.md` (`skills/review/SKILL.md` → корень); подставь её
-абсолютный путь. Команды сами ищут `.sessionretro/` вверх от текущей папки; иначе добавь
+абсолютный путь. Команды сами ищут `.retropair/` вверх от текущей папки; иначе добавь
 `--workspace <корень проекта>`. Коды выхода у всех команд: `0` ок, `1` данные или проверка,
 `2` неверный вызов. Ошибка печатается в stderr одной строкой: что упало, почему, с какими
 параметрами.
 
-Ниже `<ws>` — абсолютный путь к `.sessionretro/` проекта, `<pending>` — `<ws>/runs/pending/<person>`.
+Ниже `<ws>` — абсолютный путь к `.retropair/` проекта, `<pending>` — `<ws>/runs/pending/<person>`.
 
 ## Аргументы
 
@@ -45,8 +45,8 @@ description: "Assesses how a person worked with a coding agent over a period: ru
 **Одобрение.** `--approve <person> [run]` выполняет две команды и выходит:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve <person> <run_id>
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions <person> --refresh
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" approve <person> <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions <person> --refresh
 ```
 
 Без `run` одобряется последний живой прогон человека. Уже одобренный → код `0` и сообщение,
@@ -81,12 +81,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions <person> --refr
 
 | Роль | Файл в проекте | Без него | Модель |
 |---|---|---|---|
-| коллектор | `.claude/agents/sessionretro-log-collector.md` | `sessionretro:log-collector` | `config.models.collector.model` |
-| судья | `.claude/agents/sessionretro-log-judge.md` | `sessionretro:log-judge` | `config.models.judge.model` |
-| критик | `.claude/agents/sessionretro-feedback-critic.md` | `sessionretro:feedback-critic` | `config.models.critic.model` |
+| коллектор | `.claude/agents/retropair-log-collector.md` | `retropair:log-collector` | `config.models.collector.model` |
+| судья | `.claude/agents/retropair-log-judge.md` | `retropair:log-judge` | `config.models.judge.model` |
+| критик | `.claude/agents/retropair-feedback-critic.md` | `retropair:feedback-critic` | `config.models.critic.model` |
 
-Файл в проекте есть → `subagent_type` = значение `name` из его frontmatter (проектная копия
-промпта, которую пользователь мог поправить). Нет → плагинный агент из колонки «Без него».
+Сначала проверь новый файл из таблицы и соответствующий старый
+`.claude/agents/sessionretro-<роль>.md` (SessionRetro compatibility; суффиксы ролей:
+`log-collector`, `log-judge`, `feedback-critic`). Если оба существуют,
+останови ревью по этой роли и покажи конфликт; не выбирай один молча. Есть только старый —
+используй его, сохраняя пользовательские настройки и правки. Новый или старый проектный файл
+есть → `subagent_type` = значение `name` из его frontmatter (проектная копия промпта,
+которую пользователь мог поправить). Ни одного нет → плагинный агент из колонки «Без него».
 `model` для вызова Agent берётся из `config.models` workspace (`config.json`). Коллекторы
 запускаются **одним сообщением параллельно**: несколько вызовов Agent в одном ответе.
 
@@ -125,17 +130,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions <person> --refr
 ## Фаза 1. Разведка
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor --json
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" inventory --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" inventory --json
 ```
 
-- `doctor --json` → поле `workspace` (корень проекта; `<ws>` = он плюс `/.sessionretro`) и
+- `doctor --json` → поле `workspace` (корень проекта; `<ws>` = он плюс `/.retropair`) и
   `mode`. `"workspace": "не найден"` → предложить скилл `setup` и остановиться. Прочитай `<ws>/config.json`: `workspace.id`, `lang`, `period`, `models`, `batches`,
   `show_scores`, `reviewer_gate`.
 - Проектные агенты — после `doctor`, строго до выбора агента по таблице ролей («Выбор агента»):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents sync
 ```
 
   Копии в `.claude/agents/`, которые пользователь не правил, догоняют промпт текущей версии
@@ -145,7 +150,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
   начинать.
 - `inventory --json` → записи индекса логов. Кандидаты — записи человека в состоянии `new`
   или `grown`. Индекс пуст (`logs: []`) → остановиться и сказать
-  собрать логи: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect`.
+  собрать логи: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect`.
 - Кандидатов у человека нет → прогона нет, в сводке «новых логов нет». Логи добровольны: это
   не вывод о человеке.
 - Метка периода: `config.period.mode` `labels` или `dates` → метки из `period_guess` кандидатов;
@@ -158,8 +163,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" agents sync
 - Карточка и рекомендации человека:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people context <person>
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" open-recs <person> --json --period-label <label>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people context <person>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" open-recs <person> --json --period-label <label>
 ```
 
   `--period-label` — та же метка, что пойдёт в `batches` (фаза 2); в режиме `run` флага нет.
@@ -178,7 +183,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" open-recs <person> --json --period
   «REC-… из неодобренного черновика <период> — вердикт отложен» и предупреждение
   «у <person> неодобренный черновик прошлого периода»; без `--no-ask` то же сказать
   пользователю до коллекторов. Прогон не блокируется, при `--no-ask` тоже. Код `2` у `people context` (карточки нет) → прогон по человеку
-  останавливается, в сводке «нет карточки: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people add <person>`». Без карточки `append`
+  останавливается, в сводке «нет карточки: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people add <person>`». Без карточки `append`
   прогон не пишет, и коллекторы с судьёй отработали бы впустую.
 - `task_summary`: из `--task-summary`; не дан → один вопрос пользователю; при `--no-ask` «нет».
 - Плановый `run_id` = `<workspace_id>_<person>_<метка>_<ГГГГММДДTччммссZ>` по времени старта:
@@ -187,7 +192,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" open-recs <person> --json --period
 ## Фаза 2. Пачки
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" batches <person> --json --period-label <label>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" batches <person> --json --period-label <label>
 ```
 
 Выход: `batches[]` (`index`, `total`, `sessions[]` с `path` относительно `<ws>`, `session_id`,
@@ -203,7 +208,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" batches <person> --json --period-l
   вызовом, иначе они останутся `new` и следующий `review` подберёт их снова:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" mark-logs --no-run --person <person> --excluded <session_id_1>=transcript_too_short <session_id_2>=transcript_too_short
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" mark-logs --no-run --person <person> --excluded <session_id_1>=transcript_too_short <session_id_2>=transcript_too_short
 ```
 
   (по ссылке `<session_id>=transcript_too_short` на каждую сессию из `short[]`, все списком после
@@ -220,7 +225,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" mark-logs --no-run --person <perso
 сверить, записан ли он:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" verify
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" verify
 ```
 
 Строка `сирота: … runs/pending/<person>/judge.json` в выводе → выход судьи прошлого прогона не
@@ -239,7 +244,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" verify
 ## Фаза 5. Проверка коллекторов
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" check-collector <pending>/batch-01.json <pending>/batch-02.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" check-collector <pending>/batch-01.json <pending>/batch-02.json
 ```
 
 Все файлы пачек человека одним вызовом. Однозначный ремонт цитат команда делает сама и пишет
@@ -265,7 +270,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" check-collector <pending>/batch-01
 → прогон не останавливается, а отбрасывает эти записи:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" check-collector --drop-invalid <pending>/batch-01.json <pending>/batch-02.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" check-collector --drop-invalid <pending>/batch-01.json <pending>/batch-02.json
 ```
 
 Каждая убранная запись — строка «отброшено: блок, сессия, ход, причина» в `metadata.warnings`
@@ -288,8 +293,8 @@ REC-<person>-<NNN>»). Сессии `other_period` в индексе не зак
 ## Фаза 7. Запись прогона
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" append <pending>/judge.json --person <person> --period-confidence inferred
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" append <pending>/judge.json --person <person> --period-label <label> --period-confidence inferred
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" append <pending>/judge.json --person <person> --period-confidence inferred
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" append <pending>/judge.json --person <person> --period-label <label> --period-confidence inferred
 ```
 
 Первая строка — режим `run` или метки нет: `--period-label` не передаётся, метку выдаёт
@@ -317,7 +322,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" append <pending>/judge.json --pers
 нуля, догнать покрытие:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" mark-logs <run_id> --excluded <session_id_1>=not_batched <session_id_2>=not_batched
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" mark-logs <run_id> --excluded <session_id_1>=not_batched <session_id_2>=not_batched
 ```
 
 Все сессии — списком после одного `--excluded`; флаг можно повторять (то же у `--sessions`),
@@ -338,7 +343,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" mark-logs <run_id> --excluded <ses
 ## Фаза 9. Уровень
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" level <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" level <run_id>
 ```
 
 Пишет `level_computed` (медиана оценённых осей, проверка результата дважды, потолок гейта).
@@ -347,7 +352,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" level <run_id>
 ## Фаза 10. Текст ревью
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" render-review <pending>/judge.json --person <person> --run <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" render-review <pending>/judge.json --person <person> --run <run_id>
 ```
 
 Пишет `<ws>/reviews/<person>/<run_id>.md`: служебный блок, отправляемый блок, досье. Вступление
@@ -361,7 +366,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" render-review <pending>/judge.json
 ## Фаза 11. Сверка
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" verify
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" verify
 ```
 
 `0` → каждый живой прогон закрыт: покрытие пометками, файл ревью, `level_computed`, сирот нет.
@@ -380,12 +385,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" verify
 уровня в сводке нет; в режиме self сводка их показывает, пока `show_scores` не `false`
 (в шаблоне конфига `true`). По `--all` люди идут списком без
 сравнений и рейтингов; кто без новых логов или остановлен, назван с причиной. Для `draft`
-следующий шаг — прочитать текст и одобрить: `/sessionretro:review --approve <person>`.
+следующий шаг — прочитать текст и одобрить: `/retropair:review --approve <person>`.
 
 Перед сводкой по каждому человеку с прогоном — предложения правок карточки:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people suggestions <person> --refresh
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people suggestions <person> --refresh
 ```
 
 Считаются только по одобренным прогонам (`draft` появится после `approve`). В блок человека —

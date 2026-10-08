@@ -3,7 +3,7 @@
 Судья отдаёт части текста без разметки (`feedback_parts`), скрипт собирает из них блок для
 человека по шаблону `feedback.<lang>.md` и проверяет запреты. Шаблон выбирается так:
 `--template` → `feedback.template` карточки (`default` → шаблон плагина, `workspace` →
-`.sessionretro/templates/feedback.md`, иное имя файла → `.sessionretro/templates/<имя>`) →
+`.retropair/templates/feedback.md`, иное имя файла → `.retropair/templates/<имя>`) →
 `templates/feedback.<lang>.md` плагина. Нет файла — явная ошибка, тихой подмены нет.
 
 Файл `reviews/<person>/<run_id>.md` читает отчёт, поэтому его форма фиксирована:
@@ -341,6 +341,8 @@ def _period_value(run: dict) -> str:
 
 def _inside(path: Path, state_dir: Path) -> str | None:
     """Путь `path` от `state_dir` в posix-виде; вне него → None (сверка и как есть, и по resolve)."""
+    from lib.workspace import historical_path
+    path = historical_path(path, state_dir)
     for p, base in ((path, state_dir), (path.resolve(), state_dir.resolve())):
         try:
             return p.relative_to(base).as_posix()
@@ -352,9 +354,9 @@ def _inside(path: Path, state_dir: Path) -> str | None:
 def shown_path(path: str, state_dir: Path | None) -> str:
     """Путь сессии для файла ревью: без абсолютных путей машины (файл пересылают).
 
-    Абсолютный внутри `.sessionretro/` → относительный от неё (`logs/<id>/<file>`);
+    Абсолютный внутри `.retropair/` → относительный от неё (`logs/<id>/<file>`);
     абсолютный вне workspace (или workspace неизвестен) → только имя файла; относительный
-    (так пишет судья: от `.sessionretro/`) и пустой — как есть. Трекер не переписывается.
+    (так пишет судья: от `.retropair/`) и пустой — как есть. Трекер не переписывается.
     """
     if not path or not Path(path).is_absolute():
         return path
@@ -363,15 +365,15 @@ def shown_path(path: str, state_dir: Path | None) -> str:
 
 
 def _log_path(path: str, state_dir: Path | None) -> str:
-    """Аргумент `sr.py normalize` из корня проекта: путь внутри workspace → `.sessionretro/<rel>`,
+    """Аргумент `sr.py normalize` из корня проекта: путь внутри workspace → `.retropair/<rel>`,
     абсолютный вне workspace → только имя файла (адрес машины в файл ревью не пишется)."""
     if not path:
         return path
     p = Path(path)
     if p.is_absolute():
         rel = _inside(p, state_dir) if state_dir is not None else None
-        return f".sessionretro/{rel}" if rel is not None else p.name
-    return f".sessionretro/{path}"
+        return f".retropair/{rel}" if rel is not None else p.name
+    return f".retropair/{path}"
 
 
 def _service(run: dict, card: dict, cfg: dict, lang: str, template_name: str,
@@ -442,7 +444,7 @@ def build_file(run: dict, card: dict, cfg: dict, sent: str, lang: str, template_
                state_dir: Path | None = None) -> str:
     """Файл ревью: frontmatter, служебный блок, `---`, отправляемый блок, `---`, досье.
 
-    Пути сессий идут через `shown_path` от `state_dir` (`.sessionretro/` workspace): абсолютные
+    Пути сессий идут через `shown_path` от `state_dir` (`.retropair/` workspace): абсолютные
     пути машины в файл, который пересылают, не попадают.
     """
     front = ["---", f"person_id: {run.get('person_id')}", f"run_id: {run.get('run_id')}",

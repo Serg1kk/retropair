@@ -116,7 +116,7 @@ class IndexIoTest(TempHome, unittest.TestCase):
             pass
 
     def test_index_lock_uses_collect_lock(self):
-        # тот же lock-файл, что у сбора логов: `file_lock(<.sessionretro>/collect)` → `collect.lock`
+        # тот же lock-файл, что у сбора логов: `file_lock(<.retropair>/collect)` → `collect.lock`
         with marks.index_lock(self.root) as lock_path:
             self.assertEqual(Path(lock_path), ws_paths(self.root)["state_dir"] / "collect.lock")
             with marks.index_lock(self.root) as inner:
@@ -226,7 +226,7 @@ class FindEntryTest(unittest.TestCase):
             self.assertEqual(marks.find_entry(self.index, "sam", ref)["session_id"], FIX_SAM, ref)
 
     def test_longer_path_resolves_by_reverse_tail(self):
-        ref = "/home/user/demo/.sessionretro/logs/alex/2026-09-08_14-00-00Z-fix-tests.md"
+        ref = "/home/user/demo/.retropair/logs/alex/2026-09-08_14-00-00Z-fix-tests.md"
         self.assertEqual(marks.find_entry(self.index, "alex", ref)["session_id"], FIX_ALEX)
 
     def test_tail_respects_path_boundary(self):

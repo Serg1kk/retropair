@@ -1,6 +1,6 @@
-# The eight axes: what sessionretro looks for in the logs
+# The eight axes: what RetroPair looks for in the logs
 
-sessionretro looks at **how a person leads a coding agent**: how they frame the task, verify the
+RetroPair looks at **how a person leads a coding agent**: how they frame the task, verify the
 result, keep the decisions in their own hands and slice the work. The assessment runs on eight
 axes.
 

@@ -1,4 +1,4 @@
-"""Конфиг workspace `.sessionretro/config.json`: загрузка, дефолт из шаблона, сохранение.
+"""Конфиг workspace `.retropair/config.json`: загрузка, дефолт из шаблона, сохранение.
 
 Схема — `references/schemas/config.json`; запись только после валидации.
 """

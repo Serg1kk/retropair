@@ -89,7 +89,7 @@ class CollectBase(TempHome, unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-collect-")
         self.tmp = Path(self._tmp.name).resolve()
         self.root = copy_fixture("workspace-min", self.tmp)
-        state = self.root / ".sessionretro"
+        state = self.root / ".retropair"
         people = state / "people"
         (people / "alex.yaml").unlink()
         (people / "sam.yaml").unlink()
@@ -559,10 +559,10 @@ class SkipUnchangedTest(CollectBase):
                                   workspace=str(self.root))
 
     def lock_target(self) -> Path:
-        return self.root / ".sessionretro" / "collect"
+        return self.root / ".retropair" / "collect"
 
     def flag(self) -> Path:
-        return self.root / ".sessionretro" / "collect.again"
+        return self.root / ".retropair" / "collect.again"
 
     def test_wait_constants(self):
         self.assertEqual(lock.COLLECT_WAIT_SECONDS, 300)
@@ -987,7 +987,7 @@ class PortablePathsTest(CollectBase):
         self.write_cfg(cfg)
         out = self.collect()
         raw = (self.me / ".meta.json").read_text(encoding="utf-8") + \
-            (self.root / ".sessionretro" / "logs-index.json").read_text(encoding="utf-8")
+            (self.root / ".retropair" / "logs-index.json").read_text(encoding="utf-8")
         for home in {str(Path.home()), str(Path.home().resolve())}:
             self.assertNotIn(home, raw)
         meta = inventory.load_meta(self.me)
@@ -1077,7 +1077,7 @@ class ConsentTest(TempHome, unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name).resolve()
         self.root = copy_fixture("workspace-min", self.tmp)
-        self.state = self.root / ".sessionretro"
+        self.state = self.root / ".retropair"
         self.people = self.state / "people"
         (self.people / "alex.yaml").unlink()
         (self.people / "sam.yaml").unlink()
@@ -1278,7 +1278,7 @@ class CliTest(CollectBase):
         cfg = dict(self.cfg)
         cfg["sources"] = [{"type": "dir", "path": str(self.src)}, {"type": "dir", "path": "x"}]
         cfg["sources"][0].pop("person", None)
-        (self.root / ".sessionretro" / "people" / "other.yaml").write_text(
+        (self.root / ".retropair" / "people" / "other.yaml").write_text(
             'id: other\nname: "Other One"\ngroup: default\n', encoding="utf-8")
         self.write_cfg(cfg)
         res = self.sr("collect", "--quiet")

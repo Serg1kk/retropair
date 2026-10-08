@@ -5,7 +5,7 @@
 модели); файл с правленым телом не трогается без `force` — вызывающий решает, ошибка это
 (`agents write`, код 1) или совет (`setup-apply`).
 
-Запись плагина: `<проект>/.sessionretro/agents.json` — `{роль: {sha256, plugin_version}}`, хэш тела
+Запись плагина: `<проект>/.retropair/agents.json` — `{роль: {sha256, plugin_version}}`, хэш тела
 без строк `model:`/`effort:`. Тело совпадает с записанным хэшем, но не с болванкой — файл никто не
 правил, вышла новая версия плагина (`outdated`): его можно обновить. Не совпадает ни с тем, ни с
 другим (или записи нет) — правка человека (`body_edited`).
@@ -21,7 +21,7 @@ from lib.version import __version__, plugin_root
 from lib.workspace import SrError, read_json, write_json_atomic, write_text_atomic, ws_paths
 
 ROLES = {"collector": "log-collector", "judge": "log-judge", "critic": "feedback-critic"}
-PREFIX = "sessionretro-"
+PREFIX = "retropair-"
 _TUNED = re.compile(r"^(model|effort):")
 
 
@@ -37,8 +37,14 @@ def stub_path(role: str) -> Path:
 
 
 def target(root: Path, role: str) -> Path:
-    """Файл агента в проекте: `<root>/.claude/agents/sessionretro-<имя>.md`."""
-    return Path(root) / ".claude" / "agents" / f"{PREFIX}{_name(role)}.md"
+    """Файл агента в проекте: `<root>/.claude/agents/retropair-<имя>.md`."""
+    folder = Path(root) / ".claude" / "agents"
+    new = folder / f"{PREFIX}{_name(role)}.md"
+    old = folder / f"sessionretro-{_name(role)}.md"  # customized legacy agents remain authoritative
+    if old.exists() and new.exists():
+        raise SrError(f"agents: конфликт старого и нового агента: {old}, {new}; "
+                      "выберите один файл вручную, автоматической перезаписи нет", 1)
+    return old if old.is_file() else new
 
 
 def _read(path: Path) -> str:
@@ -91,7 +97,7 @@ def _field(text: str, key: str) -> str | None:
 
 
 def record_path(root: Path) -> Path:
-    """Запись плагина о телах агентов: `<root>/.sessionretro/agents.json`."""
+    """Запись плагина о телах агентов: `<root>/.retropair/agents.json`."""
     return ws_paths(root)["state_dir"] / "agents.json"
 
 

@@ -1,4 +1,4 @@
-"""Предложения движку: файлы `.sessionretro/improvements/imp-ГГГГММДД-<слаг>-<hex4>.md`.
+"""Предложения движку: файлы `.retropair/improvements/imp-ГГГГММДД-<слаг>-<hex4>.md`.
 
 Статусы: `pending` → `sent` (пользователь отправил пакет сам) → `implemented (X.Y.Z)` (строка
 `внедрено: imp-…` в CHANGELOG плагина под заголовком версии; файл уходит в `improvements/archive/`,
@@ -201,7 +201,7 @@ def pack(root: Path, out: Path | None = None) -> tuple[Path, str]:
     pending = [item for item in list_items(root) if item["status"] == PENDING]
     if not pending:
         raise SrError(f"improve pack: нет pending-предложений в {_folder(root)}", 1)
-    parts = [f"# sessionretro {__version__}: предложений {len(pending)}", ""]
+    parts = [f"# retropair {__version__}: предложений {len(pending)}", ""]
     for item in pending:
         body = Path(item["path"]).read_text(encoding="utf-8").rstrip("\n")
         parts += ["#" + body if body.startswith("# ") else body, ""]
@@ -240,7 +240,7 @@ def _manifest_repository():
 def gh_command(pack_path: Path, count: int, version: str, repository=None) -> str:
     """Строка `gh issue create …` для отправки пакета пользователем; сама ничего не запускает."""
     repo = repo_slug(_manifest_repository() if repository is None else repository)
-    title = shlex.quote(f"sessionretro {version}: предложений {count}")
+    title = shlex.quote(f"retropair {version}: предложений {count}")
     return (f"gh issue create --repo {repo} --label proposal "
             f"--title {title} --body-file {shlex.quote(str(pack_path))}")
 

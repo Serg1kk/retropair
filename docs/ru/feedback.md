@@ -1,7 +1,7 @@
 # Предложения авторам плагина: что записывается и как отправить
 
 Иногда работа упирается не в ваши данные, а в сам плагин: команда чего-то не умеет, формат не
-читается, пришлось обходить руками. Тогда скилл sessionretro доводит задачу обходом и одной
+читается, пришлось обходить руками. Тогда скилл RetroPair доводит задачу обходом и одной
 репликой предлагает записать предложение для авторов плагина. Согласились — в проекте появляется
 короткий обезличенный файл. Сам плагин ничего никуда не отправляет, почты у него нет: предложения
 уходят, только когда вы сами соберёте их в пакет и отправите issue на GitHub.
@@ -9,7 +9,7 @@
 Посмотреть, что записано:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve list
 ```
 
 ```text
@@ -40,7 +40,7 @@ imp-20260927-setup-5a56 · sent · setup
 
 ## Где лежат файлы и что внутри
 
-Каждое предложение — файл `.sessionretro/improvements/imp-ГГГГММДД-<слаг>-<4 знака>.md` в вашем
+Каждое предложение — файл `.retropair/improvements/imp-ГГГГММДД-<слаг>-<4 знака>.md` в вашем
 проекте:
 
 ```text
@@ -51,7 +51,7 @@ imp-20260927-setup-5a56 · sent · setup
 - **Симптом и контекст:** setup-apply не принимает окно дат без метки
 - **Локальный обход:** метку окна вписали руками в config.json
 - **Предложение:** причина — ручная правка конфига; подход — метка по датам окна; критерий успеха — окно без метки проходит
-- **Версия плагина:** 0.1.0
+- **Версия плагина:** 0.2.0
 - **Дата:** 2026-09-27
 - **Статус:** pending
 ```
@@ -65,7 +65,7 @@ imp-20260927-setup-5a56 · sent · setup
 Записать предложение можете и вы сами, без скилла:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve add --component review --symptom "пачка из 200 ходов не влезла в лимит судьи" --workaround "разбили период на два" --proposal "причина — длинные сессии; подход — делить пачку автоматически; критерий успеха — период из 200 ходов проходит за один запуск"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve add --component review --symptom "пачка из 200 ходов не влезла в лимит судьи" --workaround "разбили период на два" --proposal "причина — длинные сессии; подход — делить пачку автоматически; критерий успеха — период из 200 ходов проходит за один запуск"
 ```
 
 `--slug` задаёт слово в ID (латиница через дефис); по умолчанию оно берётся из компонента.
@@ -88,17 +88,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve add --component review --s
 ## Собрать пакет: `improve pack`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve pack
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve pack
 ```
 
-Команда собирает все `pending` в один файл `.sessionretro/improvements/pack-ГГГГММДД-<4 знака>.md`
+Команда собирает все `pending` в один файл `.retropair/improvements/pack-ГГГГММДД-<4 знака>.md`
 (свой путь — `--out <файл>`), ещё раз проверяет его на пути, e-mail и имена, печатает пакет
 целиком и готовую команду отправки. Сама она ничего не отправляет:
 
 ```text
-пакет: /home/user/work/my-app/.sessionretro/improvements/pack-20260927-31f0.md
+пакет: /home/user/work/my-app/.retropair/improvements/pack-20260927-31f0.md
 Ничего не отправлено. Перечитайте пакет выше; чтобы отправить, запустите команду ниже сами, затем отметьте: `improve sent <ID>…`
-gh issue create --repo <репозиторий плагина> --label proposal --title 'sessionretro 0.1.0: предложений 1' --body-file /home/user/work/my-app/.sessionretro/improvements/pack-20260927-31f0.md
+gh issue create --repo <репозиторий плагина> --label proposal --title 'RetroPair 0.2.0: предложений 1' --body-file /home/user/work/my-app/.retropair/improvements/pack-20260927-31f0.md
 ```
 
 Репозиторий команда берёт из поля `repository` в `.claude-plugin/plugin.json` плагина. Нет
@@ -113,7 +113,7 @@ gh issue create --repo <репозиторий плагина> --label proposal 
 3. Отметьте отправленные предложения, чтобы они не попали в следующий пакет:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve sent imp-20260927-setup-5a56
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve sent imp-20260927-setup-5a56
    ```
 
 ## Когда предложение внедрят: `improve sync`
@@ -122,11 +122,11 @@ gh issue create --repo <репозиторий плагина> --label proposal 
 заголовком версии. После обновления плагина выполните:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve sync
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve sync
 ```
 
 Внедрённые предложения получат статус `implemented (X.Y.Z)` и переедут в
-`.sessionretro/improvements/archive/`. `--changelog <файл>` читает другой CHANGELOG.
+`.retropair/improvements/archive/`. `--changelog <файл>` читает другой CHANGELOG.
 
 | Статус | Что значит | Кто ставит |
 |---|---|---|
@@ -143,7 +143,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve sync
 | Шаблон | Файл | Когда |
 |---|---|---|
 | Proposal | `proposal` | улучшение оценки, текста, отчётов или настройки; пакет `improve pack` уходит сюда |
-| Bug | `bug` | ошибка скрипта, скилла или отчёта: шаги, ожидание, текст ошибки `sessionretro: …`, версия плагина, ОС и python3 |
+| Bug | `bug` | ошибка скрипта, скилла или отчёта: шаги, ожидание, текст ошибки `retropair: …`, версия плагина, ОС и python3 |
 | Privacy | `privacy` | в текст, отчёт или лог попали личные данные или секреты |
 
 **Утечка приватности** — отдельный шаблон и первый приоритет для авторов. В нём описывается,
@@ -162,7 +162,7 @@ gh issue create --repo <репозиторий плагина> --label bug --tit
 
 ## Discussions
 
-Вопросы, идеи без готового предложения и рассказы о том, как вы используете sessionretro, — в
+Вопросы, идеи без готового предложения и рассказы о том, как вы используете RetroPair, — в
 разделе Discussions репозитория плагина на GitHub. Правила те же: без логов, имён и путей вашей
 машины.
 

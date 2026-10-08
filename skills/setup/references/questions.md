@@ -47,7 +47,7 @@
 Варианты, первый запуск:
 
 1. «Впишу список (Recommended)» — список в Other; если выбран без текста — попроси список одной репликой.
-2. «Добавлю позже» — `people` не передаётся; потом повторный `/sessionretro:setup`.
+2. «Добавлю позже» — `people` не передаётся; потом повторный `/retropair:setup`.
 
 Варианты, повторный запуск:
 
@@ -139,8 +139,8 @@ cp -n "${CLAUDE_PLUGIN_ROOT}/references/collector-instructions/specstory-config.
 
 Варианты:
 
-1. «Автоматически (Recommended)» — `"hook": true`: хук SessionEnd, фоном, вывод в `.sessionretro/collect.log`.
-2. «Вручную» — `"hook": false`: сбор командой `/sessionretro:collect`, когда нужно.
+1. «Автоматически (Recommended)» — `"hook": true`: хук SessionEnd, фоном, вывод в `.retropair/collect.log`.
+2. «Вручную» — `"hook": false`: сбор командой `/retropair:collect`, когда нужно.
 
 ```json
 {"hook": true}
@@ -189,7 +189,7 @@ cp -n "${CLAUDE_PLUGIN_ROOT}/references/collector-instructions/specstory-config.
 {"models": {"judge": {"model": "opus", "effort": "max"}}}
 ```
 
-`setup-apply` пишет модели в конфиг и переписывает проектных агентов `.claude/agents/sessionretro-*.md`.
+`setup-apply` пишет модели в конфиг и переписывает проектных агентов `.claude/agents/retropair-*.md`.
 Агент, у которого пользователь правил тело, не трогается: придёт совет с командой `agents write --force`.
 
 ### Вопрос 7. Баллы в личном отчёте
@@ -225,7 +225,7 @@ cp -n "${CLAUDE_PLUGIN_ROOT}/references/collector-instructions/specstory-config.
 
 1. «По дате запуска (Recommended)» — `{"mode": "run"}`: каждый прогон — свой период с меткой по дате.
 2. «Окна дат» — `{"mode": "dates", "windows": […]}`: окна в Other по строке `метка: ГГГГ-ММ-ДД — ГГГГ-ММ-ДД` (пустая граница открыта; `from` не позже `to`, метки не повторяются, иначе `setup-apply` вернёт код 2 с номером окна — переспросите).
-3. «Без меток» — `{"mode": "labels"}`: в 0.1 скилл `review` метку не спрашивает, прогоны пишутся без метки периода. Своё имя периода — через «Окна дат».
+3. «Без меток» — `{"mode": "labels"}`: в 0.2 скилл `review` метку не спрашивает, прогоны пишутся без метки периода. Своё имя периода — через «Окна дат».
 
 ```json
 {"period": {"mode": "dates", "windows": [{"label": "sprint-1", "from": "2026-09-01", "to": "2026-09-14"}, {"label": "sprint-2", "from": "2026-09-15", "to": null}]}}
@@ -242,9 +242,9 @@ cp -n "${CLAUDE_PLUGIN_ROOT}/references/collector-instructions/specstory-config.
 Варианты:
 
 1. «Шаблон плагина (Recommended)» — `"template": "default"`.
-2. «Своя копия шаблона» — `"template": "workspace"`: `setup-apply` положит копию в `.sessionretro/templates/feedback.md`, если её там нет, и пропишет её в `feedback.template` файла `people/_default.yaml`; правьте копию.
+2. «Своя копия шаблона» — `"template": "workspace"`: `setup-apply` положит копию в `.retropair/templates/feedback.md`, если её там нет, и пропишет её в `feedback.template` файла `people/_default.yaml`; правьте копию.
 
-Other — имя своего файла в `.sessionretro/templates/` без папок и `..` (`"template": "short.md"`); файл уже должен лежать там, иначе код 2. Карточки со своим `feedback.template` выбор не меняет — `setup-apply` перечислит их советом.
+Other — имя своего файла в `.retropair/templates/` без папок и `..` (`"template": "short.md"`); файл уже должен лежать там, иначе код 2. Карточки со своим `feedback.template` выбор не меняет — `setup-apply` перечислит их советом.
 
 ```json
 {"template": "workspace"}
@@ -284,13 +284,13 @@ Other с числом дней N и согласием записать — `{"v
 
 `header`: «gitignore». Ключ: `gitignore`.
 
-**Вопрос:** «Дописать в `.gitignore` проекта логи, черновики и отчёты sessionretro?»
+**Вопрос:** «Дописать в `.gitignore` проекта логи, черновики и отчёты RetroPair?»
 
 **Зачем:** в логах ваш код и переписка, а черновики и отчёты — личные тексты; им не место в общем репозитории.
 
 Варианты:
 
-1. «Да, дописать (Recommended)» — `"gitignore": true`: добавятся недостающие строки `.sessionretro/logs/`, `.sessionretro/runs/pending/`, `.sessionretro/reports/`.
+1. «Да, дописать (Recommended)» — `"gitignore": true`: добавятся недостающие строки `.retropair/logs/`, `.retropair/runs/pending/`, `.retropair/reports/`.
 2. «Нет» — ключ не передаётся, `.gitignore` не трогается.
 
 ```json

@@ -79,10 +79,10 @@ FEEDBACK_FORBIDDEN_KEYS = PERSONAL_FORBIDDEN_KEYS | SCORE_KEYS | frozenset({
 REVIEWED_SESSION = "reviewed"
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-# Пояснение вердикта для адресата (`addressee_comment`). Путь до `.sessionretro/` включительно:
+# Пояснение вердикта для адресата (`addressee_comment`). Путь до `.retropair/` включительно:
 # абсолютный (сегменты могут содержать пробелы: «Local Documents /…») или относительный.
 _TO_STATE_DIR_RE = re.compile(
-    r"(?<![\w.~])(?:(?:[A-Za-z]:)?[\\/](?:[^\\/\n`'\"<>()]*[\\/])*?)?\.sessionretro[\\/]")
+    r"(?<![\w.~])(?:(?:[A-Za-z]:)?[\\/](?:[^\\/\n`'\"<>()]*[\\/])*?)?\.(?:retropair|sessionretro)[\\/]")
 # Прочий путь машины: корни домашних и системных каталогов macOS/Linux, диск Windows, UNC.
 _MACHINE_PATH_RE = re.compile(
     r"(?<![\w.~/\\:-])(?:/(?:Users|home|root|mnt|private|var|tmp|opt|srv|Volumes)/"
@@ -618,7 +618,7 @@ def _approved_status(rec: dict) -> str:
 
 def addressee_comment(text: str, sanitizer: Sanitizer) -> str:
     """Пояснение вердикта для адресата: правила санитайзера (логин ОС в домашних путях и голый,
-    почта, телефоны, секреты), затем путь до `.sessionretro/` срезается (`logs/<id>/<file>`),
+    почта, телефоны, секреты), затем путь до `.retropair/` срезается (`logs/<id>/<file>`),
     а прочий путь машины (домашний каталог macOS, `/home/…`, `/tmp/…`, диск Windows) сводится к
     имени файла.
     Относительные пути, ссылки и остальной текст — как есть."""

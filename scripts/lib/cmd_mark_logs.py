@@ -60,7 +60,7 @@ def _no_run(args) -> int:
     result = tracker.mark_logs_no_run(root, args.person, args.excluded, exclude_note=args.exclude_note)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["missing"]:
-        print(f"sessionretro: у {result['person_id']} в индексе логов не нашлись сессии: "
+        print(f"retropair: у {result['person_id']} в индексе логов не нашлись сессии: "
               + ", ".join(result["missing"]) + "; ничего не помечено", file=sys.stderr)
         return 1
     return 0
@@ -81,8 +81,8 @@ def handle(args) -> int:
     print(json.dumps(result, ensure_ascii=False, indent=2))
     cov = result["coverage"]
     if result["missing"]:
-        print("sessionretro: в индексе логов не нашлись сессии прогона: " + ", ".join(result["missing"]),
+        print("retropair: в индексе логов не нашлись сессии прогона: " + ", ".join(result["missing"]),
               file=sys.stderr)
     if cov["marked"] < cov["expected"]:
-        print(f"sessionretro: покрытие неполное: помечено {cov['marked']} из {cov['expected']}", file=sys.stderr)
+        print(f"retropair: покрытие неполное: помечено {cov['marked']} из {cov['expected']}", file=sys.stderr)
     return 1 if result["missing"] or cov["marked"] < cov["expected"] else 0

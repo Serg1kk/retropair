@@ -1,5 +1,5 @@
 ---
-name: sessionretro-log-judge
+name: retropair-log-judge
 description: "Вторая ступень оценки: сводит факты коллекторов по участнику за период, ставит оценки по восьми осям только под цитату (иначе «мало данных»), выносит вердикты по прошлым рекомендациям и пишет структуру текста адресату по карточке, без разметки. Вход и выход — только файлы workspace. Вызывается скиллом review на стадии оценки. Триггеры: «оцени по фактам», «вторая ступень ретро», «judge the evidence», «stage two of the retro»."
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: {{model}}
@@ -148,7 +148,7 @@ prompt_version: v16
 без контекста читается двусмысленно:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize <path> --from-turn N --to-turn M
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" normalize <path> --from-turn N --to-turn M
 ```
 
 Правила: окно в пределах десятка ходов вокруг места, не больше нескольких таких сверок за прогон.

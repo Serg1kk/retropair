@@ -52,9 +52,9 @@ def read_answers(source: str):
 
 
 def workspace_dir(explicit: str) -> str:
-    """Флаг `--workspace`: корень проекта или сама папка `.sessionretro`."""
+    """Флаг `--workspace`: корень проекта или сама папка `.retropair`."""
     given = Path(explicit).expanduser().resolve()
-    return str(given.parent if given.name == STATE_DIR else given)
+    return str(given.parent if given.name in (STATE_DIR, ".sessionretro") else given)
 
 
 def handle(args) -> int:

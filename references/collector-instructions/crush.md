@@ -32,10 +32,10 @@ ls -la путь/к/проекту/.crush 2>/dev/null
 ```bash
 cd путь/к/проекту
 mkdir -p ai-logs
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
-Последняя команда нужна один раз, если workspace ещё нет. В `.sessionretro/config.json`
+Последняя команда нужна один раз, если workspace ещё нет. В `.retropair/config.json`
 в поле `sources` добавьте папку:
 
 ```json
@@ -47,7 +47,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
 ## Шаг 4. Сохраните нужные сессии
 
 Базу crush целиком не копируйте: общая база на все проекты в репозитории оказаться
-не должна, и sessionretro её всё равно не разберёт. Выгрузите нужную сессию через
+не должна, и RetroPair её всё равно не разберёт. Выгрузите нужную сессию через
 интерфейс самого crush, если он это умеет, либо скопируйте переписку вручную в файл
 `ai-logs/session-2026-01-15.md`. Роли размечайте заголовками, а дату — строкой `Date:`:
 
@@ -67,15 +67,15 @@ Date: 2026-01-15
 ## Шаг 5. Соберите и вычистите
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
 Обязательно, встроенной вычистки здесь нет. Команда копирует каждый файл снимком
-в `.sessionretro/logs/me/` и по дороге вычищает его встроенным санитайзером. Файлы
+в `.retropair/logs/me/` и по дороге вычищает его встроенным санитайзером. Файлы
 в `ai-logs/` не меняются, `*.orig` плагин не пишет.
 
 Имена собственные регулярным выражением не ловятся. Впишите свои названия, фамилии
-и внутренние системы в `.sessionretro/config.json`:
+и внутренние системы в `.retropair/config.json`:
 
 ```json
 "sanitize": {"names": ["ООО Ромашка", "Иванов"], "extra_patterns": []}
@@ -84,7 +84,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
 Затем откройте один снимок и пролистайте глазами:
 
 ```bash
-grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretro/logs | head
+grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .retropair/logs | head
 ```
 
 В историю попадает содержимое файлов, которые агент читал, то есть ваш код.
@@ -95,7 +95,7 @@ grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretr
 а не сырую папку `ai-logs`:
 
 ```bash
-git add .sessionretro/logs
+git add .retropair/logs
 git commit -m "логи сессий"
 git push origin
 ```

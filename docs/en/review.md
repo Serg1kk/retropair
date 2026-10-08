@@ -14,15 +14,15 @@ In Claude Code, ask in your own words ("run a retro for the period", "assess my 
 the skill explicitly:
 
 ```text
-/sessionretro:review alex
-/sessionretro:review --all --task-summary "moving the report export to the new queue"
-/sessionretro:review me --no-ask
+/retropair:review alex
+/retropair:review --all --task-summary "moving the report export to the new queue"
+/retropair:review me --no-ask
 ```
 
 Without a human in the loop, for example on a schedule:
 
 ```bash
-claude -p "/sessionretro:review --all --no-ask"
+claude -p "/retropair:review --all --no-ask"
 ```
 
 ## Arguments
@@ -57,7 +57,7 @@ it, and what to do with an unrecorded result of a previous run if there is one.
 4. The judge combines the facts, scores under quotes, gives verdicts on last period's
    recommendations and writes the parts of the text.
 5. A script checks the result (a score only under a quote, "insufficient data" without a score,
-   the text rules) and records the run in the history `.sessionretro/runs/process-reviews.json`.
+   the text rules) and records the run in the history `.retropair/runs/process-reviews.json`.
    The sessions are marked assessed and are not fed again next time; a continued session is fed
    only with its new tail. When the period is set by run date (`run` mode), the script sets the
    label itself: `run-<YYYYMMDD>` by the UTC date, and the second and later retros of the same day
@@ -96,7 +96,7 @@ What no agent gets:
 
 ## The review text
 
-The file `.sessionretro/reviews/<person>/<run_id>.md` has three parts:
+The file `.retropair/reviews/<person>/<run_id>.md` has three parts:
 
 - **the service part** for the reviewer: how many sessions and batches, what was left out and why,
   the judge's warnings;
@@ -117,18 +117,18 @@ The text template can be replaced: `feedback.template` in the card, otherwise th
 | team, course with `reviewer_gate: false` | `approved` |
 
 The `setup` skill does not ask about `reviewer_gate`, and `setup-apply` does not accept such a
-key: the gate is turned off only by editing `.sessionretro/config.json` by hand.
+key: the gate is turned off only by editing `.retropair/config.json` by hand.
 
 If you have read the draft and agree with it, approve it:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" approve alex <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" approve alex
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" approve alex <run_id>
 ```
 
-Without `<run_id>` the person's latest active run is approved. `/sessionretro:review --approve
-alex` does the same and then runs `sr.py people suggestions alex --refresh`, which recomputes the
-card suggestions from approved runs. The bare `sr.py approve` only changes the status: after it,
+Without `<run_id>` the person's latest active run is approved. `/retropair:review --approve
+alex` does the same and then runs `rp.py people suggestions alex --refresh`, which recomputes the
+card suggestions from approved runs. The bare `rp.py approve` only changes the status: after it,
 run `people suggestions alex --refresh` yourself.
 
 In team and course with `reviewer_gate: true` the recommendations from the text start to count only
@@ -143,23 +143,23 @@ recommendation ids of a retracted run are not reused: new recommendations get th
 (if the judge picked a taken one, recording renumbers them itself and warns you).
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" retract <run_id> --why "the judge mixed up sessions"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" retract <run_id> --why "the judge mixed up sessions"
 ```
 
 To rebuild the text after editing the template or the card:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" render-review .sessionretro/runs/pending/alex/judge.json --person alex --run <run_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" render-review .retropair/runs/pending/alex/judge.json --person alex --run <run_id>
 ```
 
 ## Other commands
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" open-recs alex          # open recommendations
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" compare <run_a> <run_b>  # two runs of the same person
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" verify                   # everything closed to the end
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" validate                 # the run history is intact
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" self-test                # self-check of the assessment engine
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" open-recs alex          # open recommendations
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" compare <run_a> <run_b>  # two runs of the same person
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" verify                   # everything closed to the end
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" validate                 # the run history is intact
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" self-test                # self-check of the assessment engine
 ```
 
 `compare` is useful for measuring reproducibility: how far two assessments of the same period

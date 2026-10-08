@@ -1,6 +1,6 @@
 # Windows
 
-SpecStory существует только под macOS и Linux, а сам `sr.py collect` на Windows в 0.1
+SpecStory существует только под macOS и Linux, а сам `rp.py collect` на Windows в 0.2
 не поддерживается: блокировка файлов, на которой держится сбор, там не работает. Поэтому
 на Windows путь ручной: переписку экспортируете вы, а сбор и вычистка идут на машине
 с macOS или Linux — вашей или ревьюера.
@@ -43,7 +43,7 @@ Date: 2026-01-15
 и там, в корне проекта, один раз создайте workspace и подключите папку:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
 ```json
@@ -55,11 +55,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
 Затем соберите:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
-Команда копирует каждый файл снимком в `.sessionretro/logs/me/` и по дороге вычищает его
-встроенным санитайзером. Свои названия и фамилии впишите в `.sessionretro/config.json`:
+Команда копирует каждый файл снимком в `.retropair/logs/me/` и по дороге вычищает его
+встроенным санитайзером. Свои названия и фамилии впишите в `.retropair/config.json`:
 
 ```json
 "sanitize": {"names": ["ООО Ромашка", "Иванов"], "extra_patterns": []}

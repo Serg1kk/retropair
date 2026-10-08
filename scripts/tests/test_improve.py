@@ -234,7 +234,7 @@ class Pack(Base):
         self.assertIn(text, stdout)
         gh = [line for line in stdout.splitlines() if line.startswith("gh issue create")]
         self.assertEqual(len(gh), 1)
-        self.assertTrue(gh[0].startswith("gh issue create --repo Serg1kk/sessionretro"))
+        self.assertTrue(gh[0].startswith("gh issue create --repo Serg1kk/retropair"))
         self.assertIn(str(packs[0]), gh[0])
         self.assertIn("предложений 2", gh[0])
 
@@ -286,7 +286,7 @@ class GhCommand(unittest.TestCase):
             with self.subTest(repo=repo):
                 cmd = improve.gh_command(Path("/home/user/p.md"), 3, "0.1.1", repository=repo)
                 self.assertEqual(cmd, "gh issue create --repo o/r --label proposal "
-                                      "--title 'sessionretro 0.1.1: предложений 3' "
+                                      "--title 'retropair 0.1.1: предложений 3' "
                                       "--body-file /home/user/p.md")
 
     def test_path_quoted_for_shell(self):
@@ -303,7 +303,7 @@ class GhCommand(unittest.TestCase):
 
     def test_default_from_manifest(self):
         cmd = improve.gh_command(Path("p.md"), 1, "0.1.0")
-        self.assertTrue(cmd.startswith("gh issue create --repo Serg1kk/sessionretro "))
+        self.assertTrue(cmd.startswith("gh issue create --repo Serg1kk/retropair "))
 
 
 class SentSync(Base):

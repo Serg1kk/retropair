@@ -2,14 +2,14 @@
 
 Контракт (stdout хука попадает в контекст сессии):
 - stdout всегда пуст, код выхода всегда 0;
-- холостой путь (нет `.sessionretro/config.json` вверх от `cwd`) — только stdlib, без
-  импорта `lib/`, быстрее 50 мс; глобальная `~/.sessionretro` workspace не считается;
+- холостой путь (нет `.retropair/config.json` вверх от `cwd`) — только stdlib, без
+  импорта `lib/`, быстрее 50 мс; глобальная `~/.retropair` workspace не считается;
 - `hook.enabled != true` — выход без запуска;
-- workspace не из реестра пользователя `~/.sessionretro/workspaces.json` (путь записи совпадает
+- workspace не из реестра пользователя `~/.retropair/workspaces.json` (путь записи совпадает
   с корнем проекта) — collect не запускается: чужой клон с закоммиченным конфигом не должен
   собирать логи пользователя. Одна строка в stderr, в проект ничего не пишется; битый реестр —
   тоже строка в stderr;
-- иначе строка `<ISO> hook session=<id>` в `.sessionretro/collect.log` и отвязанный процесс
+- иначе строка `<ISO> hook session=<id>` в `.retropair/collect.log` и отвязанный процесс
   collect с выводом в тот же лог; лог больше 1 МБ перед записью обрезается до последних 200 КБ;
 - любая ошибка (битый конфиг, нет прав) — строка в `collect.log`; если и лог не пишется — в stderr.
 """
@@ -22,7 +22,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-STATE_DIR = ".sessionretro"
+STATE_DIR = ".retropair"
 REGISTRY_NAME = "workspaces.json"
 LOG_NAME = "collect.log"
 LOG_MAX = 1024 * 1024
@@ -47,7 +47,7 @@ def _read_payload() -> dict:
 
 
 def _find_root(start: Path) -> Path | None:
-    """Папка с `.sessionretro/config.json` вверх от `start`, кроме глобальной `~/.sessionretro`."""
+    """Папка с `.retropair/config.json` вверх от `start`, кроме глобальной `~/.retropair`."""
     try:
         glob = (Path.home() / STATE_DIR).resolve()
         current = start.resolve()
@@ -55,6 +55,9 @@ def _find_root(start: Path) -> Path | None:
         return None
     for candidate in (current, *current.parents):
         state = candidate / STATE_DIR
+        if (candidate / ".sessionretro").exists():
+            print(f"retropair hook: legacy workspace/conflict at {candidate}; run rp.py migrate", file=sys.stderr)
+            return None
         if (state / "config.json").is_file() and state.resolve() != glob:
             return candidate
     return None
@@ -81,7 +84,7 @@ def _log_line(log: Path, line: str) -> None:
         with open(log, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     except OSError as err:
-        print(f"sessionretro hook: {line} (лог не пишется: {log}: {err})", file=sys.stderr)
+        print(f"retropair hook: {line} (лог не пишется: {log}: {err})", file=sys.stderr)
 
 
 def _enabled(config: Path) -> bool:
@@ -101,7 +104,9 @@ class RegistryError(Exception):
 
 
 def _registered(root: Path) -> bool:
-    """Корень проекта есть в `~/.sessionretro/workspaces.json` (его пишет setup пользователя)."""
+    """Корень проекта есть в `~/.retropair/workspaces.json` (его пишет setup пользователя)."""
+    if (Path.home() / ".sessionretro").exists():
+        raise RegistryError("legacy global state/conflict; run rp.py migrate --global")
     path = Path.home() / STATE_DIR / REGISTRY_NAME
     if not path.is_file():
         return False
@@ -153,11 +158,11 @@ def main() -> int:
     try:
         registered = _registered(root)
     except RegistryError as err:
-        print(f"sessionretro hook: {err}; сбор не запущен ({root})", file=sys.stderr)
+        print(f"retropair hook: {err}; сбор не запущен ({root})", file=sys.stderr)
         return 0
     if not registered:
-        print(f"sessionretro hook: workspace не зарегистрирован в ~/{STATE_DIR}/{REGISTRY_NAME} "
-              f"({root}), сбор не запущен; запустите /sessionretro:setup", file=sys.stderr)
+        print(f"retropair hook: workspace не зарегистрирован в ~/{STATE_DIR}/{REGISTRY_NAME} "
+              f"({root}), сбор не запущен; запустите /retropair:setup", file=sys.stderr)
         return 0
     try:
         _launch(root, log, head)
@@ -170,6 +175,6 @@ if __name__ == "__main__":
     try:
         code = main()
     except Exception as err:  # noqa: BLE001 — последний рубеж: stdout пуст, код 0
-        print(f"sessionretro hook: ошибка {type(err).__name__}: {err}", file=sys.stderr)
+        print(f"retropair hook: ошибка {type(err).__name__}: {err}", file=sys.stderr)
         code = 0
     sys.exit(code)

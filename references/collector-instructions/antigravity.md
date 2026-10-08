@@ -83,10 +83,10 @@ ls -lt .specstory/history/ | head -5
 Один раз в корне проекта создайте workspace, если его ещё нет:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
-В `.sessionretro/config.json` добавьте источник SpecStory и укажите, какого агента
+В `.retropair/config.json` добавьте источник SpecStory и укажите, какого агента
 выгружать:
 
 ```json
@@ -99,11 +99,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
 ## Шаг 5. Соберите и вычистите
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
 Команда сама запускает `specstory sync antigravity` в корне проекта, затем копирует каждую
-выгрузку снимком в `.sessionretro/logs/me/` и по дороге вычищает его встроенным санитайзером.
+выгрузку снимком в `.retropair/logs/me/` и по дороге вычищает его встроенным санитайзером.
 
 Встроенная редакция SpecStory (`[REDACTED:…]`) ловит форматы секретов, но пропускает почту,
 телефоны, фамилии, адреса, строки подключения к базе и пароли, похожие на человеческие
@@ -113,7 +113,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
 не пишет.
 
 Имена собственные регулярным выражением не ловятся. Впишите свои названия и фамилии
-в `.sessionretro/config.json`:
+в `.retropair/config.json`:
 
 ```json
 "sanitize": {"names": ["ООО Ромашка", "Иванов"], "extra_patterns": []}
@@ -125,7 +125,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
 ## Шаг 6. Посмотрите своими глазами
 
 ```bash
-grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretro/logs | head
+grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .retropair/logs | head
 ```
 
 Затем откройте один снимок целиком и пролистайте: автоматика ловит форматы, а название
@@ -141,7 +141,7 @@ grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretr
 а не сырую выгрузку:
 
 ```bash
-git add .sessionretro/logs
+git add .retropair/logs
 git commit -m "логи сессий"
 git push origin
 ```

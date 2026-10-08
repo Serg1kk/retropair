@@ -24,9 +24,9 @@ def load() -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise FileNotFoundError(f"sessionretro: нет файла строк интерфейса ({path})") from exc
+        raise FileNotFoundError(f"retropair: нет файла строк интерфейса ({path})") from exc
     except json.JSONDecodeError as exc:
-        raise ValueError(f"sessionretro: файл строк интерфейса не разбирается: {exc} ({path})") from exc
+        raise ValueError(f"retropair: файл строк интерфейса не разбирается: {exc} ({path})") from exc
 
 
 def _parts(section: str | tuple[str, ...]) -> tuple[str, ...]:

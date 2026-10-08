@@ -5,7 +5,7 @@ Purpose. The judge writes the parts of the text without markup (feedback_parts i
 renderer assembles the outgoing block from them with this template and checks the text bans
 (section "Checks by script" in references/output-contract.md). The renderer strips this header
 comment, it never reaches the recipient. A workspace keeps its own template in
-.sessionretro/templates/feedback.md; the card field feedback.template picks the file. There
+.retropair/templates/feedback.md; the card field feedback.template picks the file. There
 are exactly five placeholders and no others.
 
 Placeholders:

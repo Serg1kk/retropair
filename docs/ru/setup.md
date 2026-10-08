@@ -1,16 +1,18 @@
-# Настройка: как подключить sessionretro к проекту
+# Настройка: как подключить RetroPair к проекту
 
-Чтобы sessionretro начал работать в проекте, ему нужен workspace — папка `.sessionretro/` с
+Переходите с SessionRetro? Перед созданием нового workspace прочитайте [инструкцию миграции](migration.md).
+
+Чтобы RetroPair начал работать в проекте, ему нужен workspace — папка `.retropair/` с
 настройками, карточками людей и местом под логи. Проще всего создать его диалогом: откройте
 Claude Code в папке проекта и вызовите скилл.
 
 ```text
-/sessionretro:setup
+/retropair:setup
 ```
 
-То же сработает словами: «настрой sessionretro», «подключи ретро сессий». Скилл задаст до 11
+То же сработает словами: «настрой RetroPair», «подключи ретро сессий». Скилл задаст до 11
 вопросов по одному, покажет итог и применит ответы одной командой. Сам он файлов не пишет: всё
-пишет CLI плагина `sr.py`, поэтому тот же результат можно получить без диалога, из скрипта (см.
+пишет CLI плагина `rp.py`, поэтому тот же результат можно получить без диалога, из скрипта (см.
 «Без диалога» ниже).
 
 ## Первый запуск
@@ -19,7 +21,7 @@ Claude Code в папке проекта и вызовите скилл.
 срок хранения логов. Для этого он запускает:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-state --json
 ```
 
 Настраивается корень git-репозитория, в котором вы открыли Claude Code; если папка не в git —
@@ -33,16 +35,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
 Так выглядит итог первого запуска в режиме self:
 
 ```text
-создал: .sessionretro/config.json
-создал: .sessionretro/people/_default.yaml
-создал: .sessionretro/plugin-state.json
+создал: .retropair/config.json
+создал: .retropair/people/_default.yaml
+создал: .retropair/plugin-state.json
 создал: me
 создал: .gitignore
-создал: .claude/agents/sessionretro-log-collector.md
-создал: .claude/agents/sessionretro-log-judge.md
-создал: .claude/agents/sessionretro-feedback-critic.md
+создал: .claude/agents/retropair-log-collector.md
+создал: .claude/agents/retropair-log-judge.md
+создал: .claude/agents/retropair-feedback-critic.md
 совет: Claude Code удаляет логи сессий старше cleanupPeriodDays дней (сейчас: не задано, по умолчанию 30); чтобы логи дожили до разбора, поставьте 90 в ~/.claude/settings.json
-Открой новую сессию Claude Code в этом проекте, напиши что-нибудь, выйди `/exit`, через минуту проверь `sr.py doctor`: last_collect_at должен обновиться
+Открой новую сессию Claude Code в этом проекте, напиши что-нибудь, выйди `/exit`, через минуту проверь `rp.py doctor`: last_collect_at должен обновиться
 ```
 
 Строки `создал`, `изменил`, `без изменений` перечисляют файлы и поля, `совет` — что стоит сделать
@@ -91,15 +93,15 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
    `false` — только динамика ↑ → ↓ ◇. В тексте ревью баллов нет никогда.
 8. **Периоды** — как делить работу на периоды: по дате запуска (каждый прогон — свой период с
    меткой `run-ГГГГММДД`) или окнами дат (`sprint-1: 2026-09-01 — 2026-09-14`). Третий вариант,
-   `labels`, конфиг принимает, но в 0.1 скилл `review` метку не спрашивает: прогоны пишутся без
+   `labels`, конфиг принимает, но в 0.2 скилл `review` метку не спрашивает: прогоны пишутся без
    метки периода. Нужны свои имена периодов — задайте их окнами дат.
-9. **Шаблон текста** — шаблон плагина или своя копия в `.sessionretro/templates/feedback.md`
+9. **Шаблон текста** — шаблон плагина или своя копия в `.retropair/templates/feedback.md`
    для правки (как подключить её к текстам — в [customize.md](customize.md)).
 10. **Срок хранения логов** — задаётся, только если `cleanupPeriodDays` в
     `~/.claude/settings.json` меньше 90 или не задан. Подробно ниже.
-11. **.gitignore** — дописать в `.gitignore` проекта строки `.sessionretro/logs/`,
-    `.sessionretro/runs/pending/`, `.sessionretro/reports/`, `.sessionretro/collect.log`,
-    `.sessionretro/collect.lock`: в логах ваш код и переписка, черновики и отчёты — личные
+11. **.gitignore** — дописать в `.gitignore` проекта строки `.retropair/logs/`,
+    `.retropair/runs/pending/`, `.retropair/reports/`, `.retropair/collect.log`,
+    `.retropair/collect.lock`: в логах ваш код и переписка, черновики и отчёты — личные
     тексты, журнал и замок сбора — служебные файлы машины.
 
 Язык (`ru` или `en`) скилл берёт из языка разговора, название workspace — из имени папки
@@ -107,7 +109,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
 
 ## Повторный запуск
 
-Вызовите `/sessionretro:setup` ещё раз. Скилл покажет текущие значения таблицей и спросит, что
+Вызовите `/retropair:setup` ещё раз. Скилл покажет текущие значения таблицей и спросит, что
 поменять; можно выбрать несколько блоков:
 
 - режим, люди и источники (вопросы 1–4);
@@ -120,39 +122,39 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state --json
 покажет `doctor`.
 
 Существующие карточки людей повторный запуск не перезаписывает, только добавляет новых. Имя,
-группу или профиль человека правьте в файле `.sessionretro/people/<id>.yaml` — см.
+группу или профиль человека правьте в файле `.retropair/people/<id>.yaml` — см.
 [customize.md](customize.md).
 
 ## Хук SessionEnd и его проверка
 
 Хук запускает сбор логов в фоне, когда сессия Claude Code заканчивается: к ретро логи уже на
-месте. Сессия сбора не ждёт, а вывод и ошибки пишутся в `.sessionretro/collect.log`. Включается
+месте. Сессия сбора не ждёт, а вывод и ошибки пишутся в `.retropair/collect.log`. Включается
 ответом «Автоматически» на вопрос 5 (в конфиге — `hook.enabled`).
 
 Проверьте, что хук срабатывает. Команда настройки печатает инструкцию; вот она дословно:
 
 ```text
-Открой новую сессию Claude Code в этом проекте, напиши что-нибудь, выйди `/exit`, через минуту проверь `sr.py doctor`: last_collect_at должен обновиться
+Открой новую сессию Claude Code в этом проекте, напиши что-нибудь, выйди `/exit`, через минуту проверь `rp.py doctor`: last_collect_at должен обновиться
 ```
 
 То есть откройте новую сессию, напишите любое сообщение, выйдите командой `/exit` и через минуту
 запустите:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 В строке `last_collect_at` должно стоять только что прошедшее время. Если там `нет` или старая
-дата — загляните в `.sessionretro/collect.log`: там строка `hook session=…` на каждый запуск и
-текст ошибки, если сбор упал. Хук срабатывает только в проектах с `.sessionretro/config.json`.
+дата — загляните в `.retropair/collect.log`: там строка `hook session=…` на каждый запуск и
+текст ошибки, если сбор упал. Хук срабатывает только в проектах с `.retropair/config.json`.
 
 ## Ручной режим
 
 Хук не обязателен. Ответьте «Вручную» на вопрос 5 (`"hook": false`) и собирайте логи, когда
-нужно, — скиллом `/sessionretro:collect` или командой:
+нужно, — скиллом `/retropair:collect` или командой:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
 Подробно о сборе, источниках и санитайзере — в [collect.md](collect.md).
@@ -179,7 +181,7 @@ Claude Code удаляет свои логи сессий старше `cleanupP
 
 ```bash
 cd ~/work/my-app
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers - <<'EOF'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers - <<'EOF'
 {
   "mode": "team",
   "title": "Platform team",
@@ -207,7 +209,7 @@ EOF
 Или из файла:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers answers.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-apply --answers answers.json
 ```
 
 Все ключи необязательны, кроме `mode` на первом запуске. На повторном меняются только
@@ -229,7 +231,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers answers.json
 | `models` | по ролям `collector`, `judge`, `critic`: `{"model", "effort"}`; можно одну роль |
 | `show_scores` | `true` · `false` |
 | `period` | `{"mode": "run"}`, `{"mode": "labels"}` или `{"mode": "dates", "windows": [{"label", "from", "to"}]}`; границы — даты `ГГГГ-ММ-ДД` (или ISO-время), `from` не позже `to`, пустая граница — `null`, метки окон не повторяются |
-| `template` | `default`, `workspace` или имя существующего файла в `.sessionretro/templates/`; значение попадает и в `feedback.template` файла `people/_default.yaml`, по нему строится текст. Карточки со своим `feedback.template` не меняются — их id придут советом |
+| `template` | `default`, `workspace` или имя существующего файла в `.retropair/templates/`; значение попадает и в `feedback.template` файла `people/_default.yaml`, по нему строится текст. Карточки со своим `feedback.template` не меняются — их id придут советом |
 | `cleanup_period_days` | `{"value": <дней>, "write": true\|false}`; `true` записывает `~/.claude/settings.json` (в цель, если это симлинк), но срок не понижает: стоит больше — файл не трогается, придёт совет |
 | `gitignore` | `true` дописывает недостающие строки в `.gitignore` |
 
@@ -237,7 +239,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-apply --answers answers.json
 указывают на разные папки — код `2`, в ошибке оба пути:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --workspace ~/work/my-app setup-apply --answers answers.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --workspace ~/work/my-app setup-apply --answers answers.json
 ```
 
 `--json` печатает отчёт одним объектом: `root`, списки `created`, `changed`, `unchanged`,
@@ -247,13 +249,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --workspace ~/work/my-app setup-ap
 не записано; `1` — данные (например, битый `~/.claude/settings.json`). Пример отказа:
 
 ```text
-sessionretro: setup: ответ mode: допустимо self | team | course (получено: 'sel')
+retropair: setup: ответ mode: допустимо self | team | course (получено: 'sel')
 ```
 
 ## Текущие значения: `setup-state`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" setup-state
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" setup-state
 ```
 
 ```text
@@ -278,7 +280,7 @@ workspace `workspace` равен `null`, код выхода `0`. Объект `
 ## Что показывает `doctor`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 Базовые строки описаны в [workspace.md](workspace.md). После настройки в выводе есть ещё:
@@ -300,9 +302,9 @@ template: default
 | `improvements_pending` | сколько ваших предложений авторам плагина записано и ещё не отправлено — см. [feedback.md](feedback.md) |
 | `sources_found` | у скольких локальных источников (`claude-jsonl`, `specstory`, `dir`) из конфига и карточек `people/<id>.yaml` есть папка и каких нет; источники `git` не проверяются, только считаются. Папки нет, пока не было первой сессии или выгрузки, — это не ошибка |
 | `project_agents` | проектные агенты: `3/3 совпадают с config.models` — всё хорошо; `нет` — файлов нет, работают агенты плагина; `расходятся: judge` — сверьте командой `agents check` ([customize.md](customize.md)) |
-| `gitignore` | все ли пять строк sessionretro из вопроса 11 есть в `.gitignore` проекта: `да` — все; иначе `нет — добавьте: sr.py setup-apply с {"gitignore": true}` |
+| `gitignore` | все ли пять строк RetroPair из вопроса 11 есть в `.gitignore` проекта: `да` — все; иначе `нет — добавьте: rp.py setup-apply с {"gitignore": true}` |
 | `show_scores` | вид личных отчётов по умолчанию: `да` — с баллами и уровнем, `нет` — только динамика |
-| `period_mode` | как делятся периоды: `run`, `dates` или `labels` (в 0.1 — прогоны без метки) |
+| `period_mode` | как делятся периоды: `run`, `dates` или `labels` (в 0.2 — прогоны без метки) |
 | `template` | какой шаблон текста выбран при настройке |
 
 ## Подробнее
@@ -310,4 +312,4 @@ template: default
 - [Настройка под себя: карточки, шаблон текста, проектные агенты](customize.md)
 - [Предложения авторам плагина](feedback.md)
 - [Сбор логов](collect.md)
-- [Workspace: где sessionretro хранит данные](workspace.md)
+- [Workspace: где RetroPair хранит данные](workspace.md)

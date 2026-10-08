@@ -72,7 +72,7 @@ class ReportOnEngineOutputTest(TempHome, unittest.TestCase):
             where = reports / "personal" if item["kind"] == "personal" else reports
             self.assertEqual(Path(item["path"]).resolve().parent, where, item)
         self.assertEqual(Path(items[-1]["path"]).resolve(),
-                         (self.home / ".sessionretro" / "reports" / "index.html").resolve())
+                         (self.home / ".retropair" / "reports" / "index.html").resolve())
 
     def test_default_targets_and_single_personal(self):
         default = self.report()

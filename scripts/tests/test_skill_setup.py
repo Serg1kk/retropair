@@ -94,9 +94,24 @@ def answer_examples(text: str) -> list[dict]:
 
 
 def call_argv(line: str) -> list[str]:
-    """Аргументы вызова без префикса `python3 "…/sr.py"` и без heredoc."""
+    """Аргументы вызова без префикса `python3 "…/rp.py"` и без heredoc."""
     rest = line[len(LITERAL):].split("<<", 1)[0]
     return shlex.split(rest)
+
+
+class RebrandMigrationPromptTest(unittest.TestCase):
+    def test_preview_precedes_setup_state_and_conflicts_stop(self):
+        text = SKILL.read_text(encoding="utf-8")
+        section = text.split("## Шаг 1.", 1)[1].split("## Правила диалога", 1)[0]
+        self.assertIn('.sessionretro/', section)
+        self.assertIn('~/.sessionretro/', section)
+        self.assertIn('" migrate', section)
+        self.assertIn('migrate --apply', section)
+        self.assertIn('migrate --global', section)
+        self.assertLess(section.index('" migrate'), section.index(' setup-state --json'))
+        self.assertIn('остановись', section)
+        self.assertIn('не перезаписывай данные', section)
+        self.assertIn('не удаляются и не перезаписываются', section)
 
 
 class HelpersTest(unittest.TestCase):
@@ -157,7 +172,7 @@ class SkillTest(unittest.TestCase):
         for cmd in ("setup-state", "setup-apply", "doctor"):
             with self.subTest(cmd=cmd):
                 self.assertIn(cmd, used)
-        self.assertEqual(sorted(used - self.known), [], "команды из SKILL.md, которых нет в sr.py")
+        self.assertEqual(sorted(used - self.known), [], "команды из SKILL.md, которых нет в rp.py")
 
     def test_command_lines_use_literal_and_parse(self) -> None:
         parser = registry_cmds.build_parser()
@@ -171,17 +186,17 @@ class SkillTest(unittest.TestCase):
                     with contextlib.redirect_stderr(err):
                         parser.parse_args(call_argv(line))
                 except SystemExit as exc:
-                    self.fail(f"sr.py не принял вызов (код {exc.code}): {err.getvalue().strip()}")
+                    self.fail(f"rp.py не принял вызов (код {exc.code}): {err.getvalue().strip()}")
 
     def test_step0_root_and_step1_state(self) -> None:
         self.assertIn("два уровня выше", self.body)
-        self.assertIn('sr.py" setup-state --json', self.body)
+        self.assertIn('rp.py" setup-state --json', self.body)
         self.assertLess(self.body.index("setup-state --json"), self.body.index("### Вопрос 1"))
 
     def test_final_single_apply_then_doctor(self) -> None:
         self.assertIn("setup-apply --answers - <<'EOF'", self.body)
         self.assertEqual(self.body.count("setup-apply --answers - <<'EOF'"), 1)
-        self.assertLess(self.body.index("setup-apply --answers -"), self.body.rindex('sr.py" doctor'))
+        self.assertLess(self.body.index("setup-apply --answers -"), self.body.rindex('rp.py" doctor'))
         self.assertIn("дословно", self.body)
 
     def test_dialog_mechanics(self) -> None:
@@ -331,7 +346,7 @@ class UserDocsTest(unittest.TestCase):
 
     def test_setup_names_skill_and_hook_check_verbatim(self) -> None:
         text = self.pages["setup"]
-        self.assertIn("/sessionretro:setup", text)
+        self.assertIn("/retropair:setup", text)
         self.assertIn(t(("cli", "setup"), "hook_check", "ru"), text)
 
     def test_setup_answer_examples_pass_validation(self) -> None:
@@ -361,13 +376,13 @@ class UserDocsTest(unittest.TestCase):
                         with contextlib.redirect_stderr(err):
                             parser.parse_args(call_argv(line))
                     except SystemExit as exc:
-                        self.fail(f"sr.py не принял вызов (код {exc.code}): {err.getvalue().strip()}")
+                        self.fail(f"rp.py не принял вызов (код {exc.code}): {err.getvalue().strip()}")
 
     def test_feedback_page_covers_commands_and_templates(self) -> None:
         text = self.pages["feedback"]
         for action in ("list", "pack", "sent", "sync"):
             with self.subTest(action=action):
-                self.assertIn(f'sr.py" improve {action}', text)
+                self.assertIn(f'rp.py" improve {action}', text)
         self.assertIn("gh issue create", text)
         for tpl in ("proposal", "bug", "privacy"):
             with self.subTest(template=tpl):
@@ -376,8 +391,8 @@ class UserDocsTest(unittest.TestCase):
 
     def test_customize_covers_agents(self) -> None:
         text = self.pages["customize"]
-        for phrase in ('sr.py" agents check', 'sr.py" agents write --force', "_default.yaml",
-                       ".sessionretro/templates/feedback.md", ".claude/agents/sessionretro-"):
+        for phrase in ('rp.py" agents check', 'rp.py" agents write --force', "_default.yaml",
+                       ".retropair/templates/feedback.md", ".claude/agents/retropair-"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 

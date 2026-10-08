@@ -123,7 +123,7 @@ def _comments(data: dict) -> list[str]:
             for v in r["verdicts"] if v["comment"]]
 
 
-HOME_NOTE = ("Проверено по /home/user/proj/.sessionretro/logs/p1/x.md, "
+HOME_NOTE = ("Проверено по /home/user/proj/.retropair/logs/p1/x.md, "
              "правка в /home/user/proj/app/main.py.")
 HOME_NOTE_SHOWN = "Проверено по logs/p1/x.md, правка в main.py."
 # синтетическое имя из `sanitize.names`: его нет ни в ростере, ни в фикстуре
@@ -176,13 +176,13 @@ class AddresseeCommentTest(unittest.TestCase):
         return rd.addressee_comment(text, Sanitizer(local_users=["ivanov"]))
 
     def test_state_dir_path_becomes_logs_relative(self):
-        self.assertEqual(self.clean("см. /home/user/proj/.sessionretro/logs/p1/x.md"),
+        self.assertEqual(self.clean("см. /home/user/proj/.retropair/logs/p1/x.md"),
                          "см. logs/p1/x.md")
-        self.assertEqual(self.clean("см. .sessionretro/logs/p1/x.md"), "см. logs/p1/x.md")
+        self.assertEqual(self.clean("см. .retropair/logs/p1/x.md"), "см. logs/p1/x.md")
 
     def test_path_with_spaces_and_login(self):
         # каталог macOS собран из частей, как в test_sanitize: гейт репозитория ловит его в исходниках
-        got = self.clean("см. /" + "Users/ivanov/Local Documents /Projects/demo/.sessionretro/logs/"
+        got = self.clean("см. /" + "Users/ivanov/Local Documents /Projects/demo/.retropair/logs/"
                          "p1/x.md, ход 19")
         self.assertEqual(got, "см. logs/p1/x.md, ход 19")
 
@@ -639,7 +639,7 @@ class _Cli(_util.TempHome, unittest.TestCase):
         self.ws = report_fixture.make_workspace(self.base / "ws", people=3, periods=3,
                                                 mode=self.MODE)
         self.reports = ws_paths(self.ws)["reports"]
-        self.index = self.home / ".sessionretro" / "reports" / "index.html"
+        self.index = self.home / ".retropair" / "reports" / "index.html"
 
     def tearDown(self) -> None:
         self._tmp.cleanup()

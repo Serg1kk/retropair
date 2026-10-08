@@ -475,7 +475,7 @@ class KeysAndPeriodTest(unittest.TestCase):
 
 def _ws(tmp: Path) -> Path:
     root = tmp / "proj"
-    (root / ".sessionretro").mkdir(parents=True)
+    (root / ".retropair").mkdir(parents=True)
     return root
 
 
@@ -487,7 +487,7 @@ class ScanTest(TempHome, unittest.TestCase):
         super().setUp()
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-inv-")
         self.root = _ws(Path(self._tmp.name))
-        self.me = self.root / ".sessionretro" / "logs" / "me"
+        self.me = self.root / ".retropair" / "logs" / "me"
         self.me.mkdir(parents=True)
 
     def tearDown(self):
@@ -495,7 +495,7 @@ class ScanTest(TempHome, unittest.TestCase):
         super().tearDown()
 
     def test_scan_empty_without_logs_dir(self):
-        shutil.rmtree(self.root / ".sessionretro" / "logs")
+        shutil.rmtree(self.root / ".retropair" / "logs")
         entries, junk = inventory.scan(self.root, CFG)
         self.assertEqual(entries, [])
         self.assertEqual(junk["unparsed"], [])
@@ -617,7 +617,7 @@ class ScanTest(TempHome, unittest.TestCase):
         self.assertIsNone(inventory.load_index(self.root))
         inventory.save_index(self.root, idx(entry()))
         self.assertEqual(inventory.load_index(self.root)["logs"][0]["key"], "k")
-        path = self.root / ".sessionretro" / "logs-index.json"
+        path = self.root / ".retropair" / "logs-index.json"
         path.write_text('{"schema_version": 7, "logs": []}', encoding="utf-8")
         with self.assertRaises(SrError) as ctx:
             inventory.load_index(self.root)
@@ -674,7 +674,7 @@ class CliTest(TempHome, unittest.TestCase):
         super().setUp()
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-inv-cli-")
         self.ws = copy_fixture("workspace-min", Path(self._tmp.name))
-        self.alex = self.ws / ".sessionretro" / "logs" / "alex"
+        self.alex = self.ws / ".retropair" / "logs" / "alex"
         self.alex.mkdir(parents=True)
         shutil.copy(LOGS / "specstory-claude.md", self.alex / "a.md")
 
@@ -690,8 +690,8 @@ class CliTest(TempHome, unittest.TestCase):
         self.assertEqual(data["logs"][0]["state"], "new")
         self.assertEqual(data["logs"][0]["person_id"], "alex")
         self.assertEqual(data["workspace"], "demo-team")
-        self.assertTrue((self.ws / ".sessionretro" / "logs-index.json").is_file())
-        self.assertTrue((self.ws / ".sessionretro" / "collect.lock").is_file())
+        self.assertTrue((self.ws / ".retropair" / "logs-index.json").is_file())
+        self.assertTrue((self.ws / ".retropair" / "collect.lock").is_file())
 
     def test_cli_inventory_text(self):
         (self.alex / "empty.md").write_text("\n", encoding="utf-8")
@@ -708,7 +708,7 @@ class CliTest(TempHome, unittest.TestCase):
     # ── B05: сбор держит collect.lock дольше 10 с ─────────────────────────────
 
     def test_cli_inventory_waits_for_running_collect(self):
-        target = self.ws / ".sessionretro" / "collect"
+        target = self.ws / ".retropair" / "collect"
         env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
         child = subprocess.Popen([sys.executable, "-c", HOLDER, str(SCRIPTS), str(target), "2.5"],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
@@ -730,16 +730,16 @@ class CliTest(TempHome, unittest.TestCase):
 
     def test_inventory_lock_timeout_is_code1_with_path(self):
         args = argparse.Namespace(workspace=str(self.ws), json=True)
-        target = self.ws / ".sessionretro" / "collect"
+        target = self.ws / ".retropair" / "collect"
         with lock.file_lock(target), \
                 unittest.mock.patch.object(lock, "COLLECT_WAIT_SECONDS", 1), \
                 contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SrError) as ctx:
                 cmd_inventory.handle(args)
         self.assertEqual(ctx.exception.code, 1)
-        self.assertIn(str(self.ws / ".sessionretro" / "collect.lock"), ctx.exception.message)
+        self.assertIn(str(self.ws / ".retropair" / "collect.lock"), ctx.exception.message)
         self.assertIn("1 с", ctx.exception.message)
-        self.assertFalse((self.ws / ".sessionretro" / "logs-index.json").exists())
+        self.assertFalse((self.ws / ".retropair" / "logs-index.json").exists())
 
 
 class SampleFixtureTest(unittest.TestCase):

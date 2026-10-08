@@ -1,7 +1,7 @@
 # Proposals to the plugin authors: what is recorded and how to send it
 
 Sometimes the work runs into the plugin itself rather than your data: a command cannot do
-something, a format does not parse, you had to work around it by hand. Then the sessionretro skill
+something, a format does not parse, you had to work around it by hand. Then the RetroPair skill
 finishes the task with a workaround and, in one message, offers to record a proposal for the plugin
 authors. If you agree, a short anonymized file appears in the project. The plugin itself sends
 nothing anywhere and has no mail: proposals leave only when you bundle them into a pack yourself
@@ -10,7 +10,7 @@ and open an issue on GitHub.
 To see what has been recorded:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve list
 ```
 
 ```text
@@ -45,8 +45,8 @@ It is not offered:
 
 ## Where the files are and what is inside
 
-Each proposal is a file `.sessionretro/improvements/imp-YYYYMMDD-<slug>-<4 characters>.md` in your
-project. The field labels are in Russian in 0.1: ID, Компонент (component), Симптом и контекст
+Each proposal is a file `.retropair/improvements/imp-YYYYMMDD-<slug>-<4 characters>.md` in your
+project. The field labels are in Russian in 0.2: ID, Компонент (component), Симптом и контекст
 (symptom and context), Локальный обход (local workaround), Предложение (proposal), Версия плагина
 (plugin version), Дата (date), Статус (status):
 
@@ -58,7 +58,7 @@ project. The field labels are in Russian in 0.1: ID, Компонент (compone
 - **Симптом и контекст:** setup-apply does not accept a date window without a label
 - **Локальный обход:** wrote the window label into config.json by hand
 - **Предложение:** cause: a manual config edit; approach: label the window by its dates; success criterion: a window without a label goes through
-- **Версия плагина:** 0.1.0
+- **Версия плагина:** 0.2.0
 - **Дата:** 2026-09-27
 - **Статус:** pending
 ```
@@ -72,7 +72,7 @@ edit them by hand; the check runs again when the pack is built.
 You can also record a proposal yourself, without the skill:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve add --component review --symptom "a batch of 200 turns did not fit the judge's limit" --workaround "split the period in two" --proposal "cause: long sessions; approach: split the batch automatically; success criterion: a period of 200 turns goes through in one run"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve add --component review --symptom "a batch of 200 turns did not fit the judge's limit" --workaround "split the period in two" --proposal "cause: long sessions; approach: split the batch automatically; success criterion: a period of 200 turns goes through in one run"
 ```
 
 `--slug` sets the word in the ID (Latin letters with hyphens); by default it is taken from the
@@ -96,21 +96,21 @@ in free text. Re-read the pack before you send it.
 ## Building a pack: `improve pack`
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve pack
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve pack
 ```
 
 The command gathers every `pending` proposal into one file
-`.sessionretro/improvements/pack-YYYYMMDD-<4 characters>.md` (your own path with
+`.retropair/improvements/pack-YYYYMMDD-<4 characters>.md` (your own path with
 `--out <file>`), checks it once more for paths, e-mails and names, prints the whole pack and a
 ready command to send it. It sends nothing itself (output of a workspace with `lang: en`):
 
 ```text
-pack: /home/user/work/my-app/.sessionretro/improvements/pack-20260927-31f0.md
+pack: /home/user/work/my-app/.retropair/improvements/pack-20260927-31f0.md
 Nothing was sent. Re-read the pack above; to send it, run the command below yourself, then mark it: `improve sent <ID>…`
-gh issue create --repo <plugin repository> --label proposal --title 'sessionretro 0.1.0: предложений 1' --body-file /home/user/work/my-app/.sessionretro/improvements/pack-20260927-31f0.md
+gh issue create --repo <plugin repository> --label proposal --title 'RetroPair 0.2.0: предложений 1' --body-file /home/user/work/my-app/.retropair/improvements/pack-20260927-31f0.md
 ```
 
-(The issue title reads "sessionretro 0.1.0: 1 proposal".) The command takes the repository from the
+(The issue title reads "RetroPair 0.2.0: 1 proposal".) The command takes the repository from the
 `repository` field in the plugin's `.claude-plugin/plugin.json`. No `pending` proposals, or
 personal data found in the text: code `1`, and no pack is written.
 
@@ -123,7 +123,7 @@ personal data found in the text: code `1`, and no pack is written.
 3. Mark the sent proposals so that they do not get into the next pack:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve sent imp-20260927-setup-5a56
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve sent imp-20260927-setup-5a56
    ```
 
 ## When a proposal is implemented: `improve sync`
@@ -132,11 +132,11 @@ The authors mark an accepted proposal in the plugin CHANGELOG with a line `вн�
 ("implemented: imp-…") under the version heading. After updating the plugin, run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" improve sync
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" improve sync
 ```
 
 Implemented proposals get the status `implemented (X.Y.Z)` and move to
-`.sessionretro/improvements/archive/`. `--changelog <file>` reads a different CHANGELOG.
+`.retropair/improvements/archive/`. `--changelog <file>` reads a different CHANGELOG.
 
 | Status | What it means | Who sets it |
 |---|---|---|
@@ -153,7 +153,7 @@ The plugin repository has three issue templates:
 | Template | File | When |
 |---|---|---|
 | Proposal | `proposal` | an improvement to the assessment, the text, reports or setup; the `improve pack` pack goes here |
-| Bug | `bug` | an error in a script, skill or report: steps, expectation, the `sessionretro: …` error text, the plugin version, OS and python3 |
+| Bug | `bug` | an error in a script, skill or report: steps, expectation, the `retropair: …` error text, the plugin version, OS and python3 |
 | Privacy | `privacy` | personal data or secrets got into a text, a report or a log |
 
 **A privacy leak** has its own template and is the top priority for the authors. It describes
@@ -172,7 +172,7 @@ of three or four turns.
 
 ## Discussions
 
-Questions, ideas without a ready proposal and stories of how you use sessionretro go to the
+Questions, ideas without a ready proposal and stories of how you use RetroPair go to the
 Discussions section of the plugin repository on GitHub. The same rules apply: no logs, names or
 paths from your machine.
 

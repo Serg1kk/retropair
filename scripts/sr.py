@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sessionretro CLI: тонкий диспетчер. Команды живут в `lib/cmd_*.py` (см. `lib/registry_cmds.py`)."""
+"""retropair CLI: тонкий диспетчер. Команды живут в `lib/cmd_*.py` (см. `lib/registry_cmds.py`)."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def main(argv=None) -> int:
     try:
         return registry_cmds.dispatch(args)
     except SrError as err:
-        print(f"sessionretro: {err.message}", file=sys.stderr)
+        print(f"retropair: {err.message}", file=sys.stderr)
         return err.code
 
 

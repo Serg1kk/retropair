@@ -28,7 +28,7 @@ LOG_GLOBS = [
     "**/session-log/**/*", "**/ide-session*",
 ]
 LOG_SUFFIXES = {".md", ".markdown", ".txt", ".jsonl"}
-SKIP_DIRS = {".git", "node_modules", STATE_DIR}
+SKIP_DIRS = {".git", "node_modules", STATE_DIR, ".sessionretro"}
 UNSUPPORTED = {"codex-jsonl", "cursor-jsonl"}
 REQUIRED = {"specstory": "path", "claude-jsonl": "project", "dir": "path", "git": "url"}
 GIT_TIMEOUT = 300
@@ -157,7 +157,7 @@ def _is_subagent_file(path: Path) -> bool:
 
 
 def _walk(folder: Path, suffixes: set[str]) -> list[Path]:
-    """Файлы с нужными суффиксами рекурсивно, без `.git/`, `node_modules/`, `.sessionretro/`."""
+    """Файлы с нужными суффиксами рекурсивно, без `.git/`, `node_modules/`, `.retropair/`."""
     found = []
     for path in sorted(folder.rglob("*")):
         rel_parts = path.relative_to(folder).parts[:-1]

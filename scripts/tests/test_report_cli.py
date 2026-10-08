@@ -58,7 +58,7 @@ class _Base(_util.TempHome, unittest.TestCase):
         self.ws = report_fixture.make_workspace(self.base / "ws", people=3, periods=3,
                                                 mode=self.MODE)
         self.reports = ws_paths(self.ws)["reports"]
-        self.index = self.home / ".sessionretro" / "reports" / "index.html"
+        self.index = self.home / ".retropair" / "reports" / "index.html"
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -440,7 +440,7 @@ class AnonNamesakesTest(_Base):
 
 def _rename_ids(ws: Path, renames: dict[str, str]) -> None:
     """Переименовывает id людей в синтетическом workspace: карточки, папки ревью, трекер, тексты."""
-    state = ws / ".sessionretro"
+    state = ws / ".retropair"
     pats = [(re.compile(r"(?<![A-Za-z0-9])" + re.escape(old) + r"(?![A-Za-z0-9])"), new)
             for old, new in renames.items()]
 

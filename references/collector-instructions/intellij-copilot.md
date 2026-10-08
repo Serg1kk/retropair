@@ -10,10 +10,10 @@
 ```bash
 cd путь/к/проекту
 mkdir -p ai-logs
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
-Последняя команда нужна один раз, если workspace ещё нет. В `.sessionretro/config.json`
+Последняя команда нужна один раз, если workspace ещё нет. В `.retropair/config.json`
 в поле `sources` добавьте папку:
 
 ```json
@@ -29,7 +29,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
 Закончили работу над задачей — выделите переписку с агентом в панели, скопируйте её
 и сохраните в файл внутри `ai-logs/`, например `ai-logs/session-2026-01-15.md`. Одна
 сессия — один файл, в имени дата. Роли размечайте заголовками, а дату — строкой `Date:`,
-тогда sessionretro разберёт ходы:
+тогда RetroPair разберёт ходы:
 
 ```markdown
 Date: 2026-01-15
@@ -47,18 +47,18 @@ Date: 2026-01-15
 ## Шаг 3. Соберите и вычистите
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" collect
 ```
 
 При ручном копировании никакой встроенной вычистки нет вообще, поэтому этот шаг
-обязательный. Команда копирует каждый файл снимком в `.sessionretro/logs/me/` и по дороге
+обязательный. Команда копирует каждый файл снимком в `.retropair/logs/me/` и по дороге
 вычищает его встроенным санитайзером: секреты, пароли, почту, телефоны, строки
 подключения, имя пользователя ОС в путях. Файлы в `ai-logs/` не меняются, `*.orig`
 плагин не пишет.
 
 Имена собственные регулярным выражением не ловятся, это единственное, что нельзя закрыть
 автоматически. Впишите свои названия и фамилии — компанию, коллег, внутренние системы —
-в `.sessionretro/config.json`:
+в `.retropair/config.json`:
 
 ```json
 "sanitize": {"names": ["ООО Ромашка", "Иванов"], "extra_patterns": []}
@@ -70,7 +70,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" collect
 ## Шаг 4. Посмотрите своими глазами
 
 ```bash
-grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretro/logs | head
+grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .retropair/logs | head
 ```
 
 Затем откройте один снимок и пролистайте: автоматика ловит форматы, а название клиента
@@ -83,7 +83,7 @@ grep -rn "REDACTED\|SECRET_ASSIGNMENT\|API_KEY\|EMAIL\|PHONE\|NAME" .sessionretr
 а не сырую папку `ai-logs`:
 
 ```bash
-git add .sessionretro/logs
+git add .retropair/logs
 git commit -m "логи сессий"
 git push origin
 ```

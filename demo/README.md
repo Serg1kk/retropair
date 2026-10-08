@@ -1,6 +1,6 @@
 # Demo workspace
 
-A ready-made sessionretro workspace for trying the reports before you point the plugin at your own logs.
+A ready-made RetroPair workspace for trying the reports before you point the plugin at your own logs.
 
 ## What it is
 
@@ -18,15 +18,17 @@ mode `course`).
 From the plugin root:
 
 ```bash
-python3 scripts/sr.py --workspace demo/workspace report --group --all-personal --reviewer --out-dir /tmp/sessionretro-demo
+cp -R demo/workspace /tmp/retropair-demo-ws
+python3 scripts/rp.py --workspace /tmp/retropair-demo-ws report --group --all-personal --reviewer --out-dir /tmp/retropair-demo
 ```
 
-Then open `group.html`, `reviewer.html` and `personal/*.html` from `/tmp/sessionretro-demo` in a browser.
-Write the reports to a temporary folder outside the plugin: the demo stays as shipped.
+Then open `group.html`, `reviewer.html` and `personal/*.html` from `/tmp/retropair-demo` in a browser.
+Use the copied workspace and a temporary output folder outside the plugin: CLI commands update
+workspace version metadata, so do not run them against the shipped source.
 
 ## What is inside
 
-All state lives in `workspace/.sessionretro/`:
+All state lives in `workspace/.retropair/`:
 
 - `config.json`: workspace settings (mode `course`, language `ru`);
 - `people/`: 15 person cards with different feedback settings, plus `_default.yaml`;

@@ -62,8 +62,8 @@ def batch_logs(obj: dict) -> dict[str, str]:
 
 
 def make_state(root: Path) -> Path:
-    """Минимальный workspace: `<root>/.sessionretro/config.json`; вернуть папку состояния."""
-    state = root / ".sessionretro"
+    """Минимальный workspace: `<root>/.retropair/config.json`; вернуть папку состояния."""
+    state = root / ".retropair"
     state.mkdir(parents=True, exist_ok=True)
     (state / "config.json").write_text("{}", encoding="utf-8")
     return state

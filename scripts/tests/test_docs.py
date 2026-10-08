@@ -117,12 +117,12 @@ class WorkspaceDocTest(unittest.TestCase):
     def test_mentions_every_command_with_example(self) -> None:
         for cmd in COMMANDS:
             with self.subTest(cmd=cmd):
-                self.assertIn(f'scripts/sr.py" {cmd}', self.text)
+                self.assertIn(f'scripts/rp.py" {cmd}', self.text)
 
     def test_mentions_every_people_action(self) -> None:
         for action in PEOPLE_ACTIONS:
             with self.subTest(action=action):
-                self.assertIn(f'sr.py" people {action}', self.text)
+                self.assertIn(f'rp.py" people {action}', self.text)
 
     def test_explains_every_feedback_field(self) -> None:
         for field in FEEDBACK_FIELDS:
@@ -130,8 +130,8 @@ class WorkspaceDocTest(unittest.TestCase):
                 self.assertIn(f"`{field}`", self.text)
 
     def test_describes_both_state_folders(self) -> None:
-        self.assertIn(".sessionretro/", self.text)
-        self.assertIn("~/.sessionretro/", self.text)
+        self.assertIn(".retropair/", self.text)
+        self.assertIn("~/.retropair/", self.text)
 
 
 class FilledDocsTest(unittest.TestCase):
@@ -190,9 +190,9 @@ QUICK_START_SECTION = ("Quick start", "Быстрый старт")
 HOW_IT_WORKS_SECTION = ("How it works", "Как работает")
 REPORTS_SECTION = ("Reports", "Отчёты")
 QUICK_START = [
-    "/plugin marketplace add Serg1kk/sessionretro",
-    "/plugin install sessionretro@sessionretro",
-    "/sessionretro:setup",
+    "/plugin marketplace add Serg1kk/retropair",
+    "/plugin install retropair@retropair",
+    "/retropair:setup",
 ]
 REQUIRED_PAGES = [
     "docs/ru/privacy.md", "docs/ru/faq.md",

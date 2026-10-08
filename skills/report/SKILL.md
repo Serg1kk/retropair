@@ -30,7 +30,7 @@ description: "Builds self-contained local HTML reports from approved retros: a p
 подставилась, корень плагина — два уровня выше этого файла.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" report
 ```
 
 Без флагов собирается всё, что уместно режиму workspace:
@@ -39,7 +39,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report
   workspace;
 - `team` и `course` — ещё и групповой отчёт.
 
-Частые флаги (полный список — `sr.py report --help`):
+Частые флаги (полный список — `rp.py report --help`):
 
 | Флаг | Когда нужен |
 |---|---|
@@ -94,7 +94,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report
   служебного (пояснений судьи, главного по прогону, доказательств, досье, черновиков): оси во
   времени (с баллами или только динамика — по виду), агенты и модели, одобренные тексты ревью
   по периодам, рекомендации с вердиктами. Именно его можно отправить адресату.
-- `~/.sessionretro/reports/index.html` — страница со всеми workspace пользователя.
+- `~/.retropair/reports/index.html` — страница со всеми workspace пользователя.
 
 Строки `предупреждение: …` в выводе (ревью без прогона, люди без прогонов, уровень взят из
 запасного поля) перескажи коротко: отчёт собран, но на них стоит взглянуть.
@@ -106,12 +106,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report
 
 Перед записью личного файла команда ищет в нём имена и id других людей workspace и имена из
 `sanitize.names` в конфиге. Нашлись — файл не пишется, старый удаляется, в выводе строка
-`sessionretro: чужие токены в <путь>: …`, код `1`; остальные файлы собираются. Групповой
+`retropair: чужие токены в <путь>: …`, код `1`; остальные файлы собираются. Групповой
 отчёт (`group.html`) проверяется так же, но только на `sanitize.names`: имена участников в нём
 законны.
 
 Что делать: покажи пользователю найденные токены и файл ревью этого человека
-(`.sessionretro/reviews/<id>/…`). Обычно чужое имя попало в отправляемый блок одобренного
+(`.retropair/reviews/<id>/…`). Обычно чужое имя попало в отправляемый блок одобренного
 ревью или в текст рекомендации. Предложи убрать его из текста и пересобрать отчёт. Не
 обходи гейт и не правь HTML руками.
 
@@ -121,7 +121,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report
 issue), собери его с `--anon` в отдельную папку:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" report --anon --out-dir "/tmp/sessionretro-demo"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" report --anon --out-dir "/tmp/retropair-demo"
 ```
 
 В обезличенных файлах коды `p01…` вместо id, вымышленные имена, без e-mail, ссылок на

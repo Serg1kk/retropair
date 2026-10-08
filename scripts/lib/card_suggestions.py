@@ -324,7 +324,7 @@ def _close_stale(items: list[dict], card: dict, stamp: str, by: str) -> int:
 
 
 def _stderr_warn(message: str) -> None:
-    print(f"sessionretro: предупреждение: {message}", file=sys.stderr)
+    print(f"retropair: предупреждение: {message}", file=sys.stderr)
 
 
 def _next_id(items: list[dict], pid: str) -> str:

@@ -1,4 +1,4 @@
-"""Инвентарь логов: снапшоты `.sessionretro/logs/<person>/` → `.sessionretro/logs-index.json`.
+"""Инвентарь логов: снапшоты `.retropair/logs/<person>/` → `.retropair/logs-index.json`.
 
 Инвентарь строится по снапшотам, а не по источникам: исходник может исчезнуть (JSONL Claude Code
 чистится через 30 дней), снапшот остаётся. `gone` — снапшот удалён руками. Записи не удаляются.

@@ -1,6 +1,6 @@
 (function () {
 'use strict';
-// sessionretro · скрипт отчёта. Данные — JSON в #data (уже отфильтрован по режиму в Python).
+// retropair · скрипт отчёта. Данные — JSON в #data (уже отфильтрован по режиму в Python).
 // Строки интерфейса — только функцией t с литеральным ключом секции report; имена осей,
 // уровней, вердиктов и статусов — прямым чтением чужих секций словаря. Данные в DOM —
 // через esc() или textContent; через innerHTML идут только поля *_html.
@@ -14,7 +14,7 @@ const REVIEWER = MODE === 'reviewer';
 // Вкладка «все» текстов ревью и пункт «все периоды» селектора карточки группы.
 const ALL = 'all';
 const LANGS = ['ru', 'en'];
-const STORE_KEY = 'sessionretro-ui';
+const STORE_KEY = 'retropair-ui';
 const S = {
   lang: LANGS.indexOf(META.lang) >= 0 ? META.lang : 'ru', theme: 'auto',
   view: PERSONAL ? 'person' : 'overview',
@@ -44,12 +44,12 @@ function applyTheme() {
 // Строка интерфейса из секции report; нет ключа — сам ключ на экране и предупреждение в консоли.
 const t = key => {
   const entry = (I18N.report || {})[key];
-  if (!entry) { console.warn('sessionretro: нет строки интерфейса', key); return key; }
+  if (!entry) { console.warn('retropair: нет строки интерфейса', key); return key; }
   return entry[S.lang] || entry.ru || key;
 };
 const humanize = id => String(id == null ? '' : id).replace(/_/g, ' ');
 function pick(entry, id, section) {
-  if (!entry) { console.warn('sessionretro: нет перевода', section, id); return humanize(id); }
+  if (!entry) { console.warn('retropair: нет перевода', section, id); return humanize(id); }
   return entry[S.lang] || entry.ru || humanize(id);
 }
 const axName = id => pick((I18N.axes || {})[id], id, 'axes');
@@ -590,7 +590,7 @@ function reviewsCard(pts, selected, full, opts) {
       const b = button(t('copy_sent'), null, () => {
         msg.textContent = '';
         copyText(sent.innerText).then(() => { msg.textContent = t('copied'); }, err => {
-          console.error('sessionretro: копирование не удалось', err); msg.textContent = t('copy_failed');
+          console.error('retropair: копирование не удалось', err); msg.textContent = t('copy_failed');
         });
       });
       bar.appendChild(b); bar.appendChild(msg);

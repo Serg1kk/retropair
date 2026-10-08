@@ -103,7 +103,7 @@ class CollectLockTest(TempHome, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        self.state = self.home / ".sessionretro"
+        self.state = self.home / ".retropair"
         self.target = self.state / "collect"
 
     def test_constants(self):

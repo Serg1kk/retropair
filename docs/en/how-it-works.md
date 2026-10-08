@@ -1,12 +1,12 @@
 # How the assessment works
 
-sessionretro reads the logs of your sessions with a coding agent for a period and answers one
+RetroPair reads the logs of your sessions with a coding agent for a period and answers one
 question: **how you lead the agent** — how you frame the task, verify the result and keep the
 decisions in your hands. Code quality, architecture and speed are not assessed. This page explains
 how a text comes out of the logs; the eight axes in detail are described in
 [axes.md](axes.md).
 
-![How sessionretro works: session logs pass the sanitizer and parallel collectors to the judge, the run tracker and the reports; the person card changes the wording, not the score; next steps are checked in the next period; the reviewer approves the text before it reaches the person](../images/how-it-works.en.gif)
+![How RetroPair works: session logs pass the sanitizer and parallel collectors to the judge, the run tracker and the reports; the person card changes the wording, not the score; next steps are checked in the next period; the reviewer approves the text before it reaches the person](../images/how-it-works.en.gif)
 
 The whole path on one picture: the person card goes to the judge only and changes the wording,
 not the score; the next steps of a period come back to the judge in the next period; in team and

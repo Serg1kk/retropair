@@ -1,7 +1,7 @@
 """Отметка хранилища `plugin-state.json`: сдвиг на новую версию плагина.
 
 `sync_stamp` вызывается перед каждой командой `sr.py` (см. `registry_cmds.dispatch`) для
-глобальной отметки `~/.sessionretro/plugin-state.json` и отметки найденного workspace.
+глобальной отметки `~/.retropair/plugin-state.json` и отметки найденного workspace.
 Отметку не создаёт: её пишут `init` и первая регистрация workspace. Миграций в формате 1
 нет, поэтому сдвиг — это только `pluginVersion` и `lastSync`.
 

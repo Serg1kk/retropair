@@ -3,7 +3,7 @@
 Проверяется реальный `skills/report/SKILL.md`: раздел о виде личного отчёта есть, вопрос задаётся
 один раз на весь запуск, ответы ведут к флагам `--scores` / `--trend`, при `--no-ask` вопроса
 нет и вид берётся из `config.show_scores` и `feedback.show_scores` карточек; флаги в командах
-скилла живые (есть в парсере `sr.py report`).
+скилла живые (есть в парсере `rp.py report`).
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _section() -> str:
 
 
 def _report_flags() -> set[str]:
-    """Флаги `sr.py report` и общие флаги `sr.py` (`--workspace`)."""
+    """Флаги `rp.py report` и общие флаги `rp.py` (`--workspace`)."""
     parser = registry_cmds.build_parser()
     common = {opt for a in parser._actions for opt in a.option_strings}  # noqa: SLF001
     for action in parser._actions:  # noqa: SLF001 — argparse не даёт публичного доступа
@@ -44,7 +44,7 @@ def _report_flags() -> set[str]:
             report = action.choices["report"]
             return common | {opt for a in report._actions  # noqa: SLF001
                              for opt in a.option_strings}
-    raise AssertionError("в парсере sr.py нет подкоманд")
+    raise AssertionError("в парсере rp.py нет подкоманд")
 
 
 class ReportSkillViewQuestionTest(unittest.TestCase):

@@ -86,7 +86,7 @@ collector_version: v6
 ### Нормализация и порядок чтения
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" normalize <path>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" normalize <path>
 ```
 
 Команда отдаёт `turns[]` с `index`, `role`, `model`, `ts`, `text`, `tools[]`, плюс `session_id`,

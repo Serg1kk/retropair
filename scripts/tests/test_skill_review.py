@@ -28,7 +28,7 @@ JUDGE_INPUT = SKILL_DIR / "references" / "judge-input.md"
 HOW = PLUGIN / "docs" / "ru" / "how-it-works.md"
 REVIEW_DOC = PLUGIN / "docs" / "ru" / "review.md"
 
-LITERAL = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py"'
+LITERAL = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py"'
 
 # Команды сбора логов, которые скилл зовёт: они в общем парсере, белого списка нет.
 INGEST_COMMANDS = {"inventory", "normalize", "collect"}
@@ -48,7 +48,7 @@ _W = [
 FORBIDDEN = re.compile("(?i)" + "|".join(_W) + "|(?i:\\b\u043a\u0443\u0440\u0441(\u0430|\u0443|\u043e\u043c|\u0435|\u044b|\u043e\u0432|\u0430\u043c|\u0430\u043c\u0438|\u0430\u0445)?\\b)")
 INTERNAL = re.compile("(?i:\u0444\u0438\u0447[\u0430\u0435\u0438\u0443\u044b]\u0439? \\d)|\\bTask \\d|q-exec-\\d|\\bD-\\d+\\b")
 
-SR_CMD = re.compile(r'sr\.py"?\s+([a-z][a-z-]*)')
+SR_CMD = re.compile(r'rp\.py"?\s+([a-z][a-z-]*)')
 PHASE_RE = re.compile(r"^## Фаза (\d+)\.", re.M)
 FENCE_RE = re.compile(r"^```[a-z]*\n(.*?)^```", re.M | re.S)
 
@@ -64,7 +64,7 @@ def parser_commands() -> set[str]:
     for action in parser._actions:  # noqa: SLF001 — argparse не даёт публичного доступа к подкомандам
         if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001
             return set(action.choices)
-    raise AssertionError("в парсере sr.py нет подкоманд")
+    raise AssertionError("в парсере rp.py нет подкоманд")
 
 
 def commands_in(text: str) -> list[str]:
@@ -72,11 +72,11 @@ def commands_in(text: str) -> list[str]:
 
 
 def command_lines(text: str) -> list[str]:
-    """Строки вызова `sr.py` из блоков кода, с учётом переноса `\\`."""
+    """Строки вызова `rp.py` из блоков кода, с учётом переноса `\\`."""
     out = []
     for block in FENCE_RE.findall(text):
         joined = re.sub(r"\s*\\\n\s*", " ", block)
-        out += [line.strip() for line in joined.splitlines() if "sr.py" in line]
+        out += [line.strip() for line in joined.splitlines() if "rp.py" in line]
     return out
 
 
@@ -105,11 +105,21 @@ def judge_input_fields() -> list[str]:
     return fields
 
 
+class LegacyAgentSelectionTest(unittest.TestCase):
+    def test_legacy_custom_agent_selection_and_conflict(self):
+        section = _read(SKILL).split("## Выбор агента", 1)[1].split("## Входы агентов", 1)[0]
+        self.assertIn("sessionretro-<роль>.md", section)
+        self.assertIn("Есть только старый", section)
+        self.assertIn("Если оба существуют", section)
+        self.assertIn("останови ревью", section)
+        self.assertIn("значение `name` из его frontmatter", section)
+
+
 class HelpersTest(unittest.TestCase):
     """Разборщики теста на синтетическом тексте."""
 
     def test_commands_and_lines(self) -> None:
-        text = ('Текст `sr.py" append`.\n```bash\n' + LITERAL + ' append <judge> \\\n  --person <person>\n```\n')
+        text = ('Текст `rp.py" append`.\n```bash\n' + LITERAL + ' append <judge> \\\n  --person <person>\n```\n')
         self.assertEqual(commands_in(text), ["append", "append"])
         self.assertEqual(command_lines(text), [LITERAL + " append <judge> --person <person>"])
 
@@ -142,11 +152,11 @@ class SkillTest(unittest.TestCase):
         used = set(commands_in(self.text))
         self.assertTrue(used)
         unknown = sorted(used - self.known)
-        self.assertEqual(unknown, [], "команды из SKILL.md, которых нет в sr.py")
+        self.assertEqual(unknown, [], "команды из SKILL.md, которых нет в rp.py")
 
     def test_ingest_commands_in_parser_and_used(self) -> None:
         used = set(commands_in(self.text)) | set(commands_in(_read(ORCH)))
-        self.assertLessEqual(INGEST_COMMANDS, self.known, "команды сбора логов пропали из sr.py")
+        self.assertLessEqual(INGEST_COMMANDS, self.known, "команды сбора логов пропали из rp.py")
         self.assertLessEqual(INGEST_COMMANDS, used, "скилл не зовёт команды сбора логов")
 
     def test_every_call_uses_literal(self) -> None:
@@ -166,7 +176,7 @@ class SkillTest(unittest.TestCase):
                     with contextlib.redirect_stderr(err):
                         parser.parse_args(argv)
                 except SystemExit as exc:
-                    self.fail(f"sr.py не принял вызов (код {exc.code}): {err.getvalue().strip()}")
+                    self.fail(f"rp.py не принял вызов (код {exc.code}): {err.getvalue().strip()}")
 
     def test_literal_caveat(self) -> None:
         self.assertIn("два уровня выше", self.body)
@@ -179,7 +189,7 @@ class SkillTest(unittest.TestCase):
         by_phase = phases(self.body)
         for n, cmd in PHASE_COMMANDS.items():
             with self.subTest(phase=n, cmd=cmd):
-                self.assertIn(f'sr.py" {cmd}', by_phase[n])
+                self.assertIn(f'rp.py" {cmd}', by_phase[n])
 
     def test_arguments(self) -> None:
         for flag in ("--all", "--task-summary", "--no-ask", "--approve"):
@@ -210,8 +220,8 @@ class SkillTest(unittest.TestCase):
                 self.assertIn(phrase, self.body)
 
     def test_agent_choice(self) -> None:
-        for phrase in (".claude/agents/sessionretro-log-collector.md", ".claude/agents/sessionretro-log-judge.md",
-                       "sessionretro:log-collector", "sessionretro:log-judge", "subagent_type",
+        for phrase in (".claude/agents/retropair-log-collector.md", ".claude/agents/retropair-log-judge.md",
+                       "retropair:log-collector", "retropair:log-judge", "subagent_type",
                        "config.models.collector", "config.models.judge"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.body)
@@ -223,13 +233,13 @@ class SkillTest(unittest.TestCase):
     def test_phase1_syncs_project_agents(self) -> None:
         """A15: фаза 1 до коллекторов обновляет непроправленных проектных агентов (`agents sync`)."""
         phase = phases(self.body)[1]
-        self.assertIn('sr.py" agents sync', phase)
+        self.assertIn('rp.py" agents sync', phase)
         self.assertIn("правлен вручную", phase)
         after = phase.split("agents sync", 1)[1]
         self.assertIn("--no-ask", after)
         self.assertIn("в сводку (фаза 12)", after, "при --no-ask строки sync не молча, а в сводку")
         self.assertIn("до выбора агента", phase)
-        self.assertLess(phase.index("doctor --json"), phase.index('sr.py" agents sync'))
+        self.assertLess(phase.index("doctor --json"), phase.index('rp.py" agents sync'))
         self.assertNotIn("agents sync", phases(self.body)[4])
         self.assertIn("agents sync", _read(ORCH).split("## Сводка", 1)[1])
 
@@ -237,7 +247,7 @@ class SkillTest(unittest.TestCase):
         """Нет карточки → прогон по человеку останавливается в фазе 1: `append` без карточки не пишет."""
         phase = phases(self.body)[1]
         self.assertNotIn("card_slice: null", phase)
-        self.assertIn('sr.py" people add', phase)
+        self.assertIn('rp.py" people add', phase)
         self.assertIn("останавливается", phase)
 
     def test_run_mode_batches_without_label(self) -> None:
@@ -302,7 +312,7 @@ class SkillTest(unittest.TestCase):
     def test_phase3_recorded_judge_output_is_not_asked_about(self) -> None:
         """Записанный выход судьи прошлого прогона не повод для вопроса: незаписанный называет `verify`."""
         phase = phases(self.body)[3]
-        self.assertIn('sr.py" verify', phase)
+        self.assertIn('rp.py" verify', phase)
         self.assertIn("сирота", phase)
         self.assertIn("перезаписывается стабом", phase)
 
@@ -480,7 +490,7 @@ class OrchestrationTest(unittest.TestCase):
     def test_recorded_judge_output_reset_to_stub(self) -> None:
         section = self.text.split("## Стабы", 1)[1].split("\n## ", 1)[0]
         self.assertIn("Записанный выход судьи", section)
-        self.assertIn('sr.py" verify', section)
+        self.assertIn('rp.py" verify', section)
 
     def test_summary_names_card_suggestions(self) -> None:
         summary = self.text.split("## Сводка", 1)[1]
@@ -513,8 +523,8 @@ class UserPagesTest(unittest.TestCase):
     def test_review_page(self) -> None:
         text = _read(REVIEW_DOC)
         for phrase in ("--no-ask", "--approve", "--task-summary", "--all", "draft", "approved",
-                       'sr.py" approve', 'sr.py" render-review', 'sr.py" verify', 'sr.py" self-test',
-                       'sr.py" retract', "`0`", "`1`", "`2`", "что не подаётся", "how-it-works.md"):
+                       'rp.py" approve', 'rp.py" render-review', 'rp.py" verify', 'rp.py" self-test',
+                       'rp.py" retract', "`0`", "`1`", "`2`", "что не подаётся", "how-it-works.md"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text if not phrase.islower() else text.lower())
 

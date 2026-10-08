@@ -1,4 +1,4 @@
-"""Онбординг: ответы setup → workspace `.sessionretro/`, текущее состояние в формате ответов.
+"""Онбординг: ответы setup → workspace `.retropair/`, текущее состояние в формате ответов.
 
 `apply` сначала проверяет ответы (`validate_answers`, код 2 с именем поля), собирает новый конфиг
 в памяти и прогоняет схему, читает `~/.claude/settings.json`, если его надо менять, и только потом
@@ -44,8 +44,8 @@ ANSWER_KEYS = frozenset({
     "mode", "title", "lang", "path", "people", "sources", "hook", "models", "show_scores",
     "period", "template", "cleanup_period_days", "gitignore",
 })
-GITIGNORE_LINES = (".sessionretro/logs/", ".sessionretro/runs/pending/", ".sessionretro/reports/",
-                   ".sessionretro/collect.log", ".sessionretro/collect.lock")
+GITIGNORE_LINES = (".retropair/logs/", ".retropair/runs/pending/", ".retropair/reports/",
+                   ".retropair/collect.log", ".retropair/collect.lock")
 ROLES = ("collector", "judge", "critic")
 PERSON_KEYS = frozenset({"id", "name", "group", "sources"})
 SOURCE_KEYS = frozenset({"type", "path", "project", "url", "branch"})
@@ -255,7 +255,7 @@ def _check_day(value, field: str) -> None:
 def _check_template(value) -> None:
     _need_text(value, "template")
     if "/" in value or "\\" in value or ".." in value:
-        raise _bad("template", "нужно default, workspace или имя файла в .sessionretro/templates/ "
+        raise _bad("template", "нужно default, workspace или имя файла в .retropair/templates/ "
                                "без разделителей пути и ..", value)
 
 
@@ -456,7 +456,7 @@ def _check_template_file(root: Path, value: str) -> None:
         return
     path = ws_paths(root)["templates"] / value
     if not path.is_file():
-        raise SrError(f"setup: ответ template: нет файла шаблона в .sessionretro/templates/ "
+        raise SrError(f"setup: ответ template: нет файла шаблона в .retropair/templates/ "
                       f"(template: {value!r}; {path})", 2)
 
 

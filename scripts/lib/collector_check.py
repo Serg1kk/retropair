@@ -396,9 +396,10 @@ def drop_unverified(obj: dict, docs: dict) -> list[str]:
 
 
 def _log_path(raw: str, state_dir: Path | None) -> tuple[Path | None, str | None]:
-    """Путь лога сессии: абсолютный как есть, относительный — от `.sessionretro/` workspace
+    """Путь лога сессии: абсолютный как есть, относительный — от `.retropair/` workspace
     (так его пишет сбор). (путь, None) или (None, почему не определить)."""
-    path = Path(raw).expanduser()
+    from lib.workspace import historical_path
+    path = historical_path(Path(raw).expanduser(), state_dir)
     if path.is_absolute():
         return path, None
     if state_dir is None:
@@ -435,7 +436,7 @@ def check_batch(obj, state_dir: Path | None = None, *, quotes: bool = False,
     """Все проблемы одной пачки; пустой список — пачку можно отдавать судье.
 
     `quotes=True` — ещё и сверка цитат с логами сессий (`attribution_problems`); относительные
-    `sessions[].path` берутся от `state_dir` (папка `.sessionretro/`), уже разобранные логи можно
+    `sessions[].path` берутся от `state_dir` (папка `.retropair/`), уже разобранные логи можно
     подать в `docs` (как у `load_docs`). Без `quotes` проверяются
     только сам выход: схема, поля оценки, сходимости. Нет схемы `collector` → `SrError(1)` из
     `tracker.schema_problems`: это отказ инструмента, а не брак пачки.
@@ -465,7 +466,7 @@ def _summary(obj) -> dict:
 
 
 def _state_dir(batch_path: Path, explicit: str | None) -> Path | None:
-    """Папка `.sessionretro/` для относительных путей логов: из `--workspace` (неверный →
+    """Папка `.retropair/` для относительных путей логов: из `--workspace` (неверный →
     `SrError(2)`) или поиском вверх от файла пачки (`<ws>/runs/pending/<person>/batch-NN.json`).
     Не нашлась — None: пачка с относительными путями получит проблему с этой причиной."""
     if explicit is not None:

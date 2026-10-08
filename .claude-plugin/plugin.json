@@ -1,11 +1,12 @@
 {
-  "name": "sessionretro",
-  "version": "0.1.14",
-  "description": "Retro on how you work with a coding agent: eight behaviour axes from your session logs, personal next steps, progress over time.",
+  "name": "retropair",
+  "version": "0.2.0",
+  "description": "Human–AI Collaboration Retrospectives. Evidence-based coaching for developers working with AI coding agents. Review the pair. Improve the human.",
   "author": {
     "name": "ProdfeatAI"
   },
   "license": "MIT",
-  "homepage": "https://github.com/Serg1kk/sessionretro",
-  "repository": "https://github.com/Serg1kk/sessionretro"
+  "homepage": "https://retropair.dev",
+  "repository": "https://github.com/Serg1kk/retropair",
+  "displayName": "RetroPair"
 }

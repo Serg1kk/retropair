@@ -1,44 +1,46 @@
-# Workspace: где sessionretro хранит ваши данные
+# Workspace: где RetroPair хранит ваши данные
 
-sessionretro ничего не пишет внутрь самого плагина. Всё, что вы настраиваете и что плагин
+Переходите с SessionRetro? Перед созданием нового workspace прочитайте [инструкцию миграции](migration.md).
+
+RetroPair ничего не пишет внутрь самого плагина. Всё, что вы настраиваете и что плагин
 собирает, лежит в двух местах:
 
-- **workspace проекта** — папка `.sessionretro/` в корне вашего проекта. Здесь конфиг,
+- **workspace проекта** — папка `.retropair/` в корне вашего проекта. Здесь конфиг,
   карточки людей, логи, ревью и отчёты этого проекта;
-- **глобальная папка** `~/.sessionretro/` в домашнем каталоге. Здесь реестр всех ваших
+- **глобальная папка** `~/.retropair/` в домашнем каталоге. Здесь реестр всех ваших
   workspace и общие настройки.
 
 Обновление плагина эти папки не трогает: ваши карточки, настройки и история остаются как есть.
 
 ## Команды
 
-Все команды запускаются одной точкой входа `sr.py`. Внутри Claude Code путь к плагину
+Все команды запускаются одной точкой входа `rp.py`. Внутри Claude Code путь к плагину
 подставляет переменная `${CLAUDE_PLUGIN_ROOT}`:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --help
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --version
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --help
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --version
 ```
 
 Нужен python 3.10 или новее, сторонние пакеты не нужны.
 
-Команды ищут workspace сами: от текущей папки вверх до первой `.sessionretro/config.json`.
+Команды ищут workspace сами: от текущей папки вверх до первой `.retropair/config.json`.
 Чтобы указать проект явно, добавьте `--workspace <папка>` в любом месте команды (подходит и
-корень проекта, и сама папка `.sessionretro`):
+корень проекта, и сама папка `.retropair`):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people list --workspace ~/work/my-app
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people list --workspace ~/work/my-app
 ```
 
 Коды выхода одинаковые у всех команд: `0` — всё хорошо, `1` — данные не сошлись или не прошли
 проверку, `2` — неверный вызов (нет workspace, неизвестный человек, опечатка в аргументах).
-Ошибка печатается одной строкой вида `sessionretro: <что упало>: <почему> (<параметры>)`.
+Ошибка печатается одной строкой вида `retropair: <что упало>: <почему> (<параметры>)`.
 
 ### `init` — создать workspace
 
 ```bash
 cd ~/work/my-app
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
 Флаги:
@@ -52,20 +54,20 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
 
 Что появится:
 
-- `.sessionretro/config.json` — настройки workspace;
-- `.sessionretro/people/_default.yaml` — общие настройки текста для всех карточек;
-- `.sessionretro/plugin-state.json` — служебная отметка версии;
-- в режиме `self` ещё карточка `.sessionretro/people/me.yaml` (это вы);
-- запись о проекте в `~/.sessionretro/workspaces.json`.
+- `.retropair/config.json` — настройки workspace;
+- `.retropair/people/_default.yaml` — общие настройки текста для всех карточек;
+- `.retropair/plugin-state.json` — служебная отметка версии;
+- в режиме `self` ещё карточка `.retropair/people/me.yaml` (это вы);
+- запись о проекте в `~/.retropair/workspaces.json`.
 
 Пример для команды:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode team --title "Команда платформы"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode team --title "Команда платформы"
 ```
 
 ```text
-workspace создан: /home/user/work/my-app/.sessionretro
+workspace создан: /home/user/work/my-app/.retropair
 id: komanda-platformy · режим: team · язык: ru
 ```
 
@@ -80,17 +82,17 @@ Claude Code этого проекта. В team и course, как только в
 
 ### `people` — карточки людей
 
-Карточка — это файл `.sessionretro/people/<id>.yaml`: кто человек и как писать ему текст.
+Карточка — это файл `.retropair/people/<id>.yaml`: кто человек и как писать ему текст.
 id — латиница в нижнем регистре, цифры и дефис (`alex`, `maria-k`, `dev01`).
 
 **Добавить человека:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people add alex --name "Alex" --group backend
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people add alex --name "Alex" --group backend
 ```
 
 ```text
-карточка создана: /home/user/work/my-app/.sessionretro/people/alex.yaml
+карточка создана: /home/user/work/my-app/.retropair/people/alex.yaml
 группа backend добавлена в workspace.groups
 ```
 
@@ -101,8 +103,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people add alex --name "Alex" --gr
 **Посмотреть карточку:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show alex
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show alex --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people show alex
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people show alex --json
 ```
 
 Без флага печатается файл карточки как есть. С `--json` — итоговая карточка, с которой
@@ -111,7 +113,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show alex --json
 **Список людей:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people list
 ```
 
 ```text
@@ -124,7 +126,7 @@ sam · Sam · default
 **Что увидит модель-оценщик:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people context alex
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people context alex
 ```
 
 ```text
@@ -146,7 +148,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people context alex
 ### `doctor` — проверить, всё ли на месте
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 ```text
@@ -160,7 +162,7 @@ cleanup_period_days: не задан
 registry_count: 1
 last_run_at: нет
 last_collect_at: нет
-plugin_version: 0.1.0
+plugin_version: 0.2.0
 ```
 
 | Строка | Что значит |
@@ -179,10 +181,10 @@ plugin_version: 0.1.0
 только если какой-то JSON-файл битый (конфиг, реестр, `~/.claude/settings.json`) или карточка
 не читается. `--json` печатает то же одним объектом.
 
-## Что лежит в `.sessionretro/`
+## Что лежит в `.retropair/`
 
 ```text
-.sessionretro/
+.retropair/
 ├── config.json              # настройки workspace: режим, язык, группы, источники логов, модели
 ├── people/
 │   ├── _default.yaml        # общие настройки текста для всех карточек
@@ -210,10 +212,10 @@ plugin_version: 0.1.0
 Сразу после `init` есть только `config.json`, `people/` и `plugin-state.json`; остальное
 появляется, когда вы собираете логи, запускаете оценку и строите отчёты.
 
-## Что лежит в `~/.sessionretro/`
+## Что лежит в `~/.retropair/`
 
 ```text
-~/.sessionretro/
+~/.retropair/
 ├── workspaces.json          # реестр workspace: id, путь, заголовок, режим, группы, даты
 ├── config.json              # ваши общие настройки по умолчанию (модели, язык)
 ├── reports/index.html       # страница со всеми workspace
@@ -226,13 +228,13 @@ plugin_version: 0.1.0
 
 Посмотреть реестр и убрать лишнее (например, удалённую песочницу) — команда `workspaces`.
 `list` показывает id, путь, заголовок и режим и помечает «папки нет», если у записи пропал
-`.sessionretro/config.json`; `remove <id>` убирает одну запись, `remove --missing` — все
+`.retropair/config.json`; `remove <id>` убирает одну запись, `remove --missing` — все
 помеченные. Файлы проектов не трогаются, страница workspaces обновится при следующем
 `report --index`:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" workspaces list
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" workspaces remove --missing
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" workspaces list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" workspaces remove --missing
 ```
 
 ## Карточка человека
@@ -289,7 +291,7 @@ consent:
 | `avoid` | список | чего не делать в тексте (сравнений, сленга, эмодзи…) |
 | `value_focus` | `finding` · `full` | в чём ценность текста: в находках, которых человек сам не видел, или в полном проходе по всем осям |
 | `show_dynamics` | `true` · `false` | показывать ли изменения с прошлого периода |
-| `channel` | `file` · `telegram` · `slack` · `email` | куда пойдёт текст; пока только метка (оформление): в 0.1.13 текст собирается одинаково для любого канала |
+| `channel` | `file` · `telegram` · `slack` · `email` | куда пойдёт текст; пока только метка (оформление): в 0.2.0 текст собирается одинаково для любого канала |
 | `template` | `default` · `workspace` · имя файла | какой шаблон текста взять (оформление) |
 | `prefix` | строка | что поставить перед текстом, например приветствие (оформление) |
 | `show_scores` | `true` · `false` · нет строки | вид личного отчёта этого человека: с баллами и уровнем или только динамика ↑ → ↓ ◇; нет строки — как `show_scores` в `config.json`; флаг `report --scores`/`--trend` сильнее ([reports.md](reports.md#баллы-и-уровень)) |
@@ -315,11 +317,11 @@ Workspace задуман как «папка фидбэка в репозито�
 тексты ревью хорошо хранить вместе с проектом. Не стоит коммитить тяжёлое и промежуточное:
 
 ```gitignore
-.sessionretro/logs/
-.sessionretro/runs/pending/
-.sessionretro/reports/
-.sessionretro/collect.log
-.sessionretro/collect.lock
+.retropair/logs/
+.retropair/runs/pending/
+.retropair/reports/
+.retropair/collect.log
+.retropair/collect.lock
 ```
 
 - `logs/` — копии логов сессий. Они очищены от секретов и путей, но это всё равно переписка
@@ -328,7 +330,7 @@ Workspace задуман как «папка фидбэка в репозито�
 - `reports/` — HTML, который всегда можно пересобрать;
 - `collect.log` и `collect.lock` — журнал фонового сбора и его замок, служебные файлы машины.
 
-`~/.sessionretro/` — ваша личная папка, в репозиторий проекта она не попадает.
+`~/.retropair/` — ваша личная папка, в репозиторий проекта она не попадает.
 
 Карточки в режимах team и course содержат имена и профиль людей. Прежде чем коммитить их в
 общий репозиторий, убедитесь, что люди с этим согласны. Что ещё остаётся у вас, что видят

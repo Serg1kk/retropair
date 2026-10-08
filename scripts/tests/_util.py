@@ -38,7 +38,7 @@ def copy_fixture(name: str, dst: Path) -> Path:
     """Копирует `tests/fixtures/<name>` в `dst/<name>` и возвращает новый путь."""
     src = FIXTURES / name
     if not src.is_dir():
-        raise FileNotFoundError(f"sessionretro: фикстура не найдена: нет папки ({src})")
+        raise FileNotFoundError(f"retropair: фикстура не найдена: нет папки ({src})")
     target = Path(dst) / name
     shutil.copytree(src, target)
     return target

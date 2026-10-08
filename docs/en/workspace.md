@@ -1,46 +1,48 @@
-# Workspace: where sessionretro keeps your data
+# Workspace: where RetroPair keeps your data
 
-sessionretro never writes inside the plugin itself. Everything you set up and everything the plugin
+Upgrading from SessionRetro? Follow the [migration guide](migration.md) before initializing a new workspace.
+
+RetroPair never writes inside the plugin itself. Everything you set up and everything the plugin
 collects lives in two places:
 
-- **the project workspace**: the `.sessionretro/` folder in the root of your project. It holds the
+- **the project workspace**: the `.retropair/` folder in the root of your project. It holds the
   config, person cards, logs, reviews and reports of this project;
-- **the global folder** `~/.sessionretro/` in your home directory. It holds the registry of all your
+- **the global folder** `~/.retropair/` in your home directory. It holds the registry of all your
   workspaces and shared defaults.
 
 Plugin updates do not touch these folders: your cards, settings and history stay as they are.
 
 ## Commands
 
-All commands go through one entry point, `sr.py`. Inside Claude Code the path to the plugin comes
+All commands go through one entry point, `rp.py`. Inside Claude Code the path to the plugin comes
 from the `${CLAUDE_PLUGIN_ROOT}` variable:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --help
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" --version
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --help
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" --version
 ```
 
 You need python 3.10 or newer; no third-party packages.
 
 Commands find the workspace themselves: from the current folder upwards to the first
-`.sessionretro/config.json`. To name the project explicitly, add `--workspace <folder>` anywhere in
-the command (both the project root and the `.sessionretro` folder itself work):
+`.retropair/config.json`. To name the project explicitly, add `--workspace <folder>` anywhere in
+the command (both the project root and the `.retropair` folder itself work):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people list --workspace ~/work/my-app
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people list --workspace ~/work/my-app
 ```
 
 Exit codes are the same for every command: `0` all good, `1` the data did not add up or failed a
 check, `2` a wrong call (no workspace, unknown person, a typo in the arguments). An error is printed
-as one line: `sessionretro: <what failed>: <why> (<parameters>)`.
+as one line: `retropair: <what failed>: <why> (<parameters>)`.
 
-Most command output is in Russian in version 0.1; the examples below show it as printed.
+Most command output is in Russian in version 0.2; the examples below show it as printed.
 
 ### `init`: create a workspace
 
 ```bash
 cd ~/work/my-app
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode self
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode self
 ```
 
 Flags:
@@ -54,20 +56,20 @@ Flags:
 
 What appears:
 
-- `.sessionretro/config.json`: workspace settings;
-- `.sessionretro/people/_default.yaml`: shared text settings for all cards;
-- `.sessionretro/plugin-state.json`: a service version stamp;
-- in `self` mode also the card `.sessionretro/people/me.yaml` (that is you);
-- an entry for the project in `~/.sessionretro/workspaces.json`.
+- `.retropair/config.json`: workspace settings;
+- `.retropair/people/_default.yaml`: shared text settings for all cards;
+- `.retropair/plugin-state.json`: a service version stamp;
+- in `self` mode also the card `.retropair/people/me.yaml` (that is you);
+- an entry for the project in `~/.retropair/workspaces.json`.
 
 An example for a team:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" init --mode team --title "Platform team" --lang en
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" init --mode team --title "Platform team" --lang en
 ```
 
 ```text
-workspace создан: /home/user/work/my-app/.sessionretro
+workspace создан: /home/user/work/my-app/.retropair
 id: platform-team · режим: team · язык: en
 ```
 
@@ -83,17 +85,17 @@ on them with code `1`: remove them from `sources` or give each of them a `"perso
 
 ### `people`: person cards
 
-A card is the file `.sessionretro/people/<id>.yaml`: who the person is and how to write the text to
+A card is the file `.retropair/people/<id>.yaml`: who the person is and how to write the text to
 them. The id is lower-case Latin letters, digits and hyphens (`alex`, `maria-k`, `dev01`).
 
 **Add a person:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people add alex --name "Alex" --group backend
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people add alex --name "Alex" --group backend
 ```
 
 ```text
-карточка создана: /home/user/work/my-app/.sessionretro/people/alex.yaml
+карточка создана: /home/user/work/my-app/.retropair/people/alex.yaml
 группа backend добавлена в workspace.groups
 ```
 
@@ -105,8 +107,8 @@ the code is `1` and the existing file is not overwritten.
 **Show a card:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show alex
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people show alex --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people show alex
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people show alex --json
 ```
 
 Without a flag the card file is printed as is. With `--json`, the resulting card the plugin works
@@ -115,7 +117,7 @@ with: your card plus the missing text settings from `_default.yaml`.
 **List people:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people list
 ```
 
 ```text
@@ -128,7 +130,7 @@ sam · Sam · default
 **What the judge model will see:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" people context alex
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people context alex
 ```
 
 ```text
@@ -152,7 +154,7 @@ An unknown id or an id in the wrong format gives code `2`.
 ### `doctor`: check that everything is in place
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" doctor
 ```
 
 ```text
@@ -166,7 +168,7 @@ cleanup_period_days: не задан
 registry_count: 1
 last_run_at: нет
 last_collect_at: нет
-plugin_version: 0.1.0
+plugin_version: 0.2.0
 ```
 
 | Line | What it means |
@@ -183,13 +185,13 @@ plugin_version: 0.1.0
 
 `doctor` does not fail when something is missing: it honestly says not found or not set. Code `1`
 comes only if some JSON file is broken (the config, the registry, `~/.claude/settings.json`) or a
-card cannot be read. `--json` prints the same as one object. After `/sessionretro:setup` there are
+card cannot be read. `--json` prints the same as one object. After `/retropair:setup` there are
 more lines; see [setup.md](setup.md#what-doctor-shows).
 
-## What is in `.sessionretro/`
+## What is in `.retropair/`
 
 ```text
-.sessionretro/
+.retropair/
 ├── config.json              # workspace settings: mode, language, groups, log sources, models
 ├── people/
 │   ├── _default.yaml        # shared text settings for all cards
@@ -217,10 +219,10 @@ update". The file can be committed together with `.claude/agents/`.
 Right after `init` there are only `config.json`, `people/` and `plugin-state.json`; the rest
 appears as you collect logs, run assessments and build reports.
 
-## What is in `~/.sessionretro/`
+## What is in `~/.retropair/`
 
 ```text
-~/.sessionretro/
+~/.retropair/
 ├── workspaces.json          # workspace registry: id, path, title, mode, groups, dates
 ├── config.json              # your shared defaults (models, language)
 ├── reports/index.html       # the page with all workspaces
@@ -233,13 +235,13 @@ adds an entry); you do not need to edit the file by hand.
 
 To look at the registry and remove what is no longer needed (for example, a deleted sandbox), use
 the `workspaces` command. `list` shows the id, path, title and mode and marks an entry `папки нет`
-(folder missing) if its `.sessionretro/config.json` is gone; `remove <id>` removes one entry,
+(folder missing) if its `.retropair/config.json` is gone; `remove <id>` removes one entry,
 `remove --missing` all marked ones. Project files are not touched; the workspaces page updates on
 the next `report --index`:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" workspaces list
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sr.py" workspaces remove --missing
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" workspaces list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" workspaces remove --missing
 ```
 
 ## The person card
@@ -295,7 +297,7 @@ affect the layout and are not given to the judge.
 | `avoid` | list | what not to do in the text (comparisons, slang, emoji…) |
 | `value_focus` | `finding` · `full` | where the value of the text lies: in findings the person did not see, or in a full pass over all axes |
 | `show_dynamics` | `true` · `false` | whether to show changes since the previous period |
-| `channel` | `file` · `telegram` · `slack` · `email` | where the text goes; only a label for now (layout): in 0.1.13 the text is built the same way for every channel |
+| `channel` | `file` · `telegram` · `slack` · `email` | where the text goes; only a label for now (layout): in 0.2.0 the text is built the same way for every channel |
 | `template` | `default` · `workspace` · file name | which text template to use (layout) |
 | `prefix` | string | what to put before the text, for example a greeting (layout) |
 
@@ -321,11 +323,11 @@ history and review texts are good to keep with the project. Do not commit what i
 intermediate:
 
 ```gitignore
-.sessionretro/logs/
-.sessionretro/runs/pending/
-.sessionretro/reports/
-.sessionretro/collect.log
-.sessionretro/collect.lock
+.retropair/logs/
+.retropair/runs/pending/
+.retropair/reports/
+.retropair/collect.log
+.retropair/collect.lock
 ```
 
 - `logs/`: copies of session logs. They are cleaned of secrets and paths, but they are still your
@@ -335,7 +337,7 @@ intermediate:
 - `collect.log` and `collect.lock`: the background collection log and its lock, machine service
   files.
 
-`~/.sessionretro/` is your personal folder; it does not go into the project repository.
+`~/.retropair/` is your personal folder; it does not go into the project repository.
 
 Cards in team and course modes hold people's names and profiles. Before committing them to a shared
 repository, make sure the people agree. What else stays with you, what the models see and what the

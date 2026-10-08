@@ -1,4 +1,4 @@
-"""Глобальный реестр workspaces: `~/.sessionretro/workspaces.json`."""
+"""Глобальный реестр workspaces: `~/.retropair/workspaces.json`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from lib.lock import file_lock
 from lib.version import __version__
-from lib.workspace import STATE_DIR, SrError, read_json, write_json_atomic
+from lib.workspace import STATE_DIR, require_current_state, SrError, read_json, write_json_atomic
 
 UPDATABLE = ("path", "title", "mode", "groups", "last_run_at", "last_collect_at")
 
@@ -21,6 +21,7 @@ _TRANSLIT = {
 
 
 def sr_home() -> Path:
+    require_current_state(Path.home())
     return Path.home() / STATE_DIR
 
 
@@ -81,7 +82,7 @@ def _free_id(entries: list[dict], title: str) -> str:
 
 
 def preview_id(root: Path, title: str) -> str:
-    """id, который `register` выдал бы сейчас, — без записи и без создания `~/.sessionretro`.
+    """id, который `register` выдал бы сейчас, — без записи и без создания `~/.retropair`.
 
     Между предпросмотром и регистрацией id может занять другой процесс: вызывающий
     сверяет результат `register` и при расхождении берёт id из реестра.

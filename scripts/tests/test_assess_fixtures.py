@@ -89,7 +89,7 @@ def sample_run(**patch) -> dict:
         "level_computed": None,
         "review_status": "draft",
         "artifact": None,
-        "source": {"path": ".sessionretro/runs/pending/alex/judge.json", "sha256": "0" * 64},
+        "source": {"path": ".retropair/runs/pending/alex/judge.json", "sha256": "0" * 64},
     }
     run.update(patch)
     return run
@@ -340,7 +340,7 @@ class HelpersTest(unittest.TestCase):
 
     def test_make_ws(self) -> None:
         root = _assess.make_ws(self.tmp)
-        state = root / ".sessionretro"
+        state = root / ".retropair"
         self.assertTrue((state / "config.json").is_file())
         self.assertEqual(json.loads((state / "logs-index.json").read_text(encoding="utf-8")),
                          read("logs-index.json"))

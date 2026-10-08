@@ -1,6 +1,6 @@
 """Команда `collect`: источники → санитайзированные снапшоты → `logs-index.json` → сводка.
 
-Порядок под блокировкой `.sessionretro/collect.lock`: `specstory sync` (если среди источников
+Порядок под блокировкой `.retropair/collect.lock`: `specstory sync` (если среди источников
 есть `specstory`) → файлы источников → снапшоты `logs/<person>/<key>.md|.jsonl` и сайдкар
 `.meta.json` → перечистка снапшотов со старым отпечатком санитайзера → пересчёт инвентаря →
 `last_collect_at` в реестре → сводка.
@@ -8,7 +8,7 @@
 Замок и повтор:
 - ручной запуск ждёт соседний сбор до `lock.COLLECT_WAIT_SECONDS` (одна строка ожидания в stderr),
   не дождался — код 1;
-- `--quiet` (хук) не ждёт: замок занят — флаг `.sessionretro/collect.again`, короткая попытка
+- `--quiet` (хук) не ждёт: замок занят — флаг `.retropair/collect.again`, короткая попытка
   ещё раз (`QUIET_GRACE_SECONDS`: замок могли держать `inventory` или пометка), не вышло —
   строка «сбор уже идёт; повтор запрошен» в stderr (`collect.log`) и код 0;
 - проход начинается со снятия флага; флаг появился за проход — ещё один проход под тем же
@@ -75,7 +75,7 @@ from lib.workspace import (SrError, find_workspace, portable_path, portable_text
 
 NO_WORKSPACE = "нет workspace"
 NO_INDEX = "нет"
-AGAIN_FLAG = "collect.again"   # `.sessionretro/collect.again`: пока шёл сбор, запрошен ещё один
+AGAIN_FLAG = "collect.again"   # `.retropair/collect.again`: пока шёл сбор, запрошен ещё один
 MAX_REPEATS = 3                # повторных проходов подряд по флагу, дальше строка в warnings
 QUIET_GRACE_SECONDS = 2        # --quiet: вторая попытка взять замок после флага (короткие держатели)
 SR_CMD = "sr.py collect"
@@ -597,7 +597,7 @@ def _pass(root: Path, providers: list[str] | None, now: str | None = None,
 
     entry = registry.find_by_path(root)
     if entry is None:
-        run.warnings.append(f"workspace не в реестре ~/.sessionretro/workspaces.json, "
+        run.warnings.append(f"workspace не в реестре ~/.retropair/workspaces.json, "
                             f"last_collect_at не записан ({root})")
     warnings = [portable_text(w, root) for w in run.warnings]
     index = inventory.rebuild(root, cfg, now=now, warnings=warnings, no_consent=denied)
@@ -706,14 +706,14 @@ def handle(args) -> int:
         out = collect_quiet(root, args.provider, replace=replace)
         if out is None:
             flag = ws_paths(root)["state_dir"] / AGAIN_FLAG
-            print(f"sessionretro: сбор уже идёт; повтор запрошен ({flag})", file=sys.stderr)
+            print(f"retropair: сбор уже идёт; повтор запрошен ({flag})", file=sys.stderr)
             return 0
         if out["passes"] > 1:   # строка уходит в collect.log: видно, что запросы схлопнулись
-            print(f"sessionretro: повторный сбор по запросу ({AGAIN_FLAG}), проходов: {out['passes']}",
+            print(f"retropair: повторный сбор по запросу ({AGAIN_FLAG}), проходов: {out['passes']}",
                   file=sys.stderr)
             for w in out["warnings"]:
                 if AGAIN_FLAG in w:
-                    print(f"sessionretro: {w}", file=sys.stderr)
+                    print(f"retropair: {w}", file=sys.stderr)
         return 0
     out = collect(root, args.provider, replace=replace)
     if args.json:

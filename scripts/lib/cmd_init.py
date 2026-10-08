@@ -1,4 +1,4 @@
-"""Команда `init`: создаёт workspace `.sessionretro/` в папке проекта и регистрирует его."""
+"""Команда `init`: создаёт workspace `.retropair/` в папке проекта и регистрирует его."""
 
 from __future__ import annotations
 

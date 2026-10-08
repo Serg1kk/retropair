@@ -99,7 +99,7 @@ class RenderHtmlTest(_Base):
                 self.assertNotIn("i18n", payload, "payload вызывающего не должен меняться")
                 self.assertIsNone(re.search(r"__[A-Z_]+__", html_text))
                 self.assertIn("--s4:", html_text)  # CSS встроен
-                self.assertIn("sessionretro-ui", html_text)  # JS встроен
+                self.assertIn("retropair-ui", html_text)  # JS встроен
 
     def test_header_dates_are_log_dates_with_log_wording(self):
         for mode in rd.MODES:
@@ -166,7 +166,7 @@ class RenderHtmlTest(_Base):
         self.assertEqual(_data(html_text)["people"][0]["points"][0]["summary"],
                          "__TITLE__ __JS__ __LANG__")
         self.assertIn("<title>__CSS__ &lt;b&gt;x&lt;/b&gt; __DATA_JSON__</title>", html_text)
-        self.assertEqual(html_text.count("sessionretro · стили отчёта"), 1)
+        self.assertEqual(html_text.count("retropair · стили отчёта"), 1)
         self.assertEqual(html_text.count("'use strict'"), 1)
 
     def test_bad_meta_is_an_error(self):
@@ -672,8 +672,8 @@ class RenderIndexTest(_Base):
         (reports / "reviewer.html").write_text("x", encoding="utf-8")
         (reports / "personal" / "anna.html").write_text("x", encoding="utf-8")
         broken = self.base / "broken"
-        (broken / ".sessionretro").mkdir(parents=True)
-        (broken / ".sessionretro" / "config.json").write_text("{not json", encoding="utf-8")
+        (broken / ".retropair").mkdir(parents=True)
+        (broken / ".retropair" / "config.json").write_text("{not json", encoding="utf-8")
         gone = self.base / "gone"
         entries = [
             self._entry("my-ws", built, "Команда <script>x</script>"),

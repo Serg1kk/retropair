@@ -41,7 +41,7 @@ def handle(args) -> int:
     root = find_workspace(Path.cwd(), args.workspace)
     result = batches.for_person(root, args.person, measure=args.measure, period_label=args.period_label)
     if result["measure"] == "file_bytes":
-        print("sessionretro: замер по размеру файла (measure: file_bytes) — трейсы инструментов "
+        print("retropair: замер по размеру файла (measure: file_bytes) — трейсы инструментов "
               "раздувают размер, пачки грубее, чем по человеческому слою", file=sys.stderr)
     print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else _text(result))
     return 0

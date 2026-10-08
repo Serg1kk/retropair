@@ -197,7 +197,7 @@ class AppendTest(TrackerCase):
         self.assertEqual(len(run["sessions_reviewed"]), 3)
         judge = self.paths["pending"] / "alex" / "judge.json"
         self.assertEqual(run["source"], {
-            "path": ".sessionretro/runs/pending/alex/judge.json",
+            "path": ".retropair/runs/pending/alex/judge.json",
             "sha256": hashlib.sha256(judge.read_bytes()).hexdigest(),
         })
         self.assertFalse(Path(run["source"]["path"]).is_absolute())

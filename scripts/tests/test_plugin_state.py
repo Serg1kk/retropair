@@ -148,7 +148,7 @@ class DispatchSyncTest(TempHome, unittest.TestCase):
         self.assertEqual(self.calls, ["0.1.0-dev"])
         lines = err.splitlines()
         self.assertEqual(len(lines), 1, err)
-        self.assertTrue(lines[0].startswith("sessionretro: предупреждение: plugin-state.json "), err)
+        self.assertTrue(lines[0].startswith("retropair: предупреждение: plugin-state.json "), err)
         self.assertIn(str(self.gstate), lines[0])
         self.assertIn("нет прав", lines[0])
         self.assertTrue(lines[0].endswith(", не изменён"), err)
@@ -162,7 +162,7 @@ class CliSyncTest(TempHome, unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-pstate-cli-")
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
-        self.gstate = self.home / ".sessionretro" / "plugin-state.json"
+        self.gstate = self.home / ".retropair" / "plugin-state.json"
         self.gstate.parent.mkdir(parents=True)
 
     def test_global_stamp_synced_by_command_without_workspace(self):
@@ -176,7 +176,7 @@ class CliSyncTest(TempHome, unittest.TestCase):
 
     def test_workspace_stamp_synced_by_doctor(self):
         ws = copy_fixture("workspace-min", self.tmp)
-        wstate = ws / ".sessionretro" / "plugin-state.json"
+        wstate = ws / ".retropair" / "plugin-state.json"
         self.assertEqual(json.loads(wstate.read_text(encoding="utf-8"))["pluginVersion"], "0.1.0-dev")
         res = run_sr("doctor", "--workspace", str(ws), home=self.home, cwd=self.tmp)
         self.assertNotIn("предупреждение: plugin-state.json", res.stderr)
@@ -190,13 +190,13 @@ class CliSyncTest(TempHome, unittest.TestCase):
         before = self.gstate.read_bytes()
         res = run_sr("workspaces", "list", home=self.home, cwd=self.tmp)
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn(f"sessionretro: предупреждение: plugin-state.json {self.gstate}: битый, не изменён",
+        self.assertIn(f"retropair: предупреждение: plugin-state.json {self.gstate}: битый, не изменён",
                       res.stderr)
         self.assertEqual(self.gstate.read_bytes(), before)
 
     def test_newer_workspace_stamp_warns_with_version(self):
         ws = copy_fixture("workspace-min", self.tmp)
-        wstate = ws / ".sessionretro" / "plugin-state.json"
+        wstate = ws / ".retropair" / "plugin-state.json"
         wstate.write_text(json.dumps(_stamp("99.0.0")), encoding="utf-8")
         before = wstate.read_bytes()
         res = run_sr("people", "list", "--workspace", str(ws), home=self.home, cwd=self.tmp)

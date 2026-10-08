@@ -796,7 +796,7 @@ class NormalizeCli(unittest.TestCase):
         self.assertGreater(first["chars"], 5)
 
     def test_works_without_workspace(self):
-        # в tmp нет .sessionretro — команде workspace не нужен
+        # в tmp нет .retropair — команде workspace не нужен
         self.ok_json(str(LOGS / "md-headings.md"), "--stats")
 
 

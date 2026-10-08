@@ -58,12 +58,12 @@ def register(subparsers) -> None:
                    help="групповой отчёт без карточки человека (тексты ревью и рекомендации): "
                         "только цифры")
     p.add_argument("--index", action="store_true",
-                   help="страница workspaces в ~/.sessionretro/reports/index.html")
+                   help="страница workspaces в ~/.retropair/reports/index.html")
     p.add_argument("--anon", action="store_true",
                    help="обезличить: коды вместо id, вымышленные имена, без контактов и путей")
     p.add_argument("--lang", choices=LANGS, help="язык отчёта (по умолчанию из config.lang)")
     p.add_argument("--out-dir", metavar="DIR",
-                   help="папка отчётов вместо <workspace>/.sessionretro/reports")
+                   help="папка отчётов вместо <workspace>/.retropair/reports")
     view = p.add_mutually_exclusive_group()
     view.add_argument("--scores", dest="view", action="store_const", const="scores",
                       help="личные отчёты на этот запуск — с баллами и уровнем (вид scores)")
@@ -139,7 +139,7 @@ class _Run:
             print(f"{path} · {_size(size)}")
 
     def fail(self, message: str, code: int = 1) -> None:
-        print(f"sessionretro: {message}", file=sys.stderr)
+        print(f"retropair: {message}", file=sys.stderr)
         self.rc = max(self.rc, code)
 
 
@@ -167,7 +167,7 @@ def handle(args) -> int:
             if args.json:
                 print(json.dumps(run.items))
             return run.rc
-        print(f"sessionretro: {SELF_NO_GROUP} (workspace {root}), остальное собирается",
+        print(f"retropair: {SELF_NO_GROUP} (workspace {root}), остальное собирается",
               file=sys.stderr)
 
     cards = {c["id"]: c for c in list_people(root)}
@@ -282,7 +282,7 @@ def _warn_title_names(ws_title: str, cards: dict, ids: list[str]) -> None:
     if owners and any(set(owners) - {pid} for pid in ids):
         _warn(f"workspace title contains name tokens of: {', '.join(owners)} — заголовок "
               "workspace показывается в каждом личном файле и гейтом чужих имён не проверяется; "
-              "уберите имена из workspace.title в .sessionretro/config.json")
+              "уберите имена из workspace.title в .retropair/config.json")
 
 
 def _roster_hits(payload: dict, cards: dict, extra_names) -> list[str]:

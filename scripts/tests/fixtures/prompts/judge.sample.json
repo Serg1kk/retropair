@@ -4,8 +4,8 @@
   "data": {
     "session_scope": {
       "sessions": [
-        {"session_id": "s-0001", "path": "/home/user/demo/.sessionretro/logs/alex/s-0001.md", "turns_total": 42, "reviewed_from_turn": null, "state": "new", "status": "reviewed", "status_note": null},
-        {"session_id": "s-0002", "path": "/home/user/demo/.sessionretro/logs/alex/s-0002.md", "turns_total": 3, "status": "agent_subtranscript", "status_note": "реплики за человека пишет оркестратор"}
+        {"session_id": "s-0001", "path": "/home/user/demo/.retropair/logs/alex/s-0001.md", "turns_total": 42, "reviewed_from_turn": null, "state": "new", "status": "reviewed", "status_note": null},
+        {"session_id": "s-0002", "path": "/home/user/demo/.retropair/logs/alex/s-0002.md", "turns_total": 3, "status": "agent_subtranscript", "status_note": "реплики за человека пишет оркестратор"}
       ],
       "agent_stack": ["claude-code"]
     },

@@ -1,4 +1,4 @@
-"""Workspace проекта: поиск `.sessionretro/`, пути состояния, JSON-ввод/вывод, SrError."""
+"""Workspace проекта: поиск `.retropair/`, пути состояния, JSON-ввод/вывод, SrError."""
 
 from __future__ import annotations
 
@@ -9,11 +9,41 @@ import stat
 import tempfile
 from pathlib import Path
 
-STATE_DIR = ".sessionretro"
+STATE_DIR = ".retropair"
+LEGACY_STATE_DIR = ".sessionretro"  # persisted SessionRetro installations
+
+
+def require_current_state(root: Path) -> None:
+    """Never shadow legacy data or choose between two state directories."""
+    root = Path(root)
+    old, new = root / LEGACY_STATE_DIR, root / STATE_DIR
+    if old.exists() or old.is_symlink():
+        reason = "конфликт каталогов" if new.exists() or new.is_symlink() else "нужна миграция"
+        raise SrError(f"{reason}: {old} → {new}; остановите старый плагин, "
+                      "запустите rp.py migrate --workspace <проект> "
+                      "(для домашнего каталога: --global), затем --apply", 1)
+
+
+def historical_path(path: Path, state_dir: Path | None) -> Path:
+    """Resolve only this workspace's old state prefix; never rewrite raw log content."""
+    path = Path(path)
+    if state_dir is None:
+        return path
+    state_dir = Path(state_dir)
+    old = state_dir.parent / LEGACY_STATE_DIR
+    if path.is_absolute():
+        try:
+            return state_dir / path.relative_to(old)
+        except ValueError:
+            return path
+    if path.parts and path.parts[0] in (LEGACY_STATE_DIR, STATE_DIR):
+        return state_dir / Path(*path.parts[1:])
+    return state_dir / path
+
 
 
 class SrError(Exception):
-    """Ожидаемая ошибка sessionretro: `sr.py` печатает `message` в stderr и выходит с `code`.
+    """Ожидаемая ошибка retropair: `sr.py` печатает `message` в stderr и выходит с `code`.
 
     Коды: 1 — данные не сошлись / гейт / валидация; 2 — ошибка вызова.
     """
@@ -29,19 +59,20 @@ def _global_state_dir() -> Path:
 
 
 def _is_workspace_root(root: Path) -> bool:
+    require_current_state(root)
     state = root / STATE_DIR
     return state.resolve() != _global_state_dir() and (state / "config.json").is_file()
 
 
 def find_workspace(start: Path | None = None, explicit: str | None = None) -> Path:
-    """Корень проекта — папка, где лежит `.sessionretro/config.json`.
+    """Корень проекта — папка, где лежит `.retropair/config.json`.
 
-    `explicit` — корень проекта или сама папка `.sessionretro`; иначе поиск вверх от
-    `start` (по умолчанию cwd). Глобальная `~/.sessionretro` workspace не считается.
+    `explicit` — корень проекта или сама папка `.retropair`; иначе поиск вверх от
+    `start` (по умолчанию cwd). Глобальная `~/.retropair` workspace не считается.
     """
     if explicit is not None:
         given = Path(explicit).expanduser().resolve()
-        root = given.parent if given.name == STATE_DIR else given
+        root = given.parent if given.name in (STATE_DIR, LEGACY_STATE_DIR) else given
         if not _is_workspace_root(root):
             raise SrError(
                 f"workspace не найден: в указанной папке нет {STATE_DIR}/config.json "
@@ -63,7 +94,8 @@ def find_workspace(start: Path | None = None, explicit: str | None = None) -> Pa
 
 
 def ws_paths(root: Path) -> dict[str, Path]:
-    """Пути состояния workspace (раскладка `.sessionretro/`)."""
+    """Пути состояния workspace (раскладка `.retropair/`)."""
+    require_current_state(root)
     state = Path(root) / STATE_DIR
     return {
         "state_dir": state,

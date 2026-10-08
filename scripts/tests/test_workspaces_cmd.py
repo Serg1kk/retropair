@@ -17,10 +17,10 @@ class WorkspacesCmdTest(TempHome, unittest.TestCase):
         super().setUp()
         self._tmp = tempfile.TemporaryDirectory(prefix="sr-ws-")
         self.base = Path(self._tmp.name).resolve()
-        # живой проект: есть .sessionretro/config.json
+        # живой проект: есть .retropair/config.json
         self.alive = self.base / "alive"
-        (self.alive / ".sessionretro").mkdir(parents=True)
-        (self.alive / ".sessionretro" / "config.json").write_text("{}", encoding="utf-8")
+        (self.alive / ".retropair").mkdir(parents=True)
+        (self.alive / ".retropair" / "config.json").write_text("{}", encoding="utf-8")
         (self.alive / "main.py").write_text("print(1)\n", encoding="utf-8")
         # песочница, которую удалили с диска
         self.gone = self.base / "gone"
@@ -89,7 +89,7 @@ class WorkspacesCmdTest(TempHome, unittest.TestCase):
         self.assertEqual(self.ids(), [gone["id"]])
         self.assertIn(alive["id"], res.stdout)
         self.assertIn("report --index", res.stdout)
-        self.assertTrue((self.alive / ".sessionretro" / "config.json").is_file())
+        self.assertTrue((self.alive / ".retropair" / "config.json").is_file())
         self.assertTrue((self.alive / "main.py").is_file())
 
     def test_remove_unknown_id(self) -> None:
@@ -145,7 +145,7 @@ class WorkspacesCmdTest(TempHome, unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertNotIn(ws_id, self.ids())
         self.assertIsNone(registry.find_by_path(proj))
-        self.assertTrue((proj / ".sessionretro" / "config.json").is_file())
+        self.assertTrue((proj / ".retropair" / "config.json").is_file())
 
 
 if __name__ == "__main__":

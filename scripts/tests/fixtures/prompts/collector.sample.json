@@ -12,7 +12,7 @@
   "sessions": [
     {
       "session_id": "s-0001",
-      "path": "/home/user/demo/.sessionretro/logs/alex/s-0001.md",
+      "path": "/home/user/demo/.retropair/logs/alex/s-0001.md",
       "turns_total": 42,
       "user_turns": 12,
       "reviewed_from_turn": null,
@@ -22,7 +22,7 @@
     },
     {
       "session_id": "s-0002",
-      "path": "/home/user/demo/.sessionretro/logs/alex/s-0002.md",
+      "path": "/home/user/demo/.retropair/logs/alex/s-0002.md",
       "turns_total": 3,
       "user_turns": 1,
       "status": "agent_subtranscript",
