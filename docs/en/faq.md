@@ -76,7 +76,7 @@ clear error. The path is a manual export of sessions and collection on macOS or 
 
 ## Can I get the texts in English?
 
-Yes: `lang: en` in `config.json` and `address: you` in the card. But the axis references are in
+Yes: select English in setup (`config.lang: en`), or set `profile.preferred_language: en` for one participant. The card preference overrides the workspace default; `feedback.address: you` suits English. But the axis references are in
 Russian for now, and the judge's English text has not been checked on the reference set.
 
 ## A person's personal report was not written

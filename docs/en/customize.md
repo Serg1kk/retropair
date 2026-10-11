@@ -299,3 +299,22 @@ You can also delete an agent file from `.claude/agents/`: the retro then uses th
 - [Proposals to the plugin authors](feedback.md)
 - [How the assessment works](how-it-works.md)
 - [Privacy](privacy.md)
+
+## Preferred feedback language
+
+Setup explicitly asks for the workspace default (`config.lang`). A participant can request another feedback language. Add this line to the existing `profile` block in `.retropair/people/<id>.yaml`, preserving the rest of the card:
+
+```yaml
+profile:
+  preferred_language: en  # ru | en; null or absent → config.lang
+```
+
+This is the participant’s **Preferred Language**, supplied to the teacher/reviewer. Russian and English are supported; unsupported values fail card validation. New feedback, recommendations and verdict explanations use this preference. Historical text, REC IDs and verbatim quotes stay unchanged. Language does not affect scores or reviewer approval. Group-report controls use the report language; its language switch does not translate existing feedback.
+
+Check the effective language:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people language alex --json
+```
+
+Custom templates, `feedback.prefix` and already-written text are not translated by the script. Use `feedback.template: default` for the corresponding built-in language template, or supply a matching custom file. `feedback.address: you` suits English; if address and language conflict, the agent follows effective `lang` and records the conflict in metadata.notes.

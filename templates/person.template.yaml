@@ -2,6 +2,7 @@ id: "{{id}}"                 # [a-z0-9-]+, имя папок и REC-id; всег
 name: {{name}}
 group: {{group}}
 profile:
+  preferred_language: null  # Preferred Language: ru | en; null → config.lang
   role: ""                  # например: backend developer
   grade: ""                 # например: senior
   years: null               # опыт в годах, целое число

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def plugin_root() -> Path:

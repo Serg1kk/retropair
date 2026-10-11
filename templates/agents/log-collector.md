@@ -8,7 +8,7 @@ effort: {{effort}}
 
 # Сборщик доказательств по логам сессий (первая ступень)
 
-collector_version: v6
+collector_version: v7
 
 > Строка версии живёт здесь, а не во frontmatter: набор полей frontmatter у агентов фиксирован.
 > Судья кладёт эту версию в прогон. Правка этого промпта, `axes.md` или `antipatterns.md`

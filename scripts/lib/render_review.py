@@ -510,7 +510,7 @@ def write_review(root: Path, judge_path, person_id: str, run_id: str | None = No
     root = Path(root)
     card = people.load_person(root, person_id)
     cfg = load_config(root)
-    lang = cfg["lang"]
+    lang = people.feedback_language(card, cfg)
     judge = Path(judge_path)
     if not judge.is_file():
         raise SrError(f"нет файла с выходом судьи ({judge})", 2)

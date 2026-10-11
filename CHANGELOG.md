@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-11
+
+### Added
+
+- Optional `profile.preferred_language` (`ru`/`en`) in participant cards overrides the workspace default for new feedback and recommendations. `people language <id> --json` exposes the effective language; review orchestration and the built-in feedback renderer use it. Existing cards remain compatible.
+
+### Changed
+
+- Setup explicitly asks for the workspace feedback and report language (Russian or English), including when reconfiguring an existing workspace. The conversation language no longer silently determines feedback language.
+- Language changes preserve historical reviews, participant profiles and custom templates; original session quotes remain verbatim.
+
 ## [0.2.0] — 2026-10-09
 
 ### Changed

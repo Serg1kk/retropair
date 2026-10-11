@@ -10,7 +10,7 @@ Claude Code in the project folder and call the skill.
 /retropair:setup
 ```
 
-Plain words work too: "set up RetroPair", "connect the RetroPair". The skill asks up to 11
+Plain words work too: "set up RetroPair", "connect the RetroPair". The skill asks up to 12
 questions one at a time, shows a summary and applies the answers with one command. It writes no
 files itself: everything is written by the plugin CLI `rp.py`, so you can get the same result
 without a dialogue, from a script (see "Without a dialogue" below).
@@ -107,7 +107,13 @@ and reports stay, and the output advises you to check the groups and cards.
     project's `.gitignore`: the logs hold your code and conversation, drafts and reports are
     personal texts, and the collection log and lock are machine service files.
 
-The skill takes the language (`ru` or `en`) from the language of the conversation, and the
+12. **Feedback language**: explicitly choose Russian (`ru`) or English (`en`) for future feedback
+    and report interface strings. This is the workspace default; `profile.preferred_language` (`ru`/`en`) in a participant card
+    overrides it for that person’s feedback and recommendations. Original log quotes
+    remain verbatim. Existing reviews are not translated. Rebuild reports after changing the language.
+    Custom templates keep their text: translate them yourself or select `default`.
+
+The skill asks for the language instead of inferring it from your conversation. It takes the
 workspace title from the project folder name unless you name it yourself.
 
 ## Running it again
@@ -118,7 +124,7 @@ change; you can pick several blocks:
 - mode, people and sources (questions 1–4);
 - hook, cleanup, gitignore (questions 5, 10, 11);
 - models (question 6);
-- scores, periods, template (questions 7–9).
+- scores, periods, template and language (questions 7–9, 12).
 
 Only the questions of the chosen blocks are asked, with the current value as the first option.
 Only changed answers are applied; the rest is left alone. If nothing changed, the skill says so and

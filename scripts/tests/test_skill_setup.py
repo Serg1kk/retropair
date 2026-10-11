@@ -1,4 +1,4 @@
-"""Скилл `setup`: 11 вопросов по порядку, варианты AskUserQuestion, живые команды, ответы проходят `setup-apply`.
+"""Скилл `setup`: 12 вопросов по порядку, варианты AskUserQuestion, живые команды, ответы проходят `setup-apply`.
 
 Проверяются реальные файлы плагина: `skills/setup/SKILL.md`, `skills/setup/references/questions.md` и
 строка-ссылка на протокол предложений в конце `collect`, `review`, `report`. JSON-примеры ответов из
@@ -38,7 +38,7 @@ OPTION_RE = re.compile(r"^\s*\d+\. ")
 JSON_FENCE_RE = re.compile(r"^```json\n(.*?)^```", re.M | re.S)
 HEREDOC_RE = re.compile(r"<<'EOF'\n(.*?)^EOF$", re.M | re.S)
 USERS = "/" + "Users/"
-TOTAL = 11
+TOTAL = 12
 MAX_OPTIONS = 4
 MIN_OPTIONS = 2
 PRESETS = ("Сбалансировано", "Экономно", "Максимум", "Свой")
@@ -164,7 +164,7 @@ class SkillTest(unittest.TestCase):
         self.assertNotIn("Заглушка", self.body)
         self.assertGreater(len(self.body.splitlines()), 80)
 
-    def test_eleven_questions_in_order(self) -> None:
+    def test_twelve_questions_in_order(self) -> None:
         self.assertEqual(question_numbers(self.body), list(range(1, TOTAL + 1)))
 
     def test_every_command_exists_in_parser(self) -> None:
@@ -233,6 +233,14 @@ class SkillTest(unittest.TestCase):
     def test_group_mode_wording(self) -> None:
         self.assertIn("учебная группа", self.body)
 
+    def test_language_is_explicit_and_available_on_repeat(self) -> None:
+        sections = question_sections(self.body)
+        self.assertIn("`lang`", sections[12])
+        self.assertIn("ru", sections[12])
+        self.assertIn("en", sections[12])
+        self.assertIn("язык", self.body.split("## Повторный запуск", 1)[1])
+        self.assertNotIn("Без вопроса: `lang`", self.body)
+
     def test_references_questions(self) -> None:
         self.assertIn("references/questions.md", self.body)
 
@@ -265,7 +273,7 @@ class QuestionsTest(unittest.TestCase):
         cls.text = _read(QUESTIONS)
         cls.sections = question_sections(cls.text)
 
-    def test_eleven_questions_in_order(self) -> None:
+    def test_twelve_questions_in_order(self) -> None:
         self.assertEqual(question_numbers(self.text), list(range(1, TOTAL + 1)))
 
     def test_each_question_has_why_and_options(self) -> None:
@@ -294,6 +302,13 @@ class QuestionsTest(unittest.TestCase):
             self.assertIn(word, section.lower())
         presets = [e for e in answer_examples(section) if "models" in e]
         self.assertGreaterEqual(len(presets), 3)
+
+    def test_language_choices_are_valid_answers(self) -> None:
+        section = self.sections[12]
+        self.assertIn("Русский", section)
+        self.assertIn("English", section)
+        self.assertIn("цитаты", section.lower())
+        self.assertEqual(answer_examples(section), [{"lang": "ru"}, {"lang": "en"}])
 
     def test_free_input_through_other(self) -> None:
         self.assertIn("Other", self.sections[2])

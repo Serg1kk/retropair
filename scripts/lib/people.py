@@ -221,8 +221,20 @@ def _text(value) -> str:
     return "" if value is None else str(value).strip()
 
 
+def feedback_language(card: dict, cfg: dict) -> str:
+    """Язык текста участнику: profile.preferred_language → config.lang.
+
+    Старые карточки без предпочтения используют язык workspace; историю не меняет.
+    """
+    preferred = (card.get("profile") or {}).get("preferred_language")
+    lang = preferred if preferred is not None else cfg["lang"]
+    if lang not in ("ru", "en"):
+        raise SrError(f"неподдерживаемый язык фидбэка {lang!r}: нужен ru или en", 1)
+    return lang
+
+
 def person_context(card: dict) -> list[str]:
-    """Срез карточки для судьи: 5–8 строк (`channel`, `template`, `prefix` не подаются).
+    """Срез карточки для судьи: 5–9 строк (`channel`, `template`, `prefix` не подаются).
 
     Всегда есть строки профиля («не указан», если пусто), обращения, флагов, границ
     («нет», если пусто) и ценности; ограничения и «не объяснять» — только если заполнены.
@@ -239,6 +251,8 @@ def person_context(card: dict) -> list[str]:
     if _text(profile.get("tools")):
         first.append(f"инструменты: {_text(profile.get('tools'))}")
     lines = ["; ".join(first)]
+    if profile.get("preferred_language") is not None:
+        lines.append(f"preferred_language: {profile['preferred_language']}")
     if _text(profile.get("constraints")):
         lines.append(f"ограничения: {_text(profile.get('constraints'))}")
     lines.append(f"обращение: {fb['address']}; длина: {fb['length']}; тон: {fb['tone']}")

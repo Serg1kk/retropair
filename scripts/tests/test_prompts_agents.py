@@ -22,9 +22,9 @@ TOOLS = {
     "feedback-critic": "Read, Write, Edit",
 }
 BODY_VERSIONS = {
-    "log-collector": "collector_version: v6",
-    "log-judge": "prompt_version: v16",
-    "feedback-critic": "critic_version: v1",
+    "log-collector": "collector_version: v7",
+    "log-judge": "prompt_version: v17",
+    "feedback-critic": "critic_version: v2",
 }
 FILE_VERSIONS = {
     "references/axes.md": "axes_version: v3",
@@ -32,7 +32,7 @@ FILE_VERSIONS = {
     "references/best-practices.md": "best_practices_version: v2",
     "references/output-contract.md": "output_contract_version: v5",
     "references/feedback-examples.md": "feedback_examples_version: v4",
-    "skills/review/references/judge-input.md": "judge_input_version: v2",
+    "skills/review/references/judge-input.md": "judge_input_version: v3",
 }
 FRONTMATTER_KEYS = {"name", "description", "tools", "model", "effort"}
 LITERAL_NOTE = "Если в пути виден литерал `${CLAUDE_PLUGIN_ROOT}`, подставь `plugin_root` из входа."
@@ -310,7 +310,7 @@ class AgentsReal(unittest.TestCase):
                        "не влия", "не больше трёх", "расхождени", "поля `feedback` не предлагаются"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, rule)
-        self.assertIn('`"v16"`', text)
+        self.assertIn('`"v17"`', text)
 
     def test_judge_drops_source_ids(self) -> None:
         text = self.judge_body()

@@ -17,7 +17,8 @@
         "years": {"type": ["integer", "null"], "minimum": 0},
         "stack": {"type": ["string", "null"]},
         "tools": {"type": ["string", "null"]},
-        "constraints": {"type": ["string", "null"]}
+        "constraints": {"type": ["string", "null"]},
+        "preferred_language": {"type": ["string", "null"], "enum": ["ru", "en", null]}
       }
     },
     "feedback": {

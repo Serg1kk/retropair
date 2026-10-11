@@ -56,6 +56,7 @@ res = run_sr("people", "list", "--workspace", str(root), home=home, cwd=tmp)
 | `test_workspaces_cmd.py` | `workspaces list` (пусто, две записи с отметкой «папки нет», `--json`) и `workspaces remove` (по id — файлы проекта на месте, неизвестный id — код 1 со списком id, `--missing`, `<id>` вместе с `--missing` и без аргументов — код 2, `init` → `remove` → записи нет в реестре) |
 | `test_sr_cli.py` | `rp.py`: справка и код 2 без команды, `--version`, `--workspace` в любой позиции, `init` (self и team, повтор, `--path`, коллизия id), `people` и его коды ошибок |
 | `test_config.py` | загрузка и сохранение `config.json` с проверкой схемы, дефолт из шаблона |
+| `test_preferred_language.py` | Preferred Language RU/EN/null: приоритет над config.lang, совместимость старых карточек, ошибки неподдерживаемого языка, people language CLI и контракты передачи языка, выбор настоящего шаблона и сохранение цитат, баллов и approval |
 | `test_people.py` | слияние карточки с `_default.yaml`, список, добавление (кавычки, новая группа, дубль), выжимка `people context` |
 | `test_doctor.py` | `doctor` вне и внутри workspace, `settings.json`, версия SpecStory, строки `doctor_lines` других команд |
 | `test_docs.py` | страница `docs/ru/workspace.md` описывает все команды и настройки текста; документы заполнены; относительные ссылки (markdown и `href`/`src`) во всех `*.md` живые и не выходят за папку плагина; README и README.ru — свитчер языков первой строкой, одинаковые разделы `##` по порядку, Quick start ровно из трёх команд, скриншоты своего языка; `docs/README.md` перечисляет все страницы `docs/ru` и `docs/en`; CHANGELOG с секцией `0.1.0` и пустым `Unreleased` |
@@ -235,7 +236,7 @@ pending и не в reviewer.html, но может вернуться); карт�
 аргументов скилла, каждый флаг из `SKILL.md` есть в парсере `rp.py report`.
 
 `test_skill_setup.py` — скилл `setup` и его справочник `references/questions.md`: заголовки
-«Вопрос 1…11» строго по порядку, у каждого вопроса фраза «зачем» и 2–4 варианта AskUserQuestion,
+«Вопрос 1…12» строго по порядку, у каждого вопроса фраза «зачем» и 2–4 варианта AskUserQuestion,
 первый с `(Recommended)`; команды `rp.py` есть в парсере и разбираются им (heredoc отрезается);
 JSON-примеры ответов из обоих файлов проходят `setup.validate_answers` и вместе покрывают все ключи;
 пресеты моделей, условия пропуска вопросов 2, 4, 10, `write` рядом с ключом `cleanup_period_days`,

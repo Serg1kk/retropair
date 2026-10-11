@@ -32,10 +32,15 @@ def register(subparsers) -> None:
     lst.add_argument("--json", action="store_true", help="эффективные карточки массивом")
     lst.set_defaults(func=handle_list)
 
-    ctx = sub.add_parser("context", help="срез карточки для судьи (5–8 строк)")
+    ctx = sub.add_parser("context", help="срез карточки для судьи (5–9 строк)")
     ctx.add_argument("id")
     ctx.add_argument("--json", action="store_true", help="те же строки JSON-массивом")
     ctx.set_defaults(func=handle_context)
+
+    language = sub.add_parser("language", help="язык фидбэка: Preferred Language или язык workspace")
+    language.add_argument("id")
+    language.add_argument("--json", action="store_true", help="{lang, source, workspace_lang}")
+    language.set_defaults(func=handle_language)
 
     sug = sub.add_parser("suggestions", help="предложения правок карточки (pending)")
     sug.add_argument("id", nargs="?", help="id человека (по умолчанию — все)")
@@ -105,6 +110,20 @@ def handle_context(args) -> int:
         _dump(lines)
     else:
         print("\n".join(lines))
+    return 0
+
+
+def handle_language(args) -> int:
+    root = _root(args)
+    card = people.load_person(root, args.id)
+    cfg = load_config(root)
+    lang = people.feedback_language(card, cfg)
+    if args.json:
+        _dump({"lang": lang,
+               "source": "profile.preferred_language" if (card.get("profile") or {}).get("preferred_language") is not None else "config.lang",
+               "workspace_lang": cfg["lang"]})
+    else:
+        print(lang)
     return 0
 
 

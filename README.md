@@ -14,7 +14,7 @@ Your sessions reveal how you work. RetroPair shows you how to improve.
 
 RetroPair is a Claude Code plugin that reads your agent session logs for a period and tells you how you lead the agent: how you frame tasks, verify results and keep decisions in your hands. Eight behaviour axes, each judgement backed by a verbatim quote from the log, one to three concrete next steps, a check of those steps in the next period, and progress against your own previous period. People are never compared with each other.
 
-[Product website](https://retropair.dev/en?utm_source=github&utm_medium=referral&utm_campaign=plugin_readme&utm_content=readme_en) · [Plugin repository](https://github.com/Serg1kk/retropair) · Version **0.2.0**
+[Product website](https://retropair.dev/en?utm_source=github&utm_medium=referral&utm_campaign=plugin_readme&utm_content=readme_en) · [Plugin repository](https://github.com/Serg1kk/retropair) · Version **0.2.1**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Changelog](https://img.shields.io/badge/changelog-releases-informational.svg)](CHANGELOG.md)
@@ -60,7 +60,7 @@ In Claude Code:
 - After installing, run `/reload-plugins` or start a new Claude Code session, then call `/retropair:setup`.
 - Developing the plugin: `claude --plugin-dir <path to plugin>` runs it from a local folder without installing.
 
-`setup` asks up to 11 questions one at a time and creates the workspace `.retropair/` in your project. Then ask Claude Code to "collect my logs" and "run the retro", and open the reports: [the full cycle](#the-full-cycle) below walks through every step.
+`setup` asks up to 12 questions one at a time and creates the workspace `.retropair/` in your project. Then ask Claude Code to "collect my logs" and "run the retro", and open the reports: [the full cycle](#the-full-cycle) below walks through every step.
 
 Already using SessionRetro? Read the [migration guide](docs/en/migration.md) before setup: the new workspace is `.retropair/`; migration previews changes and refuses conflicting old/new directories. `scripts/rp.py` is the preferred CLI; `scripts/sr.py` remains supported for existing scripts.
 
@@ -98,7 +98,7 @@ Every step is a skill you can call by name or just ask for in your own words; th
 
 | Step | Command | What happens | What appears |
 |---|---|---|---|
-| 1. Setup | `/retropair:setup` | up to 11 questions (mode, people, log sources, SpecStory, hook, models, scores, periods, template, log retention, `.gitignore`), then `setup-apply` applies the answers and `doctor` shows the result | `.retropair/config.json`, `people/_default.yaml`, `people/<id>.yaml`, project agents `.claude/agents/retropair-*.md` with `agents.json`, an entry in `~/.retropair/workspaces.json` |
+| 1. Setup | `/retropair:setup` | up to 12 questions (mode, people, log sources, SpecStory, hook, models, scores, periods, template, log retention, `.gitignore`, feedback language), then `setup-apply` applies the answers and `doctor` shows the result | `.retropair/config.json`, `people/_default.yaml`, `people/<id>.yaml`, project agents `.claude/agents/retropair-*.md` with `agents.json`, an entry in `~/.retropair/workspaces.json` |
 | 2. Collect | `/retropair:collect`, or automatically by the SessionEnd hook | sources are read, every log passes the sanitizer, copies land in the workspace, the inventory gets statuses (new, grown, unchanged, duplicate, gone, excluded) | `logs/<id>/…`, `logs-index.json`, `collect.log` (hook) |
 | 3. Review | `/retropair:review <person>` or `--all` | project agents synced; the period's sessions split into batches; collectors run in parallel; `check-collector` verifies every quote against the log; the judge scores and writes; `append` records the run; `level` computes the level; `render-review` builds the text; `verify` checks everything is closed | `runs/pending/<person>/batch-NN.json` and `judge.json`, the history `runs/process-reviews.json`, the text `reviews/<person>/<run_id>.md` |
 | 4. Approve | `/retropair:review --approve <person>` or `rp.py approve <person>` | team and course: the reviewer reads the draft and approves it; from this moment its next steps count as received. The skill then runs `people suggestions <person> --refresh`; the bare `rp.py approve` only changes the status, so run that command yourself after it | `status: approved` in the review file, `approved_at` in the run; card suggestions `people/<id>.suggestions.json` (after `--refresh`) |
@@ -150,7 +150,7 @@ Never assessed at all: code quality, architecture, completeness of the solution,
 | **The gate is a ceiling, not a zero** | six triggers that are visible in the log (blind acceptance of a large change, a product choice left to the agent, a warning ignored, a "done" report taken without a check, stated confusion left unresolved, no stance over a long session): one caps the level at Competent, two or more at Developing. Silence never triggers the gate |
 | **What the judge never gets** | past scores and levels, the reviewer's impressions, acceptance criteria of the task, the code itself, project rules files, other people's logs |
 | **The critic** | in team and course, without `--no-ask`, a separate agent reads the draft text and its notes go to the reviewer |
-| **The reviewer's correction** | a run can carry `operator_override` (axes with new scores, `why`, `by`, `at`) in the run history: the level is computed with it, reports mark the score "reviewer override", and it survives a re-assessment with `append --replace`. There is no dedicated command for it in 0.2.0; a wrong run as a whole is retracted with `rp.py retract <run_id> --why "…"` |
+| **The reviewer's correction** | a run can carry `operator_override` (axes with new scores, `why`, `by`, `at`) in the run history: the level is computed with it, reports mark the score "reviewer override", and it survives a re-assessment with `append --replace`. There is no dedicated command for it in 0.2.1; a wrong run as a whole is retracted with `rp.py retract <run_id> --why "…"` |
 
 ## Next steps and the follow-up loop
 
@@ -233,7 +233,7 @@ consent:
 | `value_focus` | `finding` · `full` | `finding` | judge | `finding`: items only about findings of this run; `full`: also about even spots where a cheaper way exists |
 | `show_dynamics` | `true` · `false` | `true` | judge + report | `true`: the verdict on last period's recommendation for the same axis is mentioned in one phrase; in the "dynamics only" report view the transitions are shown only when `true` |
 | `show_scores` | `true` · `false` | not set (from `config.json`) | report | the personal report view: scores and level, or dynamics only ↑ → ↓ ◇. Not given to the judge |
-| `channel` | `file` · `telegram` · `slack` · `email` | `file` | nobody yet | stored and validated; not given to the judge, and in 0.2.0 the renderer produces the same markdown for every channel |
+| `channel` | `file` · `telegram` · `slack` · `email` | `file` | nobody yet | stored and validated; not given to the judge, and in 0.2.1 the renderer produces the same markdown for every channel |
 | `template` | `default` · `workspace` · file name | `default` | renderer | which template lays out the text (below) |
 | `prefix` | string | `""` | renderer | a line before the text, for example a greeting; empty means no line |
 
@@ -307,7 +307,7 @@ demo-course_p02_P6_20260921T201000Z не записан,
 </td></tr>
 </table>
 
-What this shows, honestly: the script does not reword anything. It adds the `prefix`, lays the parts out with the `template` and enforces the card: a text written for `ты` cannot go out to a `вы` card, a text with three items cannot go out to a `short` card. The wording for card B is written by the judge in the next run, which gets card B's slice (`rp.py people context p02` prints it). The demo texts are in Russian, and error messages are printed in Russian in 0.2.0.
+What this shows, honestly: the script does not reword anything. It adds the `prefix`, lays the parts out with the `template` and enforces the card: a text written for `ты` cannot go out to a `вы` card, a text with three items cannot go out to a `short` card. The wording for card B is written by the judge in the next run, which gets card B's slice (`rp.py people context p02` prints it). The demo texts are in Russian, and error messages are printed in Russian in 0.2.1.
 
 ### Card suggestions
 
@@ -331,6 +331,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people reject alex S-alex-002 --re
 `apply` changes one line (or adds list items) and keeps the comments and order; if the card then fails validation, the file is restored and the exit code is `1`. A suggestion whose field was edited by hand in the meantime is closed as `stale` by `--refresh`. Suggestions are stored next to the card in `people/<id>.suggestions.json` (field, old and new value, reason, run, status `pending` / `applied` / `rejected` / `stale`); pending ones are shown in `reviewer.html` with ready commands and counted by `doctor` (`card_suggestions_pending`). They never appear in the personal file or in `group.html`.
 
 <p align="center"><img src="docs/images/gallery/reviewer-suggestions.en.png" alt="Card suggestions block in the reviewer report of the demo: new tools from the logs and steadily strong axes for skip_basics, with apply and reject commands" width="900"></p>
+
+### Preferred feedback language
+
+Setup explicitly asks for the default feedback language (Russian or English). A participant can override it in `.retropair/people/<id>.yaml`:
+
+```yaml
+profile:
+  preferred_language: en  # ru | en; null → config.lang
+```
+
+Merge this line into the existing `profile` block; do not replace the rest of the card. New feedback and recommendations use this language; historical text and verbatim quotes stay unchanged. Group-report controls use the workspace/report language. [Language settings](docs/en/customize.md#preferred-feedback-language).
 
 ## Reports
 
@@ -443,7 +454,7 @@ Full page: [docs/en/reports.md](docs/en/reports.md).
 - **The SessionEnd hook.** With `hook.enabled` (on after `setup`) collection starts in the background when a Claude Code session ends; its output goes to `.retropair/collect.log`. It runs only for workspaces in your registry `~/.retropair/workspaces.json`, so someone else's repository with a committed config cannot collect your logs.
 - **Consent.** `consent.logs: false` in a card stops collection of that person's sources, and snapshots collected earlier are excluded from batches and assessment. `doctor` shows how many cards lack consent.
 - **Retention.** Claude Code deletes its logs after `cleanupPeriodDays` (30 days by default); `setup` offers to raise it to 90, and collected copies stay in the workspace.
-- **Windows** is not supported for collection in 0.2.0.
+- **Windows** is not supported for collection in 0.2.1.
 
 Details: [docs/en/collect.md](docs/en/collect.md).
 

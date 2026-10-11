@@ -163,6 +163,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" agents sync
 - Карточка и рекомендации человека:
 
 ```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people language <person> --json
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" people context <person>
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" open-recs <person> --json --period-label <label>
 ```
@@ -170,6 +171,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rp.py" open-recs <person> --json --period
   `--period-label` — та же метка, что пойдёт в `batches` (фаза 2); в режиме `run` флага нет.
   Несколько меток → `open-recs` заново перед каждым прогоном, после `append` прошлого: его
   рекомендации к этому моменту уже выданы.
+  `people language --json` → эффективный `lang` именно этого человека:
+  `profile.preferred_language` (`ru`/`en`) → иначе `config.lang`. Используй этот `lang`
+  во входах обоих агентов и критика. При `--all` язык вычисляй отдельно для каждого человека,
+  не переноси его между участниками. Фидбэк, новые рекомендации и объяснения вердиктов по
+  старым рекомендациям — на этом языке; прошлые тексты/REC-id не переписывай, цитаты сохраняй
+  дословно. Язык не влияет на баллы, гейты, approval или видимость данных. Ошибка карточки
+  или неподдерживаемый язык → остановить прогон по человеку, не подменять язык молча.
   `people context` → `card_slice`; `open-recs` → `open_recs[]` (`id`, `text`, `period`,
   `issued_at`, `evaluable`) для обеих ступеней, только из `open`, поля копируются как есть:
   `issued_at` — когда человек получил рекомендацию (время прогона, при гейте ревьюера время

@@ -1,6 +1,6 @@
 # Вход агентов оценки: коллектор, судья, критик
 
-judge_input_version: v2
+judge_input_version: v3
 
 > Контракт между скиллом `review` и тремя агентами плагина (`log-collector`, `log-judge`,
 > `feedback-critic`): что скилл кладёт в задание агенту, куда агент пишет выход и что
@@ -126,3 +126,7 @@ judge_input_version: v2
   "output_path": "/home/user/work/shop-api/.retropair/runs/pending/dev-a.critic.md"
 }
 ```
+
+## Язык участника
+
+`lang` вычисляет скилл через `people language <person> --json`: `profile.preferred_language` (`ru`/`en`), если заполнен, иначе `config.lang`. Передавать отдельно для каждого человека коллектору, судье и критику. Все новые свободные тексты фидбэка, рекомендаций и вердиктов — на этом языке. Старые рекомендации и дословные цитаты не переводить; язык не меняет оценки.

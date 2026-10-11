@@ -61,7 +61,7 @@
 | `person_id` | id карточки |
 | `period` | `{label, from, to, anchor}`: `label` — метка прогона (в режиме `run` плановая `run-<ГГГГММДД>`: настоящую выдаёт `append`, у второго прогона за сутки она с суффиксом `-2`); `from`/`to` — `date_from` первой и `date_to` последней пачки (`ГГГГ-ММ-ДД`) или `null`; `anchor` — `null`, если пользователь не назвал опорную точку |
 | `run_id` | плановый id из фазы 1 |
-| `lang` | `lang` из `config.json` |
+| `lang` | эффективный `lang` из `people language <person> --json`: `profile.preferred_language` → `config.lang` |
 | `output_path` | `<pending>/batch-NN.json` этой пачки |
 | `log_paths` | по сессии пачки: `path` = `<ws>/` + `sessions[].path`, `session_id`, `state`, `from_turn` (у `grown` обязателен) |
 | `batch` | `{index, total}` из `batches[]` |

@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "pluginVersion": "0.2.0",
+  "pluginVersion": "0.2.1",
   "storeKind": "workspace",
   "migrations": [],
   "lastSync": null

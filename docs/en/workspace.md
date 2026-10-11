@@ -352,3 +352,5 @@ sanitizer misses: [privacy.md](privacy.md).
 - [Setup: first and repeated run](setup.md): the questions, the hook, `setup-apply` for scripts.
 - [Customizing](customize.md): cards and `_default.yaml`, your own text template, project agents.
 - [Proposals to the plugin authors](feedback.md): what goes into `improvements/` and how to send it.
+
+`profile.preferred_language`: optional participant Preferred Language (`ru`, `en` or `null`). Overrides `config.lang` for new feedback/recommendations; group-report controls, history and quotes stay unchanged. See [language settings](customize.md#preferred-feedback-language).

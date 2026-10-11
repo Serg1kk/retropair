@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Human–AI Collaboration Retrospectives. Evidence-based coaching for developers working with AI coding agents. Review the pair. Improve the human.",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "plugins": [
     {
       "name": "retropair",
       "source": "./",
       "description": "Human–AI Collaboration Retrospectives. Evidence-based coaching for developers working with AI coding agents. Review the pair. Improve the human.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "ProdfeatAI"
       },

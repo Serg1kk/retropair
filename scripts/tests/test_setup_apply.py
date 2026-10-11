@@ -178,6 +178,26 @@ class OwnerlessSources(_Proj):
 
 
 class ApplyRerun(_Proj):
+    def test_language_change_preserves_history_cards_and_custom_template(self):
+        self.apply({**COURSE, "lang": "ru"})
+        paths = ws_paths(self.proj)
+        history = paths["state_dir"] / "runs" / "process-reviews.json"
+        history.parent.mkdir(parents=True, exist_ok=True)
+        history.write_bytes((PLUGIN / "scripts/tests/fixtures/process-reviews.sample.json").read_bytes())
+        custom = paths["templates"] / "feedback.md"
+        custom.write_text("# Custom template\nKeep this user-owned text.\n", encoding="utf-8")
+        preserved = [history, custom, card_path(self.proj, "kim"), paths["people"] / "_default.yaml"]
+        before_bytes = {p: p.read_bytes() for p in preserved}
+        before_cfg = self.cfg()
+
+        report = self.apply({"lang": "en"})
+
+        self.assertEqual(report["changed"], ["config.lang"])
+        self.assertEqual(self.cfg(), {**before_cfg, "lang": "en"})
+        for path, expected in before_bytes.items():
+            self.assertEqual(path.read_bytes(), expected, str(path))
+        self.assertEqual(self.apply({"lang": "en"})["changed"], [])
+
     def test_only_passed_key_changes(self):
         self.apply(TEAM)
         card = card_path(self.proj, "alex")
