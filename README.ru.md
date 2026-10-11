@@ -10,7 +10,7 @@
 
 RetroPair — плагин Claude Code, который читает логи ваших сессий с агентом за период и показывает, как вы ведёте агента: ставите задачу, проверяете результат, держите решения за собой. Восемь осей поведения, каждое суждение подкреплено дословной цитатой из лога, один-три конкретных следующих шага, проверка этих шагов в следующем периоде и динамика против вашего же прошлого периода. Людей между собой не сравнивает никогда.
 
-[Сайт продукта](https://retropair.dev) · [Приватный репозиторий дистрибутива](https://github.com/Serg1kk/retropair) · Версия **0.2.0**
+[Сайт продукта](https://retropair.dev/ru?utm_source=github&utm_medium=referral&utm_campaign=plugin_readme&utm_content=readme_ru) · [Репозиторий плагина](https://github.com/Serg1kk/retropair) · Версия **0.2.0**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Changelog](https://img.shields.io/badge/changelog-releases-informational.svg)](CHANGELOG.md)
@@ -53,7 +53,6 @@ RetroPair — плагин Claude Code, который читает логи в�
 /retropair:setup
 ```
 
-- Репозиторий дистрибутива приватный: нужен доступ к нему и SSH-ключ на GitHub или `gh auth setup-git`, чтобы Claude Code смог его склонировать.
 - После установки выполните `/reload-plugins` или откройте новую сессию Claude Code, затем вызовите `/retropair:setup`.
 - Для разработки плагина: `claude --plugin-dir <путь к plugin>` запускает его из локальной папки без установки.
 

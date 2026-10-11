@@ -12,7 +12,7 @@ Your sessions reveal how you work. RetroPair shows you how to improve.
 
 RetroPair is a Claude Code plugin that reads your agent session logs for a period and tells you how you lead the agent: how you frame tasks, verify results and keep decisions in your hands. Eight behaviour axes, each judgement backed by a verbatim quote from the log, one to three concrete next steps, a check of those steps in the next period, and progress against your own previous period. People are never compared with each other.
 
-[Product website](https://retropair.dev) · [Private distribution repository](https://github.com/Serg1kk/retropair) · Version **0.2.0**
+[Product website](https://retropair.dev/en?utm_source=github&utm_medium=referral&utm_campaign=plugin_readme&utm_content=readme_en) · [Plugin repository](https://github.com/Serg1kk/retropair) · Version **0.2.0**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Changelog](https://img.shields.io/badge/changelog-releases-informational.svg)](CHANGELOG.md)
@@ -55,7 +55,6 @@ In Claude Code:
 /retropair:setup
 ```
 
-- The distribution repository is private: you need access to it and either an SSH key on GitHub or `gh auth setup-git` so that Claude Code can clone it.
 - After installing, run `/reload-plugins` or start a new Claude Code session, then call `/retropair:setup`.
 - Developing the plugin: `claude --plugin-dir <path to plugin>` runs it from a local folder without installing.
 
