@@ -2,6 +2,8 @@
 
 # RetroPair
 
+<p align="center"><strong><a href="https://retropair.dev/ru?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=plugin_readme&amp;utm_content=readme_ru">Сайт и демо ↗ retropair.dev</a></strong></p>
+
 **Review the pair. Improve the human.**
 
 **Ретроспектива того, как вы работаете с AI-агентами. Оценивается работа человека, а не код.**
